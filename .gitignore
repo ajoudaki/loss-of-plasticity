@@ -1,0 +1,15 @@
+# data
+data/
+
+# Python
+*.pyc
+__pycache__/
+venv/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter Lab
+.ipynb_checkpoints/
+.DS_Store
