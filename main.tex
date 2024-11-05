@@ -1,0 +1,639 @@
+\documentclass{article}
+% Make '~' active and define its new behavior
+% Redefine ` to behave like ^{()}
+
+\usepackage{amsmath, amsthm, amssymb}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{natbib}
+\usepackage{textgreek}
+\usepackage{pifont}
+\usepackage[hidelinks]{hyperref}
+
+% Theorem environments
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+% Custom commands
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\Loss}{\mathcal{L}}
+\renewcommand{\Re}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}[2]{\mathcal{R}_{#2}(#1)}
+\renewcommand{\R}[2]{({#1})^{\oplus #2}}
+\newcommand{\bl}[2]{\mathcal{B}_{#2}({#1})}
+\newcommand{\B}[1]{\boldsymbol{#1}}
+\mathcode`@="8000
+{\catcode`@=\active \gdef@#1{^{(#1)}}}
+\newcommand{\T}{\ensuremath{{}^{\top}}}
+
+\title{Dynamic Model Scaling}
+\author{update by Amir Joudaki}
+\date{October 2024}
+
+\begin{document}
+
+\maketitle
+
+
+\section{MLP hyper cloning}
+Here we investigate the theoretical
+foundations and implications of dynamically changing the model size, i.e., expanding or shrinking the size (width, depth, channels, etc.) of a model during training. As a first case study, we study \textit{hyper cloning}, as described by~\citet{samragh2024scaling}. We will start with a MLP setup, and try to add components to it.
+\\
+
+\textbf{Main findings:}
+\begin{itemize}
+    \item \textbf{Backward cloning}: While all configurations in~\citet{samragh2024scaling} lead to forward cloning, only noiseless configurations lead to backward/gradient cloning. See Proposition~\ref{prop:cloning_forward_backward}'s conditions for gradient cloning. Thus, the noisy cases have gradients of the hyper-cloned model deviating from the source model. 
+    \item \textbf{Learning rate adjustment}: In the noiseless case, the training dynamics of the hyper-cloned model follows that of a smaller model with a higher learning rate. See Proposition~\ref{prop:cloning_training} second part, and the subsequent remark. 
+    \item \textbf{Highly structured training} for the noiseless cases, the training dynamics will always follow that of a smaller source model, which may permanently limit model capacity. See Proposition~\ref{prop:cloning_training}). This is unlikely to break with most neural network modules, except layers that impose asymmetries at training time such as Dropout. (see remark~\ref{cloning_symmetry}). 
+\end{itemize}
+
+
+\paragraph{Notation.} 
+$\otimes $ denotes Kronecker product. $\odot$ denotes Hadamard product.
+% $\1_n$ denotes a $n$ sized vector of all ones, and $\1_{n\times m}$ to denote a matrix of all ones sized $n\times m.$ 
+For vectors $u,v$ $u\oplus v $ denotes concatenating two vectors, and $\oplus_{i=1}^n v_i$ is used for concatenating $n$ vectors.
+$\R{v}{n}=\oplus_i^n v$ denotes repeating (concatenating) the vector $n$ times. For matrix $M$, $\R{M}{n\times m}$ to denote a cloned matrix where $M$ is repeated $n$ times row-wise and $m$ times column-wise. If vector $v$ and matrix $M$ have some some block structure, we use $\bl{v}{i}$ to refer to its $i$-th block, and $\bl{M}{ij}$ to denote the block at row $i$ and column $j$ of $M.$ In both cases size and number and size of blocks should be clear from context. 
+% $M_{ij}$ retains its conventional meaning as the element at row $i$ and column $j$. 
+\newpage 
+
+\textbf{MLP Setup}:
+We have input labels pairs $(x,y)$ where $x\in \Re^{d_I}$ and $y\in \Re^{d_O}.$ We also have some loss function $\Loss:\Re^{d_O}\times \Re^{d_O}\to \Re^{\ge 0}.$ We will use similar symbols for source and cloned model,but use boldface for the cloned model.
+
+
+\begin{table}[h]
+  \centering
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|c|c|c|}
+    \hline
+    \textbf{Component} & \textbf{Source} & \textbf{Cloned} \\ 
+    \hline
+    in/out dims  & $d_0=d_I, d_L:=d_O$ & $\B{d}_0=d_I, \B{d}_L=d_O$ \\ 
+    hidden dims  & $d_1,\dots,d_{L-1} $ & $\B d_1, \dots, \B d_{L-1} $ \\ 
+    weights & $W@ l\in \Re^{d_ l\times d_{l-1}}$ & $\B{W}@ l\in \Re^{\B{d}_ l\times \B{d}_{l-1}}$ \\ 
+    biases  & $b @ l \in \Re^{d_l}$ & $\B{b}@l \in \Re^{\B d_l}$ \\ \hline
+    input layer & $a@ 0 = x$ & $\B a @ 0 = x$ \\ 
+    forward FC & $z@ l = W@ l a@ {l-1} + b@ l$ & $\B z @ l = \B{W}@ l \B{a}@ {l-1} + \B{b}@ l$ \\ 
+    forward Act. & $a^l = \phi(z@ l)$ & $\B a @ l  = \phi(\B z @ l )$ \\ 
+    output layer & $z@ L$ & $\B{z}@ L$ \\ 
+    \hline
+    error term & $\delta@l = \frac{\partial \Loss}{\partial z@l}$ & $\B{\delta}@l = \frac{\partial \Loss}{\partial \B{z}@l}$ \\ 
+    % Act. Jacobians & $D@l = \text{diag}(\phi'(z@l))$ & $\B D@l = \text{diag}(\phi'(\B z@l))$ \\ 
+    backprop. & $\delta@l = \phi'(z@l)\odot (W@{l+1}\T \delta@{l+1})$ & $\B{\delta}@l = \phi'(\B z@l)\odot( \B{W}@{l+1}\T \B{\delta}@{l+1})$ \\
+    weights grad. & $\nabla_{ W@l}\Loss = \delta@l \otimes a@{l-1}$ & $\nabla_{\B W@l}\Loss = \B{\delta}@l \otimes \B{a}@{l-1}$ \\
+    bias grad. & $\nabla_{ b@l}\Loss = \delta@l$ & $\nabla_{\B b@l}\Loss= \B{\delta}@l $ \\ 
+    \hline
+  \end{tabular}
+  \caption{MLP Setup, Forward, and Backward Pass}
+  \label{tab:setup}
+\end{table}
+
+% \section{Hyper cloning}
+% Dynamic scaling involves adjusting the network's width during training. We explore this by doubling the width of each hidden layer through \emph{hyper-cloning} of weights and biases. 
+We will always assume the following conditions hold for input and output in the cloned model:
+\begin{align*}
+    &\B W@1:=\R{W@1}{n\times 1},\B b@1:=\R{b@1}{ n} && \text{Input cloning} \\
+    &\B W@L:= \R{W@L}{1\times n},\B b@L:=b@L && \text{Output cloning}\\
+\end{align*}
+
+Now we formalize the conditions under which the scaled model maintains forward,backward, and the training dynamics of the original model. 
+% Given integer $n,$ assume that a matrix $W$ sizes are divisible by $n. $ Define $B_{ij}(W)$ as the block at the $i$th row and $j$th column. Furthermore, $R_i(W)$
+
+\begin{proposition}\label{prop:cloning_forward_backward} 
+    Suppose that the larger model hidden sizes are $n$ times the smaller model. Define following conditions:
+    \begin{align*}
+    % & \B b@l = \R{b@l}{ n}, && \text{Bias Symmetry (BS)}\\
+    &  \B b@l = \R{b@l}{ n},\; \Sigma_{j}^n\bl{\B W@l}{ij} = W@l,\, \forall i && \text{Forward Symmetry (FS)}\\
+    &  \Sigma_{i}^n\bl{\B W@l}{ij} = W@l,\, \forall j  && \text{Backward Symmetry (BS)}
+    \end{align*}
+    If FS holds, then forward passes are cloned, and if FS \& BS hold, gradients will also be cloned. 
+    \begin{align*}
+        &FS \implies \begin{cases}
+            \B a@l = \R{a@l}{n}\\
+            \B z@l=\R{z@l}{n}
+        \end{cases} 
+        &FS\wedge BS \implies \begin{cases}
+            \nabla_{\B b@l}\Loss =\R{\nabla_{b@l}\Loss}{n}\\
+            \nabla_{\B W@l}\Loss =\R{\nabla_{W@l}\Loss}{n\times n}
+        \end{cases}
+    \end{align*}
+    where the forward and backward hold for all $l$
+and on all inputs.
+\end{proposition}
+
+\paragraph{Proof idea.} To illustrate how the forward and backward symmetry lead to forward and backward cloning, we can see at the basic steps of computing forward and backward passes for a cloned model with $n=2.$  Recall the backprop formula $\delta@ l =\phi'(z@l)\odot  W@{l+1}\T \delta@{l+1} $
+Thus for one layer updates we have 
+\begin{align*}
+   &\text{forward} &&\begin{bmatrix}
+        W_{11} & W_{12} \\
+        W_{21} & W_{22} 
+    \end{bmatrix} \begin{bmatrix}
+        \phi(z) \\ \phi(z) 
+    \end{bmatrix} = \begin{bmatrix}
+        (W_{11}+W_{12}) \phi(z) \\
+        (W_{21}+W_{22})\phi(z). 
+    \end{bmatrix} \\
+   &\text{backward} &&\begin{bmatrix}
+       z \\ z
+   \end{bmatrix}\odot \begin{bmatrix}
+        W_{11}\T & W_{21}\T \\
+        W_{12}\T & W_{22}\T 
+    \end{bmatrix}\begin{bmatrix}
+        \delta \\ \delta 
+    \end{bmatrix} = \begin{bmatrix}
+       z \\ z
+   \end{bmatrix}\odot 
+    \begin{bmatrix}
+        (W_{11}\T + W_{21}\T )\delta \\
+        (W_{12}\T + W_{22}\T )\delta 
+    \end{bmatrix} 
+\end{align*}
+Where $\B W$ and $W$ are the weights of the cloned and source model respectively at a given layer. Suppose that hidden layer at that layer and the delta vectors are cloned. We can now observe that for the forward to be a cloned vector, the block-wise sum of each row must be equal to $W$, but for the backward to be cloned, we must have the column sums equal to $W.$ The next step is to use this as an inductive step to prove that all layers will be cloned. This is done from $l=1$ to $l=L$ for forward, and from $l=L$ to $l=1$ in the backward.  These two observations explain the main intuition behind the block-wise sum conditions in FS and BS, and why is it row-wise in FS, while column-wise in BS. 
+
+\begin{remark}
+    In the hyper-cloning structures proposed by~\citet{samragh2024scaling}, all configurations satisfy forward symmetry conditions. However, only noiseless configurations satisfy the backward symmetry conditions on weights:
+\begin{table}[h]
+\footnotesize
+\centering
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{|lcccc|} 
+\hline
+Cloning Type & Formulation & Row Sums & Column Sums & Properties \\ 
+symmetric & \( \B{W} = \begin{bmatrix} \frac{W}{2} & \frac{W}{2} \\ \frac{W}{2} & \frac{W}{2} \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & FS \checkmark,BS\checkmark \\ 
+diagonal & \( \B{W} = \begin{bmatrix} W & 0 \\ 0 & W \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & FS\checkmark,BS\checkmark \\ 
+noisy symmetric & \( \B{W} = \begin{bmatrix} \frac{W}{2} + \eta_1 & \frac{W}{2} - \eta_1 \\ \frac{W}{2} + \eta_2 & \frac{W}{2} - \eta_2 \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} \eta_1+\eta_2 \\ -\eta_1-\eta_2 \end{bmatrix} \) & FS\checkmark,BS\xmark \\ 
+noisy diagonal & \( \B{W} = \begin{bmatrix} W + \eta_1 & -\eta_1 \\ \eta_2 & W - \eta_2 \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} \eta_1+\eta_2 \\ -\eta_1-\eta_2 \end{bmatrix} \) & FS\checkmark,BS\xmark \\ \hline
+\end{tabular}
+\caption{\small Table of cloning types and wether they hold Forward Symmetry (FS), which is true if row sums are equal to $(W,W)$ or backward symmetry (BS), which holds if column sums are equal to $(W, W)$.}
+\label{tab:cloning_types}
+\end{table}
+\end{remark}
+
+It turns that conditions that suffice for forward and backward cloning, also suffice for the entire training dynamics to be cloned. In other words, the hyper cloned model training is just a copy of a smaller model training dynamics, with a small twist that its learning rate for weights is higher. The following proposition formalises this notion.  
+
+\clearpage
+\begin{proposition}\label{prop:cloning_training}
+    If the conditions for forward and gradient cloning hold, let us assume both models are trained with similar bias rate $\B \eta_b = \eta_b$ but the smaller model has $n$ times higher rate for weights. $\eta_W = n \B \eta_W.$
+Then, activations of the cloned model will remain a cloned version of the smaller model
+\begin{align*}
+    &\B z@l(t) = \R{z@l(t)}{n}, && \B a@l(t) = \R{a@l(t)}{n},
+\end{align*}
+Furthermore, its weights and biases obey 
+\begin{align*}
+    &\B b@l(t) = \R{b@l(t)}{n}
+    &&\B W@l(t) - \B W@l(0)= \frac1n\R{W@l(t)-W@l(0)}{n\times n}.
+\end{align*}
+\end{proposition}
+
+\paragraph{Proof idea.} We can again find insights into the gradient dynamics by considering the example of $n=2$ cloning for a single layer. Let us assume that FS and BS hold, and thus, the bias and weight gradients will be cloned. Let $\Delta \B W$ and $\Delta W$ denote the gradients for a given layer in cloned and source model. 
+\begin{align*}
+    &\B W' := \B W + \begin{bmatrix}
+        \Delta W & \Delta W \\
+        \Delta W & \Delta W, 
+    \end{bmatrix}, 
+    \B b':= \B b + \begin{bmatrix}
+        \Delta b \\ \Delta b 
+    \end{bmatrix}
+\end{align*}
+Now if we look at the effect of applying these changes to preactivations we get
+\begin{align*}   
+&\B W'\B z + \B b' - (\B W \B z + \B b)  =  \begin{bmatrix}
+        2\Delta W z \\ 2\Delta W z
+    \end{bmatrix} + 
+    \begin{bmatrix}
+        \Delta b\\ \Delta b
+    \end{bmatrix}
+\end{align*}
+This simple observation gives an important intuition the changes are duplicated, across the matrix, the effects of changes in weights is ``felt'' stronger, but changes in bias are felt with the same rate. Thus, if we wanted to clone the training dynamics of this larger model, we have to artificially modify the learning rate for the smaller model, but only do so for weights. 
+
+The main implication of Proposition~\ref{prop:cloning_training} is that the noiseless configurations, such as diagonal and symmetric configurations in Table~\ref{tab:cloning_types}, lead to ``boring'' dynamics where the cloning is not really utilizing the full model capacity. The second important implication is that, if we are to utilize the capacity of the model, we ought to have a symmetry breaking part, such as a dropout module or having noise in our cloning process. 
+
+\begin{remark}
+    Thus, if conditions for gradient cloning hold, the cloned model dynamics can be perfectly captured by a model $1/n$ smaller, suggesting an under use of capacity. Furthermore, the weight matrices of this corresponding model are trained at $n$ times higher learning rate, suggesting that highly correlated weights may contribute to an effectively manipulated higher learning rate, which may also contribute to unstable training dynamics.  
+\end{remark}
+
+\begin{remark}\label{cloning_symmetry}
+    This proposition proves the observation by~\citet{samragh2024scaling} and \cite{wang2023lemon} that highly structured weights may contribute to under-use of the capacity of the larger model. The high level idea for this equivalency is that under the weights and bias cloning conditions, there is an symmetry between two cloned units that makes them indistinguishable from one another.  Thus, any operations, such as Layer Normalization (LN), or Batch Normalization (BN) that will respect this symmetry, is unlikely to break this pattern. However, a layer like dropout, which will impose asymmetrical noise at training time, is likely to break the symmetries and make the larger model deviate from the small model dynamics. The other alternative is the inherent noise in numerical computations which may break the symmetries. 
+\end{remark} 
+
+
+
+\subsection{Follow ups:}
+We saw from previous section that The noiseless cases without dropout likely lead to ``boring'' or uninteresting hyper cloned models without much capacity. Thus, it is important to study the cases that the symmetry breaks, and to understand the gradients and training dynamics. 
+
+\begin{itemize}
+    \item The hyper cloned model may diverge or have forgetting due to the artificially higher learning rate for weight matrices, which is predicted for no noise case. What would be a remedy? Perhaps using the rate of change in activations could be taken as constant, similar to muP. If we enforce learning rate per each layer to contribute to a constant change in activations, the learning rate of cloned model will be similar to that of the smaller model. 
+    \item When adding noise to layers, how do the weight matrices and Jacobian contribute to the changed gradients? How does singular vector alignment contribute to that?
+    \item Studying the effect of normalization layers (LN, BN) no these cloning dynamics. 
+    \item methods to combine multiple models with varying widths (e.g., mixing widths $d_1$ and $d_2$) may offer avenues for enhancing scalability and flexibility.
+\end{itemize}
+
+\subsection{Proofs}
+
+\begin{proof}[Proof of proposition~\ref{prop:cloning_forward_backward}]
+    The proof of forward condition leading to forward cloning can be done via induction. First, for the input layer $z@1,$ we can ensure that it is cloned by cloning weights and biases, and prove the cloning of forward pass by induction:
+    \begin{align*}
+        \B a@{l-1} &= \R{a@{l-1}}{n} && \text{Induction hypothesis (IH)} \\
+      \implies  \B z@l &= \oplus_{i=1}^n \bl{\B W@l \B a@{l-1} + \B b@l}{i} \\
+      &= \oplus_{i=1}^n \bl{\B W@l \B a@{l-1} + \B b@l}{i} \\
+      &= \oplus_{i=1}^n \left(\Sigma_{j} \bl{\B W @l}{ij}\bl{\B a@{l-1}}{j} + \bl{\B b@l}{i}\right)&& \text{block-wise product}\\
+      &= \oplus_{i=1}^n \left(\Sigma_j \bl{\B W @l}{ij}) a@{l-1} + b@l\right) && \text{using IH} \\
+      &= \oplus_{i=1}^n \left(W@l a@{l-1} + b@l \right) &&\text{using BS} \\
+      &= \R{z@l}{n} \\
+  \implies \B a@l&:=\phi(\B z@l) = \R{a@l}{n}   
+    \end{align*}
+    where the last step is proving induction hypothesis for next layer. 
+
+    For gradients, we can prove inductively that the delta vectors are also cloned $\B \delta@l = \R{\delta@l}{n}.$ The induction base is for $l=L,$ which is ensured by proper cloning of last layer weights and biases. 
+    \begin{align*}
+        \B\delta@{l+1} &= \R{\delta@l}{n}  && \text{\small Induction Hypothesis (IH)}\\
+        \B\delta@l &=\oplus_{i=1}^n \bl{\B\delta@l}{i}\\
+        &= \oplus_{i=1}^n \bl{\phi'(\B z@l)}{i} \odot \bl{W@{l+1}\T \B \delta@{l+1}}{i} \\
+        &= \oplus_{i=1}^n \bl{\phi'(\R{z@l}{n})}{i} \odot \bl{W@{l+1}\T \B \delta@{l+1}}{i} && \text{\small FS $\implies$ forward cloning} \\
+        &= \oplus_{i=1}^n \phi'(z@l) \odot \bl{\B W@{l+1}\T \R{\delta@{l+1}}{n}}{i}&& \text{\small Using IH } \\
+        &=\oplus_{i=1}^n \phi'(z@l) \odot \big(\sum_{j} \bl{\B W@l\T}{ij}\delta@{l+1} \big)&&\text{block-wise product}\\
+        &=\oplus_{i=1}^n \phi'(z@l) \odot\big( (\sum_{i} \bl{\B W}{ij})\T \delta@{l+1}\big)\\
+        &= \oplus_{i=1}^n \phi'(z@l) W@l\T \delta@{l+1}&&\text{using BS} \\
+        &= \oplus_{i=1}^n \delta@l\\
+        &=\R{\delta@l}{n} 
+    \end{align*}
+    And thus we have proven that for all layers $\B\delta@l = \R{\delta@l}{n} . $ Recall the gradients formula:
+    \begin{align*}
+        \nabla_{b@l}\Loss = \delta@l, \nabla_{W@l} = \delta@l\otimes a@{l-1}.
+    \end{align*}
+    Thus we have 
+    \begin{align*}
+        \nabla_{\B b@l}\Loss &=  \B \delta@l \\
+        &= \R{\delta@l}{n}\\
+        &= \R{\nabla_{b@l}\Loss}{n}\\
+       \nabla_{\B W@l}\Loss &= \R{a@{l-1}}{n}\otimes  \R{\delta@l}{n} \\
+       &= \R{a@{l-1}\otimes \delta@ l}{n\times n} \\
+       &= \R{\nabla_{W@l}\Loss}{n\times n}
+    \end{align*}
+    which concludes the proof. 
+\end{proof}
+
+\begin{proof}[Proof of proposition~\ref{prop:cloning_training}]
+    We can prove by induction over $t$ that conditions R, C, B in Proposition~\ref{prop:cloning_forward_backward} hold at time $t.$ Induction basis is true by assumption. 
+    It is clear that the bias cloning will now move to step $t+1$. 
+    Bias condition:
+    \begin{align*}
+        \B b@l(t+1)&:= \B b @l(t) +\eta \nabla_{\B b@l}\Loss\\
+        &= \R{b@l(t)}{n} + \eta \R{\nabla_{b@l}\Loss}{n}\\
+        &=\R{b@l(t) +\eta \nabla_{b@l}\Loss}{n}\\
+        &= \R{b@l(t+1)}{n}.
+    \end{align*}
+    Row-wise condition:
+    \begin{align*}
+        \sum_{j}\bl{\B W@l(t+1)}{ij} &= \sum_{j}^n\bl{\B W@l(t)}{ij} + \sum_{j}^n\bl{\eta \nabla_{\B W@l}\Loss}{ij}\\
+        &= W@l(t) + n \eta \nabla_{W@l}\Loss \\
+        &= W@l(t+1).
+    \end{align*}
+    Column-wise condition:
+    \begin{align*}
+        \sum_{i}\bl{\B W@l(t+1)}{ij} &= \sum_{i}^n\bl{\B W@l(t)}{ij} + \sum_{i}^n\bl{\eta \nabla_{\B W@l}\Loss}{ij}\\
+        &= W@l(t) + n \eta \nabla_{W@l}\Loss \\
+        &= W@l(t+1).
+    \end{align*}
+    Now that we know that B,R,C hold at any step $t,$ we can apply Proposition~\ref{prop:cloning_forward_backward} to claim that at each step $t$ we have the following for each gradient update to the models:
+    \begin{align*}
+        &\eta \nabla_{\B b@l}\Loss = \R{\eta \nabla_{b@l}\Loss}{n} &&\eta \nabla_{\B W@l}\Loss = \frac1n\R{n\eta \nabla_{W@l}\Loss}{n\times n}
+    \end{align*}
+    Now, summing both sides from step $1$ up to $t$ for weights we have 
+    \begin{align*}
+        &\B W@l(t)-\B W@l(0) =  \frac1n \R{W@l(t)- W@l(0)}{n\times n}\\
+    \end{align*}
+    and for biases 
+    \begin{align*}
+        &\B b@l(t)-\B b@l(0) =  \R{b@l(t)- b@l(0)}{n}\\
+       \implies &\B b@l(t) =  \R{b@l(t)}{n}
+    \end{align*}
+    which concludes the proof.
+\end{proof}
+
+\section{Noisy cloning (in progress, don't read)}
+So far, we focused on noiseless cloning, or situations where both forward and backward symmetry conditions hold. In this section we aim to understand other configurations, in particular when forward pass is cloned but backward pass is not (FS but not BS). We can study these by modeling them as an additional noise to a system with full symmetry. In other words, we can model a noisy setup as a noise-less configuration with some additive noise to its backwards:
+
+% \begin{align*}
+% \begin{cases}
+%     \B b@l = \R{b@l}{n}\\
+%     \sum_{j}^n \bl{\B W@l}{ij} = W@l, \\
+%     \sum_{i}^n \bl{\B W@l}{ij} = W@l + \epsilon_j,
+% \end{cases}
+% \implies 
+% \delta@l = \B D@l\R{W}{n\times n}\delta^{\ell+1} + \B D@l \epsilon \delta@{l+1}.
+% % \begin{cases}
+% % \nabla_{\B b@l} \Loss = \R{\nabla_{b@l}\Loss}{n} + \B \epsilon  \B \delta@{l}  \\
+% % \nabla_{\B W@l} \Loss = \R{\nabla_{W@l}\Loss}{n\times n} + \B a@{l-1}\otimes \B \epsilon \B \delta@{l} 
+% % \end{cases}
+% \end{align*}
+% where $\epsilon_i$'s are noise matrices of same size as source model weights, and $\B \epsilon = (\epsilon_1, \dots, \epsilon_n)$ is the joint noise matrix that is a concatenation. Thus, we can now observe that if $\epsilon$ is small enough. 
+
+\begin{align*}
+    \tilde\delta@l:=D@l (\tilde W@{l+1})\T D@{l+1} \dots (\tilde W@L)\T \delta@L, \\
+    \tilde W@l:= W@l+\epsilon_l,\quad D@l:=\text{diag}(\phi'(z@l)).
+\end{align*}
+where $\epsilon_l$'s are of same size as $W@ l$'s, and have zero mean and some variance.  The main idea here is that if noises are small enough, we can approximate the discrepancy of terms above with the noiseless term by only considering the first order noise terms:
+
+\begin{align*}
+    \delta@l&:=D@l W@{l+1}\T D@{l+1} \dots W@L\T \delta@L\\
+    \tilde \delta@l&\approx \delta@l +  \sum_{k=l+1}^{L} D@l (W@{l+1})\T D@{l+1} \dots D@{k-1} \epsilon_k\T D@k \dots W@L\T \delta@L \\
+    &= \delta@l + \sum_{k=l+1}^L \frac{\partial a@{k-1}}{\partial z@l} \epsilon_k\T \delta@k 
+\end{align*}
+where in the last line, we just recognize from the chain rule that the product of the matrices up to the error matrix is the Jacobian between these two layers.  
+It is easy to see that if noise terms have zero mean, we will have $\E \tilde\delta@l = \delta @l.$ For variance, if elements of $\epsilon_k$'s are distributed normally as $N(0,\sigma_k^2)$ we have 
+\begin{align*}
+\E \|\tilde\delta@l-\delta@l\|^2 &\approx  \sum_{k=l+1}^L \E \|J_{kl}\, \epsilon_k\T \delta@k \|^2 && J_{kl}:=\frac{\partial a@{k-1}}{\partial z@l}. \\
+&= \sum_{k=l+1}^L \E \|J_{kl}\, g@l \|^2, && g@l_{ij}\sim N(0,\sigma_k^2 \|\delta@k\|^2 )\\
+% &= \sum_{k=l+1}^L \frac{\sigma^2}{k-1} \text{Tr}(J_{kl}\T J_{kl})  \|\delta@k\|^2 \\
+&=  \sum_{k=l+1}^L \sigma^2_k \|J_{kl}\|_F^2 \|\delta@k\|^2
+\end{align*}
+where in the last line, $\overline{\lambda}$ implies the mean eigenvalue of the matrix. Now, recall that 
+
+\textbf{Proposition:}
+In the MLP setup provided, suppose we add small Gaussian noise \(\boldsymbol{\epsilon}^{(l)}\) with zero mean and covariance \(\sigma_l^2 I\) to the weights of the fully connected layers, so that the noisy weights are \(\tilde{W}^{(l)} = W^{(l)} + \boldsymbol{\epsilon}^{(l)}\). Then, to first order, the expected squared norm of the discrepancy between the error vectors \(\tilde{\delta}^{(l)}\) and \(\delta^{(l)}\) at layer \(l\) is approximated by:
+
+\[
+\mathbb{E}\left[ \left\| \tilde{\delta}^{(l)} - \delta^{(l)} \right\|^2 \right] \approx \sum_{k = l+1}^{L} \sigma_k^2 \|\delta^{(k)} \|^2 \left\| \left( \prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)}\right\|^2 
+\]
+
+where:
+
+- \(D^{(i)} = \operatorname{diag}\left( \phi'\left( z^{(i)} \right) \right)\) is the diagonal matrix of activation derivatives at layer \(i\),
+- \(\delta^{(k)}\) is the error vector at layer \(k\),
+- \(L\) is the total number of layers,
+- The product \(\prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top}\) is defined as the identity matrix when \(k = l+1\).
+
+\textbf{Proof:}
+
+Starting with the backpropagation equations:
+
+- \textbf{Source Model:}
+  \[
+  \delta^{(l)} = D^{(l)} W^{(l+1)\top} \delta^{(l+1)}
+  \]
+- \textbf{Noisy Model:}
+  \[
+  \tilde{\delta}^{(l)} = D^{(l)} \tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)}
+  \]
+  where \(\tilde{W}^{(l+1)} = W^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)}\).
+
+The discrepancy between the error vectors at layer \(l\) is:
+
+\[
+\Delta \delta^{(l)} = \tilde{\delta}^{(l)} - \delta^{(l)} = D^{(l)} \left( \tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} \right)
+\]
+
+Expanding the expression inside the parentheses:
+
+\[
+\begin{aligned}
+\tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} &= \left( W^{(l+1)\top} + \boldsymbol{\epsilon}^{(l+1)\top} \right) \left( \delta^{(l+1)} + \Delta \delta^{(l+1)} \right) - W^{(l+1)\top} \delta^{(l+1)} \\
+&= W^{(l+1)\top} \Delta \delta^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)\top} \delta^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)\top} \Delta \delta^{(l+1)}
+\end{aligned}
+\]
+
+Since \(\boldsymbol{\epsilon}^{(l+1)}\) and \(\Delta \delta^{(l+1)}\) are both small, the term \(\boldsymbol{\epsilon}^{(l+1)\top} \Delta \delta^{(l+1)}\) is of second order and can be neglected. Thus:
+
+\[
+\Delta \delta^{(l)} \approx D^{(l)} \left( W^{(l+1)\top} \Delta \delta^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)\top} \delta^{(l+1)} \right)
+\]
+
+We can apply this approximation recursively for \(\Delta \delta^{(l+1)}\), \(\Delta \delta^{(l+2)}\), and so on, yielding:
+
+\[
+\Delta \delta^{(l)} \approx D^{(l)} \boldsymbol{\epsilon}^{(l+1)\top} \delta^{(l+1)} + D^{(l)} W^{(l+1)\top} D^{(l+1)} \boldsymbol{\epsilon}^{(l+2)\top} \delta^{(l+2)} + \cdots + D^{(l)} W^{(l+1)\top} \cdots W^{(L-1)\top} D^{(L-1)} \boldsymbol{\epsilon}^{(L)\top} \delta^{(L)}
+\]
+
+This can be written compactly as:
+
+\[
+\Delta \delta^{(l)} \approx \sum_{k = l+1}^{L} \left( \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right)
+\]
+
+Since the noise matrices \(\boldsymbol{\epsilon}^{(k)}\) are independent and have covariance \(\sigma_k^2 I\), we can compute the expected squared norm:
+
+\[
+\mathbb{E}\left[ \left\| \Delta \delta^{(l)} \right\|^2 \right] \approx \sum_{k = l+1}^{L} \mathbb{E}\left[ \left\| \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right\|^2 \right]
+\]
+
+Note that the cross terms between different \(k\) vanish due to the independence of \(\boldsymbol{\epsilon}^{(k)}\). For each term, we have:
+
+\[
+\begin{aligned}
+\mathbb{E}\left[ \left\| \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right\|^2 \right] &= \left\| \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \right\|^2_F \mathbb{E}\left[ \left\| \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right\|^2 \right] \\
+&= \left\| \left( \prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \right\|^2 \|\delta^{(k)} \|^2 \sigma_k^2
+\end{aligned}
+\]
+
+Here, \(\left\| \cdot \right\|_F\) denotes the Frobenius norm, but since we're dealing with vectors, it simplifies to the standard Euclidean norm.
+
+Combining these results, we obtain:
+
+\[
+\mathbb{E}\left[ \left\| \Delta \delta^{(l)} \right\|^2 \right] \approx \sum_{k = l+1}^{L} \sigma_k^2 \left\| \left( \prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)}\right\|^2\|\delta^{(k)} \|^2
+\]
+
+This completes the proof.
+
+\textbf{Remarks:}
+
+- When \(k = l+1\), the product over \(i\) is defined as the identity matrix.
+- This expression accounts for the cumulative effect of the noise introduced at each layer from \(l+1\) to \(L\) on the error vector at layer \(l\).
+- The approximation assumes that higher-order terms involving products of noise matrices and discrepancies are negligible.
+
+\textbf{Conclusion:}
+
+The expected squared discrepancy between the error vectors in the noisy and original models at layer \(l\) is the sum of the variances contributed by the noise at each subsequent layer, appropriately scaled by the backpropagated weights and activation derivatives.
+
+
+% \section{MLP hypercloning with non-symmetric backwards}
+% \begin{proposition}
+% \label{prop:error_discrepancy_mlp}
+% \textbf{Discrepancy of Error Vectors in a Noisy MLP}
+
+% Consider the MLP setup as described in Table~\ref{tab:setup}. Suppose we introduce small Gaussian noise matrices \( W_l \) to the weights of the fully connected layers, such that the noisy weights are given by:
+% \[
+% \tilde{W}^{(l)} = W^{(l)} + W_l \quad \text{for each layer } l \in \{1, 2, \dots, L\},
+% \]
+% where each noise matrix \( W_l \) satisfies \( \mathbb{E}[W_l] = 0 \) and \( \mathbb{E}[W_l W_l^\top] = \sigma_l^2 I \), with \( \sigma_l^2 \) being the variance of the noise at layer \( l \).
+
+% Let \( \delta^{(l)} \) and \( \tilde{\delta}^{(l)} \) denote the error vectors at layer \( l \) for the source and cloned (noisy) models, respectively.
+
+% Then, the expected squared norm of the discrepancy between the error vectors at layer \( l \) is approximated by:
+% \[
+% \mathbb{E}\left[ \| \tilde{\delta}^{(l)} - \delta^{(l)} \|^2 \right] \approx \sigma_{l+1}^2 \left\| \phi'\left(z^{(l)}\right) \odot \delta^{(l+1)} \right\|^2,
+% \]
+% where \( \phi'\left(z^{(l)}\right) \) denotes the element-wise derivative of the activation function at layer \( l \), and \( \odot \) represents element-wise multiplication.
+
+% \end{proposition}
+
+% \begin{proof}
+% Starting from the backpropagation equations in the MLP setup:
+
+% \begin{align*}
+% \text{Source Model:} \quad \delta^{(l)} &= \phi'\left(z^{(l)}\right) \odot \left( W^{(l+1)\top} \delta^{(l+1)} \right), \\
+% \text{Noisy Model:} \quad \tilde{\delta}^{(l)} &= \phi'\left(\tilde{z}^{(l)}\right) \odot \left( \tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)} \right).
+% \end{align*}
+
+% Assuming that the noise \( W_l \) is small, we can approximate:
+
+% \begin{enumerate}
+%     \item The activation derivatives remain approximately unchanged:
+%     \[
+%     \phi'\left(\tilde{z}^{(l)}\right) \approx \phi'\left(z^{(l)}\right).
+%     \]
+    
+%     \item The discrepancy in the error vectors of the subsequent layer is negligible to first order:
+%     \[
+%     \tilde{\delta}^{(l+1)} \approx \delta^{(l+1)}.
+%     \]
+% \end{enumerate}
+
+% Under these approximations, the discrepancy between the error vectors at layer \( l \) is:
+
+% \begin{align*}
+% \tilde{\delta}^{(l)} - \delta^{(l)} &\approx \phi'\left(z^{(l)}\right) \odot \left( \tilde{W}^{(l+1)\top} \delta^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} \right) \\
+% &= \phi'\left(z^{(l)}\right) \odot \left( \left( W^{(l+1)} + W_{l+1} \right)^\top \delta^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} \right) \\
+% &= \phi'\left(z^{(l)}\right) \odot \left( W_{l+1}^\top \delta^{(l+1)} \right).
+% \end{align*}
+
+% To compute the expected squared norm of the discrepancy:
+
+% \begin{align*}
+% \mathbb{E}\left[ \| \tilde{\delta}^{(l)} - \delta^{(l)} \|^2 \right] &= \mathbb{E}\left[ \left\| \phi'\left(z^{(l)}\right) \odot \left( W_{l+1}^\top \delta^{(l+1)} \right) \right\|^2 \right] \\
+% &= \mathbb{E}\left[ \sum_{i=1}^{d_l} \left( \phi'\left(z^{(l)}_i\right) \cdot \left( W_{l+1}^\top \delta^{(l+1)} \right)_i \right)^2 \right] \\
+% &= \sum_{i=1}^{d_l} \left( \phi'\left(z^{(l)}_i\right) \right)^2 \mathbb{E}\left[ \left( W_{l+1}^\top \delta^{(l+1)} \right)_i^2 \right].
+% \end{align*}
+
+% Since \( W_{l+1} \) has independent Gaussian entries with zero mean and variance \( \sigma_{l+1}^2 \), each term \( \mathbb{E}\left[ \left( W_{l+1}^\top \delta^{(l+1)} \right)_i^2 \right] \) simplifies to:
+% \[
+% \mathbb{E}\left[ \left( W_{l+1}^\top \delta^{(l+1)} \right)_i^2 \right] = \sigma_{l+1}^2 \| \delta^{(l+1)} \|^2.
+% \]
+
+% Therefore, the expected squared norm of the discrepancy becomes:
+% \[
+% \mathbb{E}\left[ \| \tilde{\delta}^{(l)} - \delta^{(l)} \|^2 \right] = \sigma_{l+1}^2 \sum_{i=1}^{d_l} \left( \phi'\left(z^{(l)}_i\right) \right)^2 \| \delta^{(l+1)} \|^2 = \sigma_{l+1}^2 \left\| \phi'\left(z^{(l)}\right) \odot \delta^{(l+1)} \right\|^2.
+% \]
+
+% This completes the proof.
+% \end{proof}
+
+
+% % \section{MLP with LayerNorm}
+% % \paragraph{For the source model:}
+% % \begin{itemize}
+% %     \item Input Layer: $a@0 = x$
+% %     \item Linear Transformation: $z@l = W@l a@{l-1} + b@l$
+% %     \item Layer Normalization: 
+% %     \[
+% %     \hat{z}@l = \text{LayerNorm}(z@l) = \gamma@l \odot \frac{z@l - \mu@l}{\sigma@l} + \beta@l
+% %     \]
+% %     where:
+% %     \[
+% %     \mu@l = \frac{1}{d_l} \sum_{i=1}^{d_l} z@l_i, \quad \sigma@l = \sqrt{\frac{1}{d_l} \sum_{i=1}^{d_l} (z@l_i - \mu@l)^2 + \epsilon}
+% %     \]
+% %     $\gamma@l, \beta@l \in \mathbb{R}^{d_l}$ are learnable parameters.
+% %     \item Activation Function: $a@l = \phi(\hat{z}@l)$
+% % \end{itemize}
+
+% % \paragraph{For the cloned model:}
+% % \begin{itemize}
+% %     \item Input Layer: $\B{a}@0 = x$
+% %     \item Linear Transformation: $\B{z}@l = \B{W}@l \B{a}@{l-1} + \B{b}@l$
+% %     \item Layer Normalization: 
+% %     \[
+% %     \B{\hat{z}}@l = \text{LayerNorm}(\B{z}@l) = \B{\gamma}@l \odot \frac{\B{z}@l - \B{\mu}@l}{\B{\sigma}@l} + \B{\beta}@l
+% %     \]
+% %     \item Activation Function: $\B{a}@l = \phi(\B{\hat{z}}@l)$
+% % \end{itemize}
+
+% % \subsection{Cloning Conditions}
+% % To maintain forward and backward cloning with LayerNorm, we extend the cloning conditions to include the LayerNorm parameters:
+% % \begin{itemize}
+% %     \item Bias Cloning (B): $\B{b}@l = \mathcal{R}_{n}(b@l)$
+% %     \item Row-wise Condition (R): $\sum_{j} \mathcal{B}_{ij}(\B{W}@l) = W@l, \forall i$
+% %     \item Column-wise Condition (C): $\sum_{i} \mathcal{B}_{ij}(\B{W}@l) = W@l, \forall j$
+% %     \item LayerNorm Parameter Cloning (LN): $\B{\gamma}@l = \mathcal{R}_{n}(\gamma@l), \B{\beta}@l = \mathcal{R}_{n}(\beta@l)$
+% % \end{itemize}
+
+% % \subsection{Forward Cloning with LayerNorm}
+% % Under these cloning conditions, the forward pass cloning holds:
+% % \begin{itemize}
+% %     \item Activations and Pre-activations: $\B{a}@l = \mathcal{R}_{n}(a@l), \B{z}@l = \mathcal{R}_{n}(z@l)$
+% %     \item LayerNorm Outputs: $\B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)$
+% % \end{itemize}
+
+% % \subsection{Proof of Forward Cloning}
+% % \paragraph{Base Case (Input Layer):} $\B{a}@0 = a@0 = x$
+
+% % \paragraph{Inductive Step:} Assuming $\B{a}@{l-1} = \mathcal{R}_{n}(a@{l-1})$, we show $\B{a}@l = \mathcal{R}_{n}(a@l)$.
+% % \begin{itemize}
+% %     \item Linear Transformation: $\B{z}@l = \B{W}@l \B{a}@{l-1} + \B{b}@l$. Using conditions B and R: $\B{z}@l = \mathcal{R}_{n}(z@l)$
+% %     \item Layer Normalization: Since $\B{z}@l = \mathcal{R}_{n}(z@l)$, the mean and variance are $\B{\mu}@l = \mu@l, \B{\sigma}@l = \sigma@l$. Therefore, $\B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)$
+% %     \item Activation Function: $\B{a}@l = \phi(\B{\hat{z}}@l) = \mathcal{R}_{n}(a@l)$
+% % \end{itemize}
+
+% % \subsection{Backward Cloning with LayerNorm}
+% % We analyze whether backward cloning holds by examining the gradients through LayerNorm.
+
+% % \paragraph{Gradient with Respect to $\hat{z}@l$:} For both models:
+% % \[
+% % \delta_{\hat{z}@l} = \phi'(\hat{z}@l) \odot \delta@l
+% % \]
+% % For the cloned model:
+% % \[
+% % \B{\delta}_{\hat{z}@l} = \phi'(\B{\hat{z}}@l) \odot \B{\delta}@l
+% % \]
+% % Since $\B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)$ and $\delta@l = \mathcal{R}_{n}(\delta@l)$, we have:
+% % \[
+% % \B{\delta}_{\hat{z}}@l = \mathcal{R}_{n}(\delta_{\hat{z}@l})
+% % \]
+
+% % \paragraph{Gradient Through LayerNorm:} The gradient with respect to $z@l$ is:
+% % \[
+% % \delta@l = \frac{\gamma@l}{\sigma@l} \odot \left( \delta_{\hat{z}}@l - \frac{1}{d_l} \sum_{i=1}^{d_l} \delta_{\hat{z}_i}@l - \frac{z@l - \mu@l}{(\sigma@l)^2} \odot \frac{1}{d_l} \sum_{i=1}^{d_l} \delta_{\hat{z}_i}@l (z@l_i - \mu@l) \right)
+% % \]
+% % Similarly for the cloned model:
+% % \[
+% % \B{\delta}@l = \frac{\B{\gamma}@l}{\B{\sigma}@l} \odot \left( \B{\delta}_{\hat{z}}@l - \frac{1}{\B{d}_l} \sum_{i=1}^{\B{d}_l} \B{\delta}_{\hat{z}}@l_i - \frac{\B{z}@l - \B{\mu}@l}{\B{\sigma}@l^2} \odot \frac{1}{\B{d}_l} \sum_{i=1}^{\B{d}_l} \B{\delta}_{\hat{z}}@l_i (\B{z}@l_i - \B{\mu}@l) \right)
+% % \]
+% % Under the cloning conditions, the sums over features scale appropriately, leading to:
+% % \[
+% % \B{\delta}@l = \mathcal{R}_{n}(\delta@l)
+% % \]
+
+% % \paragraph{Gradients of LayerNorm Parameters}
+% % \[
+% % \nabla_{\gamma@l} \Loss = \delta_{\hat{z}}@l \odot \frac{z@l - \mu@l}{\sigma@l}, \quad \nabla_{\beta@l} \Loss = \delta_{\hat{z}}@l
+% % \]
+% % For the cloned model:
+% % \[
+% % \nabla_{\B{\gamma}@l} \Loss = \mathcal{R}_{n}(\nabla_{\gamma@l} \Loss), \quad \nabla_{\B{\beta}@l} \Loss = \mathcal{R}_{n}(\nabla_{\beta@l} \Loss)
+% % \]
+
+% % \paragraph{Propositions with LayerNorm}
+% % \begin{itemize}
+% %     \item \textbf{Proposition 1 (with LayerNorm):} Under cloning conditions B, R, C, and LN, both forward and backward cloning hold:
+% %     \[
+% %     \B{a}@l = \mathcal{R}_{n}(a@l), \B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)
+% %     \]
+% %     \[
+% %     \B{\delta}@l = \mathcal{R}_{n}(\delta@l), \nabla_{\B{W}@l} \Loss = \mathcal{R}_{n \times n}(\nabla_{W@l} \Loss)
+% %     \]
+% %     \item \textbf{Proposition 2 (Training Dynamics with LayerNorm):} If both models are trained with learning rate $\eta$ (with the smaller model's weights updated at $n\eta$), the training dynamics of the cloned model follow the smaller model:
+% %     \[
+% %     \B{W}@l(t) - \B{W}@l(0) = \frac{1}{n} \mathcal{R}_{n \times n}(W@l(t) - W@l(0))
+% %     \]
+% %     \[
+% %     \B{b}@l(t) = \mathcal{R}_{n}(b@l(t)), \quad \B{\gamma}@l(t) = \mathcal{R}_{n}(\gamma@l(t)), \quad \B{\beta}@l(t) = \mathcal{R}_{n}(\beta@l(t))
+% %     \]
+% % \end{itemize}
+
+\bibliographystyle{unsrtnat}
+\bibliography{refs}
+
+\end{document}
