@@ -1,0 +1,39 @@
+{
+    "latex-workshop.latex.rootFile": "./main.tex",
+    "latex-workshop.latex.tools": [
+      {
+        "name": "latexmk",
+        "command": "latexmk",
+        "args": [
+          "-synctex=1",
+          "-interaction=nonstopmode",
+          "-file-line-error",
+          "-pdf",
+          "-outdir=out",
+          "-aux-directory=out", 
+          "%DOC%"
+        ]
+      }
+    ],
+    "latex-workshop.latex.recipes": [
+      {
+        "name": "latexmk (with macros)",
+        "tools": [
+          "latexmk"
+        ]
+      }
+    ],
+    "latex-workshop.latex.autoClean.run": "onBuilt",
+    "latex-workshop.latex.autoBuild.run": "onSave",
+    "latex-workshop.latex.recipe.default": "latexmk (with macros)",
+    "latex-workshop.latex.clean.fileTypes": [
+      "*.aux", "*.bbl", "*.blg", "*.idx", "*.ind",
+      "*.lof", "*.lot", "*.out", "*.toc", "*.acn",
+      "*.acr", "*.alg", "*.glg", "*.glo", "*.gls", 
+      "*.fls", "*.log", "*.fdb_latexmk", "*.snm", 
+      "*.synctex(busy)", "*.gz", "*.nav",
+      "*.vrb", "*.bcf", "*.run.xml"
+  ],
+  "latex-workshop.latex.clean.subfolder.enabled": true,
+  "latex-workshop.latex.outDir": "out"
+  }
