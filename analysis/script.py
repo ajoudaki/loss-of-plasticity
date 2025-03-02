@@ -23,7 +23,7 @@ def process_file(file_path, ext):
     For Jupyter notebooks (.ipynb), it extracts and prints code & markdown cells.
     For other files, it outputs their content directly.
     """
-    print(f"--- Processing: {os.path.basename(file_path)} ---")
+    print(f"--- Processing: {file_path} ---")
     
     if ext == ".ipynb":
         cells = extract_notebook_content(file_path)
@@ -42,18 +42,16 @@ def process_file(file_path, ext):
 
 def process_directory(directory, allowed_extensions):
     """
-    Processes all files in the specified directory that match the allowed extensions.
+    Recursively processes all files in the specified directory (and subdirectories)
+    that match the allowed extensions.
     """
-    for filename in os.listdir(directory):
-        file_path = os.path.join(directory, filename)
-        # Skip directories
-        if os.path.isdir(file_path):
-            continue
-        
-        _, ext = os.path.splitext(filename)
-        ext = ext.lower()
-        if ext in allowed_extensions:
-            process_file(file_path, ext)
+    for root, _, files in os.walk(directory):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            _, ext = os.path.splitext(filename)
+            ext = ext.lower()
+            if ext in allowed_extensions:
+                process_file(file_path, ext)
 
 def main():
     parser = argparse.ArgumentParser(
