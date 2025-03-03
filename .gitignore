@@ -1,6 +1,8 @@
 # data
-data/
-out/
+**/data/
+**/results/
+**/checkpoints/
+**/out/
 
 # Python
 *.pyc
