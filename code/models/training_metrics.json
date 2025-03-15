@@ -1,0 +1,9 @@
+{
+    "final_accuracy": 0.9015384912490845,
+    "final_loss": 0.38033080101013184,
+    "epochs": 15,
+    "learning_rate": 0.01,
+    "batch_size": 400,
+    "weight_decay": 0.0001,
+    "grad_clip": 0.1
+}
