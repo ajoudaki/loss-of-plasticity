@@ -6,6 +6,7 @@ artifacts/
 
 # data
 **/data/
+**/iframe_figures/
 **/results/
 **/checkpoints/
 **/out/
