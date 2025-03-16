@@ -1,3 +1,9 @@
+# wandb 
+**/wandb/
+*.wandb
+**/artifacts/
+artifacts/
+
 # data
 **/data/
 **/results/
