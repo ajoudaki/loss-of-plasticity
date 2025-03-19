@@ -11,7 +11,7 @@
     .container {
       display: flex;
       flex-direction: column;
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
     }
     .title {
@@ -78,7 +78,7 @@
       border: 1px solid #ccc;
     }
     .network-vis {
-      width: 800px;
+      width: 1000px;
       height: 400px;
       border: 1px solid #ccc;
     }
@@ -262,7 +262,7 @@
         <option value="10">10</option>
       </select>
       <label for="historyInterval" style="margin-left: 20px;">Save History Every:</label>
-      <input type="number" id="historyInterval" min="5" max="100" step="5" value="20" style="width: 50px;">
+      <input type="number" id="historyInterval" min="5" max="100" step="5" value="3" style="width: 50px;">
       <span>epochs</span>
     </div>
     
@@ -275,7 +275,8 @@
         <!-- NEW OR MODIFIED: distribution selection does NOT reset the network -->
         <label for="distributionType" style="margin-left: 10px;">Distribution:</label>
         <select id="distributionType">
-          <option value="circle" selected>Circle (Ring)</option>
+          <option value="circle" selected>Circle</option>
+          <option value="ring">Ring</option>
           <option value="xor">XOR</option>
           <option value="spiral">Spiral</option>
           <option value="gaussian">Gaussian</option>
@@ -372,6 +373,8 @@
           return generateSpiralData(numSamples);
         case 'gaussian':
           return generateGaussianData(numSamples);
+        case 'ring':
+          return generateRingData(numSamples);
         case 'circle':
         default:
           return generateCircleData(numSamples);
@@ -393,6 +396,43 @@
       }
       return { data, labels };
     }
+
+    function generateRingData(numSamples) {
+      const data = [];
+      const labels = [];
+      
+      // Half of the samples in the center cluster, half in the outer ring
+      const half = Math.floor(numSamples / 2);
+      
+      // --- Center cluster (class 0) ---
+      for (let i = 0; i < half; i++) {
+        const angle = Math.random() * 2 * Math.PI;
+        // Radius from 0 to ~1. Increase to expand the inner cluster
+        const r = Math.random() * 4.0;
+        
+        // Convert polar (r, angle) -> Cartesian (x, y)
+        const x = r * Math.cos(angle);
+        const y = r * Math.sin(angle);
+        
+        data.push([x, y]);
+        labels.push(0); // Center cluster label
+      }
+      
+      // --- Outer ring (class 1) ---
+      for (let i = 0; i < numSamples - half; i++) {
+        const angle = Math.random() * 2 * Math.PI;
+        // Radius from 2 to 3. Adjust as needed to move or widen the ring
+        const r = 4 + Math.random() * 2.0;
+        
+        const x = r * Math.cos(angle);
+        const y = r * Math.sin(angle);
+        
+        data.push([x, y]);
+        labels.push(1); // Ring label
+      }
+      
+      return { data, labels };
+    }
     
     function generateXorData(numSamples) {
       const data = [];
@@ -410,21 +450,36 @@
     function generateSpiralData(numSamples) {
       const data = [];
       const labels = [];
-      const half = Math.floor(numSamples/2);
-      for (let i = 0; i < half; i++) {
-        const theta = i * 0.1;
-        const radius = 0.1 * i;
-        // Spiral 1
-        const x1 = radius * Math.cos(theta);
-        const y1 = radius * Math.sin(theta);
-        data.push([x1*3, y1*3]);
+      
+      // Each spiral will have half the total samples
+      const n = numSamples / 2;
+      
+      // Number of times the spiral wraps around (try 2 or 3)
+      const revolutions = 3;
+      
+      // Random noise factor (standard deviation). Increase for fuzzier spiral
+      const noise = 0.2;
+      
+      for (let i = 0; i < n; i++) {
+        // Fraction of the way through the spiral
+        const t = i / (n - 1) * revolutions * Math.PI;
+        
+        // Radius grows with angle t. You can adjust the 0.5 to expand or shrink
+        const r = 0.5 * t;
+        
+        // First spiral (class 0)
+        let x1 = r * Math.cos(t) + (Math.random() * 2 - 1) * noise;
+        let y1 = r * Math.sin(t) + (Math.random() * 2 - 1) * noise;
+        data.push([x1, y1]);
         labels.push(0);
-        // Spiral 2
-        const x2 = radius * Math.cos(theta + Math.PI);
-        const y2 = radius * Math.sin(theta + Math.PI);
-        data.push([x2*3, y2*3]);
+        
+        // Second spiral (class 1), shifted by π
+        let x2 = r * Math.cos(t + Math.PI) + (Math.random() * 2 - 1) * noise;
+        let y2 = r * Math.sin(t + Math.PI) + (Math.random() * 2 - 1) * noise;
+        data.push([x2, y2]);
         labels.push(1);
       }
+      
       return { data, labels };
     }
     
@@ -626,6 +681,43 @@
       };
     
       return this.heatmaps;
+    }
+
+    reset(preserveHistory = true) {
+      // Reset all weights
+      this.weights = [];
+      this.biases = [];
+      
+      // Reinitialize weights with the current architecture
+      // Input -> first hidden
+      this.weights.push(this.initializeWeights(this.inputSize, this.neuronsPerLayer));
+      this.biases.push(this.initializeWeights(1, this.neuronsPerLayer)[0]);
+      
+      // Hidden layers
+      for (let i = 0; i < this.hiddenLayers - 1; i++) {
+        this.weights.push(this.initializeWeights(this.neuronsPerLayer, this.neuronsPerLayer));
+        this.biases.push(this.initializeWeights(1, this.neuronsPerLayer)[0]);
+      }
+      
+      // Last hidden -> output
+      this.weights.push(this.initializeWeights(this.neuronsPerLayer, 1));
+      this.biases.push(this.initializeWeights(1, 1)[0]);
+      
+      // Reset tracking variables
+      if (preserveHistory) {
+        this.trainingLoss = oldTrainingLoss;
+        this.testLoss = oldTestLoss;
+        this.averageGradients = oldAverageGradients;
+        this.currentEpoch = oldEpoch;
+      } else {
+        this.trainingLoss = [];
+        this.testLoss = [];
+        this.averageGradients = [];
+        this.currentEpoch = 0;
+      }
+      
+      // Recompute heatmaps
+      this.computeAllHeatmaps();
     }
 
       
@@ -849,7 +941,7 @@
       }
       
       // Single-sample style training inside a batch loop
-      trainOneEpoch(trainX, trainY, testX, testY, batchSize=32) {
+      trainOneEpoch(trainX, trainY, testX, testY, batchSize=10) {
         const epochGradients = Array(this.weights.length).fill(0);
         let batchCount = 0;
         
@@ -1116,7 +1208,7 @@
       const svg = d3.select(`${containerId} svg g`);
       const width = parseInt(d3.select(containerId).style('width')) - 80;
       const height= parseInt(d3.select(containerId).style('height')) - 40;
-      const nodeSize=40;
+      const nodeSize=45;
       
       const layers = [model.inputSize];
       for (let i=0; i<model.hiddenLayers; i++) {
@@ -1849,7 +1941,7 @@
       setupTabs();
       
       // Create the model
-      const model = new SimpleNeuralNetwork(2,4,7);
+      const model = new SimpleNeuralNetwork(2,5,7);
       window.model = model;
       
       // Create model history
@@ -1934,7 +2026,6 @@
         }
       });
       
-      // Reset only re-initializes the weights (but keeps the same data)
     document.getElementById('reset').addEventListener('click', () => {
       // Stop training if in progress
       isTraining = false;
@@ -1949,26 +2040,26 @@
       const learningRate = parseFloat(document.getElementById('learningRate').value);
       const useBias = document.getElementById('useBias').checked;
       
-      // Create a new network (weights reset)
-      window.model = new SimpleNeuralNetwork(featureNames.length, 4, 7);
-      window.model.setUseBias(useBias);
-      window.model.setActivationType(activationType);
-      window.model.setLearningRate(learningRate);
+      // Reset the existing model instance (instead of creating a new one)
+      model.reset();
+      model.setUseBias(useBias);
+      model.setActivationType(activationType);
+      model.setLearningRate(learningRate);
       
-      // Optionally clear the model history completely
-      window.modelHistory.snapshots = [];
-      window.modelHistory.currentIndex = 0;
-      window.modelHistory.updateUI();
+      // // Reset model history
+      // window.modelHistory.snapshots = [];
+      // window.modelHistory.currentIndex = 0;
+      // window.modelHistory.updateUI();
       
-      // Optionally, if you want a fresh snapshot immediately:
-      window.modelHistory.addSnapshot(window.model, true);
+      // Add a fresh snapshot
+      window.modelHistory.addSnapshot(model, true);
       
-      // Reset loss displays and update visualizations
+      // Reset display
       document.getElementById('trainingLoss').textContent = '-';
       document.getElementById('testLoss').textContent = '-';
       document.getElementById('epochCounter').textContent = '0';
       
-      updateVisualizations(window.model);
+      updateVisualizations(model);
       
       document.getElementById('status').textContent = 'Network reset!';
     });
