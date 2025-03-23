@@ -1,0 +1,2162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Neural Network Visualization (Multiple Distributions Without Reset)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .title {
+      text-align: center;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .control-group {
+      margin-right: 15px;
+    }
+    .param-controls {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .param-controls label {
+      width: 120px;
+      display: inline-block;
+    }
+    
+    /* Tab interface */
+    .tabs {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 10px 20px;
+      margin: 0 5px;
+      cursor: pointer;
+      background-color: #f0f0f0;
+      border-radius: 5px 5px 0 0;
+      border: 1px solid #ccc;
+      border-bottom: none;
+    }
+    .tab.active {
+      background-color: #fff;
+      border-bottom: 1px solid #fff;
+      margin-bottom: -1px;
+      font-weight: bold;
+    }
+    .tab-content {
+      border-top: 1px solid #ccc;
+      padding-top: 20px;
+    }
+    .pass-container {
+      margin-bottom: 30px;
+    }
+    
+    /* Visualization containers */
+    .visualization-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .samples-vis {
+      width: 300px;
+      height: 300px;
+      border: 1px solid #ccc;
+    }
+    .network-vis {
+      width: 1000px;
+      height: 400px;
+      border: 1px solid #ccc;
+    }
+    .output-vis {
+      width: 300px;
+      height: 300px;
+      border: 1px solid #ccc;
+    }
+    .chart-container {
+      display: flex;
+      flex-direction: column;
+      margin-top: 20px;
+      width: 100%;
+    }
+    .chart-row {
+      display: flex;
+      justify-content: space-between;
+    }
+    .loss-chart {
+      width: 490px;
+      height: 150px;
+      border: 1px solid #ccc;
+    }
+    .gradient-chart {
+      width: 490px;
+      height: 150px;
+      border: 1px solid #ccc;
+    }
+    
+    /* Node and link styling */
+    .node {
+      stroke: #000;
+      stroke-width: 1.5px;
+      cursor: pointer;
+      transition: opacity 0.3s;
+    }
+    .link {
+      fill: none;
+      stroke-opacity: 0.6;
+      transition: opacity 0.3s, stroke-width 0.3s, stroke-opacity 0.3s;
+    }
+    .feature-label {
+      font-size: 14px;
+      text-anchor: end;
+      transition: opacity 0.3s;
+    }
+    .layer-label {
+      font-size: 14px;
+      text-anchor: middle;
+      transition: opacity 0.3s;
+    }
+    .weight-label {
+      font-size: 12px;
+      font-weight: bold;
+      text-anchor: middle;
+      pointer-events: none;
+      fill: #000;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .bias-label {
+      font-size: 12px;
+      font-weight: bold;
+      text-anchor: middle;
+      pointer-events: none;
+      fill: #000;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .dimmed {
+      opacity: 0.15 !important;
+    }
+    .highlight-node {
+      stroke: #ff9900 !important;
+      stroke-width: 3px !important;
+      opacity: 1 !important;
+    }
+    .highlight-link {
+      stroke-opacity: 1 !important;
+      stroke-width: 3px !important;
+      opacity: 1 !important;
+    }
+    .highlight-label {
+      opacity: 1 !important;
+      font-weight: bold;
+    }
+    
+    /* History timeline */
+    .history-container {
+      margin-top: 15px;
+      width: 100%;
+      padding: 10px 0;
+    }
+    .history-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .history-slider-container {
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+    .history-slider {
+      flex: 1;
+      margin: 0 10px;
+    }
+    .history-label {
+      min-width: 60px;
+    }
+    .history-button {
+      padding: 5px 10px;
+      margin: 0 5px;
+      cursor: pointer;
+    }
+    .legend {
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .legend-item {
+      display: inline-block;
+      margin-right: 15px;
+    }
+    .legend-color {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    
+    /* Status and counter styles */
+    .counter {
+      font-weight: bold;
+      margin-left: 10px;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    button {
+      padding: 8px 16px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+    .pause-button {
+      background-color: #f44336;
+      color: white;
+    }
+    .continue-button {
+      background-color: #4CAF50;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">Neural Network Visualization (Multiple Distributions)</h1>
+    
+    <div class="param-controls">
+      <label for="activationFunction">Activation Function:</label>
+      <select id="activationFunction">
+        <option value="tanh">Tanh</option>
+        <option value="relu">ReLU</option>
+        <option value="sigmoid">Sigmoid</option>
+        <option value="leakyRelu">Leaky ReLU</option>
+      </select>
+      <label for="useBias" style="margin-left: 20px;">Use Bias:</label>
+      <input type="checkbox" id="useBias" checked>
+      <label for="learningRate" style="margin-left: 20px;">Learning Rate:</label>
+      <select id="learningRate">
+        <option value="0.00001">0.00001</option>
+        <option value="0.0001">0.0001</option>
+        <option value="0.001">0.001</option>
+        <option value="0.003">0.003</option>
+        <option value="0.01" selected>0.01</option>
+        <option value="0.03">0.03</option>
+        <option value="0.1">0.1</option>
+        <option value="0.3">0.3</option>
+        <option value="1">1</option>
+        <option value="3">3</option>
+        <option value="10">10</option>
+      </select>
+      <label for="historyInterval" style="margin-left: 20px;">Save History Every:</label>
+      <input type="number" id="historyInterval" min="5" max="100" step="5" value="3" style="width: 50px;">
+      <span>epochs</span>
+    </div>
+    
+    <div class="controls">
+      <div>
+        <button id="train">Train Network</button>
+        <button id="pause" class="pause-button" disabled>Pause</button>
+        <button id="reset">Reset Network</button>
+        
+        <!-- NEW OR MODIFIED: distribution selection does NOT reset the network -->
+        <label for="distributionType" style="margin-left: 10px;">Distribution:</label>
+        <select id="distributionType">
+          <option value="circle" selected>Circle</option>
+          <option value="ring">Ring</option>
+          <option value="xor">XOR</option>
+          <option value="spiral">Spiral</option>
+          <option value="gaussian">Gaussian</option>
+        </select>
+        
+        <label style="margin-left: 10px;">
+          <input type="checkbox" id="showTestData" checked> Show Test Data
+        </label>
+        
+        <span class="counter">Epoch: <span id="epochCounter">0</span></span>
+      </div>
+      <div class="loss-display">
+        <div>Training Loss: <span id="trainingLoss">-</span></div>
+        <div>Test Loss: <span id="testLoss">-</span></div>
+      </div>
+    </div>
+    
+    <div class="history-container">
+      <div class="history-title">Model History</div>
+      <div class="history-slider-container">
+        <span class="history-label">Current</span>
+        <input type="range" class="history-slider" id="historySlider" min="0" max="0" value="0" disabled>
+        <span class="history-label">Epoch: <span id="selectedEpoch">0</span></span>
+        <button id="jumpToLatest" class="history-button" disabled>Latest</button>
+      </div>
+    </div>
+
+    <!-- Input & Ground Truth samples row -->
+    <div class="tabs" style="justify-content: flex-start;">
+      <div>
+        <div class="section-title">Input Samples</div>
+        <div class="samples-vis" id="forward-samples"></div>
+      </div>
+      <div>
+        <div class="section-title">Ground Truth</div>
+        <div class="samples-vis" id="backward-samples"></div>
+      </div>
+    </div>
+    
+    <div class="tabs">
+      <div class="tab active" data-tab="forward">Forward Pass</div>
+      <div class="tab" data-tab="backward">Backward Pass</div>
+    </div>
+    
+    <div class="tab-content">
+      <!-- Forward pass content -->
+      <div id="forward-content" class="pass-container">
+        <div class="visualization-row">
+          <div>
+            <div class="section-title">Neural Network (Forward)</div>
+            <div class="network-vis" id="forward-network"></div>
+          </div>
+          <div>
+            <div class="section-title">Network Output</div>
+            <div class="output-vis" id="forward-output"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Backward pass content -->
+      <div id="backward-content" class="pass-container" style="display: none;">
+        <div class="visualization-row">
+          <div>
+            <div class="section-title">Neural Network (Backward)</div>
+            <div class="network-vis" id="backward-network"></div>
+          </div>
+          <div>
+            <div class="section-title">Neuron Gradients</div>
+            <div class="output-vis" id="backward-output"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="chart-container">
+      <div class="chart-row">
+        <div class="loss-chart" id="loss-chart"></div>
+        <div class="gradient-chart" id="gradient-chart"></div>
+      </div>
+    </div>
+    
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    // --------------------------------------------------------------------------------
+    //                            DATA GENERATION FUNCTIONS
+    // --------------------------------------------------------------------------------
+    function generateData(numSamples, distributionType) {
+      switch (distributionType) {
+        case 'xor':
+          return generateXorData(numSamples);
+        case 'spiral':
+          return generateSpiralData(numSamples);
+        case 'gaussian':
+          return generateGaussianData(numSamples);
+        case 'ring':
+          return generateRingData(numSamples);
+        case 'circle':
+        default:
+          return generateCircleData(numSamples);
+      }
+    }
+    
+    function generateCircleData(numSamples) {
+      const data = [];
+      const labels = [];
+      for (let i = 0; i < numSamples; i++) {
+        const x1 = (Math.random() * 12) - 6;
+        const x2 = (Math.random() * 12) - 6;
+        const distance = Math.sqrt(x1*x1 + x2*x2);
+        const ringInner = 2.5;
+        const ringOuter = 4.5;
+        const isInRing = (distance >= ringInner && distance <= ringOuter);
+        data.push([x1, x2]);
+        labels.push(isInRing ? 1 : 0);
+      }
+      return { data, labels };
+    }
+
+    function generateRingData(numSamples) {
+      const data = [];
+      const labels = [];
+      
+      // Half of the samples in the center cluster, half in the outer ring
+      const half = Math.floor(numSamples / 2);
+      
+      // --- Center cluster (class 0) ---
+      for (let i = 0; i < half; i++) {
+        const angle = Math.random() * 2 * Math.PI;
+        // Radius from 0 to ~1. Increase to expand the inner cluster
+        const r = Math.random() * 4.0;
+        
+        // Convert polar (r, angle) -> Cartesian (x, y)
+        const x = r * Math.cos(angle);
+        const y = r * Math.sin(angle);
+        
+        data.push([x, y]);
+        labels.push(0); // Center cluster label
+      }
+      
+      // --- Outer ring (class 1) ---
+      for (let i = 0; i < numSamples - half; i++) {
+        const angle = Math.random() * 2 * Math.PI;
+        // Radius from 2 to 3. Adjust as needed to move or widen the ring
+        const r = 4 + Math.random() * 2.0;
+        
+        const x = r * Math.cos(angle);
+        const y = r * Math.sin(angle);
+        
+        data.push([x, y]);
+        labels.push(1); // Ring label
+      }
+      
+      return { data, labels };
+    }
+    
+    function generateXorData(numSamples) {
+      const data = [];
+      const labels = [];
+      for (let i = 0; i < numSamples; i++) {
+        const x = Math.random() * 2 - 1;
+        const y = Math.random() * 2 - 1;
+        data.push([x*5, y*5]); // scale them a bit
+        const label = (x > 0) ^ (y > 0) ? 1 : 0;
+        labels.push(label);
+      }
+      return { data, labels };
+    }
+    
+    function generateSpiralData(numSamples) {
+      const data = [];
+      const labels = [];
+      
+      // Each spiral will have half the total samples
+      const n = numSamples / 2;
+      
+      // Number of times the spiral wraps around (try 2 or 3)
+      const revolutions = 3;
+      
+      // Random noise factor (standard deviation). Increase for fuzzier spiral
+      const noise = 0.2;
+      
+      for (let i = 0; i < n; i++) {
+        // Fraction of the way through the spiral
+        const t = i / (n - 1) * revolutions * Math.PI;
+        
+        // Radius grows with angle t. You can adjust the 0.5 to expand or shrink
+        const r = 0.5 * t;
+        
+        // First spiral (class 0)
+        let x1 = r * Math.cos(t) + (Math.random() * 2 - 1) * noise;
+        let y1 = r * Math.sin(t) + (Math.random() * 2 - 1) * noise;
+        data.push([x1, y1]);
+        labels.push(0);
+        
+        // Second spiral (class 1), shifted by π
+        let x2 = r * Math.cos(t + Math.PI) + (Math.random() * 2 - 1) * noise;
+        let y2 = r * Math.sin(t + Math.PI) + (Math.random() * 2 - 1) * noise;
+        data.push([x2, y2]);
+        labels.push(1);
+      }
+      
+      return { data, labels };
+    }
+    
+    function generateGaussianData(numSamples) {
+      const data = [];
+      const labels = [];
+      const half = Math.floor(numSamples/2);
+      for (let i = 0; i < half; i++) {
+        const x = randn_bm() + 2;
+        const y = randn_bm() + 2;
+        data.push([x, y]);
+        labels.push(0);
+      }
+      for (let i = 0; i < (numSamples-half); i++) {
+        const x = randn_bm() - 2;
+        const y = randn_bm() - 2;
+        data.push([x, y]);
+        labels.push(1);
+      }
+      return { data, labels };
+    }
+    
+    function randn_bm() {
+      let u = 0, v = 0;
+      while(u === 0) u = Math.random();
+      while(v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+    
+    // --------------------------------------------------------------------------------
+    //                           SIMPLE NEURAL NETWORK CLASS
+    // --------------------------------------------------------------------------------
+    class SimpleNeuralNetwork {
+      constructor(inputSize, hiddenLayers, neuronsPerLayer) {
+        this.inputSize = inputSize;
+        this.hiddenLayers = hiddenLayers;
+        this.neuronsPerLayer = neuronsPerLayer;
+        this.learningRate = parseFloat(document.getElementById('learningRate').value);
+        this.activationType = document.getElementById('activationFunction').value;
+        this.useBias = document.getElementById('useBias').checked;
+        this.gridSize = 30
+        
+        // Initialize network architecture
+        this.weights = [];
+        this.biases = [];
+        
+        // Input -> first hidden
+        this.weights.push(this.initializeWeights(inputSize, neuronsPerLayer));
+        this.biases.push(this.initializeWeights(1, neuronsPerLayer)[0]);
+        
+        // Hidden layers
+        for (let i = 0; i < hiddenLayers - 1; i++) {
+          this.weights.push(this.initializeWeights(neuronsPerLayer, neuronsPerLayer));
+          this.biases.push(this.initializeWeights(1, neuronsPerLayer)[0]);
+        }
+        
+        // Last hidden -> output
+        this.weights.push(this.initializeWeights(neuronsPerLayer, 1));
+        this.biases.push(this.initializeWeights(1, 1)[0]);
+        
+        // Tracking
+        this.trainingLoss = [];
+        this.testLoss = [];
+        this.averageGradients = [];
+        this.currentGradients = [];
+        this.currentEpoch = 0;
+        
+        // Heatmaps
+        this.heatmaps = null;
+        this.initializeGridData(50);
+        
+        // NEW OR MODIFIED: store the current training/test data inside the model
+        // so that snapshots also capture the data.
+        this.currentTrainData = { data: [], labels: [] };
+        this.currentTestData  = { data: [], labels: [] };
+      }
+      
+      initializeWeights(rows, cols) {
+        const weights = [];
+        for (let i = 0; i < rows; i++) {
+          const rowWeights = [];
+          for (let j = 0; j < cols; j++) {
+            // He init
+            rowWeights.push((Math.random() * 2 - 1) * Math.sqrt(2 / rows));
+          }
+          weights.push(rowWeights);
+        }
+        return weights;
+      }
+      
+      // NEW: so we can set the data from outside
+      setTrainTestData(trainData, testData) {
+        this.currentTrainData = trainData;
+        this.currentTestData  = testData;
+      }
+      
+      initializeGridData(gridSize) {
+        this.gridData = [];
+        this.gridSize = gridSize;
+        
+        for (let i = 0; i < gridSize; i++) {
+          for (let j = 0; j < gridSize; j++) {
+            const x = -6 + (i / (gridSize - 1)) * 12;
+            const y = -6 + (j / (gridSize - 1)) * 12;
+            this.gridData.push([x, y]);
+          }
+        }
+        
+        // For the ring-like background in the output heatmap
+        this.gridTargets = this.gridData.map(point => {
+          const dist = Math.sqrt(point[0]*point[0] + point[1]*point[1]);
+          const innerEdge = 1 / (1 + Math.exp(-(dist - 2.5) / 0.2));
+          const outerEdge = 1 / (1 + Math.exp((dist - 4.5) / 0.2));
+          return innerEdge * outerEdge;
+        });
+        
+        this.computeAllHeatmaps();
+      }
+      
+    // Modified computeAllHeatmaps() function in SimpleNeuralNetwork
+    computeAllHeatmaps() {
+      // Ensure grid data exists
+      if (!this.gridData || !this.gridTargets) {
+        this.initializeGridData(50);
+      }
+    
+      // Get the forward and backward details for the entire grid in one pass.
+      const { activations, zValues } = this.forwardWithDetails(this.gridData);
+      const { deltas, inputGradients } = this.backwardWithDetails(this.gridData, this.gridTargets, activations, zValues);
+    
+      // Build the architecture: input layer, hidden layers, and output layer.
+      const architecture = [this.inputSize];
+      for (let i = 0; i < this.hiddenLayers; i++) {
+        architecture.push(this.neuronsPerLayer);
+      }
+      architecture.push(1); // Output layer
+    
+      // Precompute grid coordinates once.
+      const gridCoords = this.gridData.map((_, index) => {
+        return { i: Math.floor(index / this.gridSize), j: index % this.gridSize };
+      });
+    
+      const forwardHeatmaps = {};
+      const backwardHeatmaps = {};
+    
+      // Build forward heatmaps by reshaping the flat activations.
+      for (let layer = 0; layer < architecture.length; layer++) {
+        forwardHeatmaps[layer] = {};
+        const numNeurons = architecture[layer];
+        for (let neuronIndex = 0; neuronIndex < numNeurons; neuronIndex++) {
+          // Get the flat activations for this neuron.
+          let flatActivations;
+          if (layer === 0) {
+            // For input layer, use gridData directly (normalize the coordinate).
+            flatActivations = this.gridData.map(row => (row[neuronIndex] + 6) / 12);
+          } else {
+            // For other layers, activations[layer] is an array over all grid points.
+            flatActivations = activations[layer].map(a => a[neuronIndex]);
+          }
+          // Reshape into a heatmap: an array of {i, j, activation}
+          const heatmapData = flatActivations.map((act, idx) => {
+            return { i: gridCoords[idx].i, j: gridCoords[idx].j, activation: act };
+          });
+          forwardHeatmaps[layer][neuronIndex] = heatmapData;
+        }
+      }
+    
+      // Build backward heatmaps similarly, but using deltas (or inputGradients for layer 0)
+      for (let layer = 0; layer < architecture.length; layer++) {
+        backwardHeatmaps[layer] = {};
+        const numNeurons = architecture[layer];
+        for (let neuronIndex = 0; neuronIndex < numNeurons; neuronIndex++) {
+          let flatGradients;
+          if (layer === 0) {
+            // For the input layer, use inputGradients (take the absolute value)
+            flatGradients = inputGradients.map(grad => Math.abs(grad[neuronIndex]));
+          } else {
+            // For hidden and output layers, use the delta values.
+            flatGradients = deltas[layer].map(delta => Math.abs(delta[neuronIndex]));
+          }
+          // Normalize gradients (for visualization) by clamping to 1 after dividing by 0.5.
+          const normalizedGradients = flatGradients.map(g => Math.min(g / 0.5, 1));
+          const heatmapData = normalizedGradients.map((grad, idx) => {
+            return { i: gridCoords[idx].i, j: gridCoords[idx].j, activation: grad };
+          });
+          backwardHeatmaps[layer][neuronIndex] = heatmapData;
+        }
+      }
+    
+      // Build the ground truth heatmap.
+      const groundTruthHeatmap = this.gridTargets.map((target, idx) => {
+        return { i: gridCoords[idx].i, j: gridCoords[idx].j, activation: target };
+      });
+    
+      this.heatmaps = {
+        forward: forwardHeatmaps,
+        backward: backwardHeatmaps,
+        groundTruth: groundTruthHeatmap
+      };
+    
+      return this.heatmaps;
+    }
+
+    reset(preserveHistory = true) {
+      // Reset all weights
+      this.weights = [];
+      this.biases = [];
+      
+      // Reinitialize weights with the current architecture
+      // Input -> first hidden
+      this.weights.push(this.initializeWeights(this.inputSize, this.neuronsPerLayer));
+      this.biases.push(this.initializeWeights(1, this.neuronsPerLayer)[0]);
+      
+      // Hidden layers
+      for (let i = 0; i < this.hiddenLayers - 1; i++) {
+        this.weights.push(this.initializeWeights(this.neuronsPerLayer, this.neuronsPerLayer));
+        this.biases.push(this.initializeWeights(1, this.neuronsPerLayer)[0]);
+      }
+      
+      // Last hidden -> output
+      this.weights.push(this.initializeWeights(this.neuronsPerLayer, 1));
+      this.biases.push(this.initializeWeights(1, 1)[0]);
+      
+      // Reset tracking variables
+      if (preserveHistory) {
+        this.trainingLoss = oldTrainingLoss;
+        this.testLoss = oldTestLoss;
+        this.averageGradients = oldAverageGradients;
+        this.currentEpoch = oldEpoch;
+      } else {
+        this.trainingLoss = [];
+        this.testLoss = [];
+        this.averageGradients = [];
+        this.currentEpoch = 0;
+      }
+      
+      // Recompute heatmaps
+      this.computeAllHeatmaps();
+    }
+
+      
+      // Make a clone for the history
+      clone() {
+        const clone = new SimpleNeuralNetwork(this.inputSize, this.hiddenLayers, this.neuronsPerLayer);
+        clone.weights = JSON.parse(JSON.stringify(this.weights));
+        clone.biases = JSON.parse(JSON.stringify(this.biases));
+        
+        clone.trainingLoss = [...this.trainingLoss];
+        clone.testLoss = [...this.testLoss];
+        clone.averageGradients = JSON.parse(JSON.stringify(this.averageGradients));
+        
+        if (this.currentGradients && this.currentGradients.length > 0) {
+          clone.currentGradients = JSON.parse(JSON.stringify(this.currentGradients));
+        } else {
+          clone.currentGradients = [];
+          for (let l = 0; l < clone.weights.length; l++) {
+            const layerGradients = [];
+            for (let i = 0; i < clone.weights[l].length; i++) {
+              const neuronGradients = Array(clone.weights[l][i].length).fill(0);
+              layerGradients.push(neuronGradients);
+            }
+            clone.currentGradients.push(layerGradients);
+          }
+        }
+        
+        clone.currentEpoch = this.currentEpoch;
+        clone.activationType = this.activationType;
+        clone.learningRate = this.learningRate;
+        clone.useBias = this.useBias;
+        
+        // Copy heatmaps
+        if (this.heatmaps) {
+          clone.heatmaps = JSON.parse(JSON.stringify(this.heatmaps));
+        }
+        
+        // NEW OR MODIFIED: copy the train/test data too
+        clone.currentTrainData = JSON.parse(JSON.stringify(this.currentTrainData));
+        clone.currentTestData  = JSON.parse(JSON.stringify(this.currentTestData));
+        
+        return clone;
+      }
+      
+      // Activation
+      activate(x, activationType = this.activationType) {
+        switch (activationType) {
+          case 'relu':     return Math.max(0, x);
+          case 'leakyRelu':return x>0 ? x : 0.01*x;
+          case 'sigmoid':  return 1 / (1 + Math.exp(-Math.max(-10, Math.min(10, x))));
+          case 'tanh':
+          default:
+            return Math.tanh(x);
+        }
+      }
+      activateDerivative(x, activationType = this.activationType) {
+        switch (activationType) {
+          case 'relu':     return x>0 ? 1 : 0;
+          case 'leakyRelu':return x>0 ? 1 : 0.01;
+          case 'sigmoid':
+            const s = 1 / (1 + Math.exp(-Math.max(-10, Math.min(10, x))));
+            return s*(1-s);
+          case 'tanh':
+          default:
+            const t = Math.tanh(x);
+            return 1 - t*t;
+        }
+      }
+      
+      forwardWithDetails(inputs) {
+        const activations = [inputs];
+        const zValues = [];
+        const batchSize = inputs.length;
+        
+        for (let l = 0; l < this.weights.length; l++) {
+          const layerZValues = [];
+          const layerActivations = [];
+          
+          for (let b = 0; b < batchSize; b++) {
+            const currentInput = activations[l][b];
+            const zs = [];
+            const as = [];
+            for (let j = 0; j < this.weights[l][0].length; j++) {
+              let z = this.useBias ? this.biases[l][j] : 0;
+              for (let i = 0; i < currentInput.length; i++) {
+                z += currentInput[i]*this.weights[l][i][j];
+              }
+              zs.push(z);
+              const a = (l===this.weights.length-1)
+                ? (1 / (1 + Math.exp(-z))) // final always sigmoid
+                : this.activate(z);
+              as.push(a);
+            }
+            layerZValues.push(zs);
+            layerActivations.push(as);
+          }
+          zValues.push(layerZValues);
+          activations.push(layerActivations);
+        }
+        return { activations, zValues };
+      }
+      
+      forward(input) {
+        const { activations, zValues } = this.forwardWithDetails([input]);
+        return {
+          activations: activations.map(layer => layer[0]),
+          zValues:     zValues.map(layer => layer[0])
+        };
+      }
+      
+      binaryCrossEntropy(yTrue, yPred) {
+        const epsilon = 1e-7;
+        let sum = 0;
+        for (let i = 0; i < yTrue.length; i++) {
+          const p = Math.max(epsilon, Math.min(1-epsilon, yPred[i]));
+          sum += -(yTrue[i]*Math.log(p) + (1-yTrue[i])*Math.log(1-p));
+        }
+        return sum / yTrue.length;
+      }
+      
+      backwardWithDetails(inputs, targets, activations, zValues) {
+        const numSamples = inputs.length;
+        const numLayers = this.weights.length;
+        const weightGrads = [];
+        const biasGrads = [];
+        for (let l = 0; l < numLayers; l++) {
+          const layerWeightGrads = [];
+          for (let i = 0; i < this.weights[l].length; i++) {
+            const neuronGrads = Array(this.weights[l][0].length).fill(0);
+            layerWeightGrads.push(neuronGrads);
+          }
+          weightGrads.push(layerWeightGrads);
+          biasGrads.push(Array(this.biases[l].length).fill(0));
+        }
+        
+        const deltas = [];
+        for (let l = 0; l <= numLayers; l++) {
+          deltas.push([]);
+        }
+        const inputGradients = [];
+        
+        for (let s = 0; s < numSamples; s++) {
+          const sampleDeltas = [];
+          for (let l = 0; l <= numLayers; l++) {
+            sampleDeltas.push([]);
+          }
+          const sampleInputGrads = Array(this.inputSize).fill(0);
+          
+          // Output layer error
+          const outputLayer = numLayers;
+          const outputActivation = activations[outputLayer][s];
+          const outputDelta = [];
+          for (let i = 0; i < outputActivation.length; i++) {
+            const target = Array.isArray(targets[s]) ? targets[s][i] : targets[s];
+            // derivative of sigmoid
+            const sigDeriv = outputActivation[i]*(1 - outputActivation[i]);
+            const delta = (outputActivation[i] - target)*sigDeriv;
+            outputDelta.push(delta);
+          }
+          sampleDeltas[outputLayer] = outputDelta;
+          
+          // backprop
+          for (let l = numLayers-1; l > 0; l--) {
+            const layerDelta = [];
+            for (let i = 0; i < activations[l][s].length; i++) {
+              let error = 0;
+              for (let j = 0; j < sampleDeltas[l+1].length; j++) {
+                error += sampleDeltas[l+1][j]*this.weights[l][i][j];
+              }
+              const z = zValues[l-1][s][i];
+              const dAct = (l===numLayers-1)
+                ? (activations[l][s][i]*(1 - activations[l][s][i]))
+                : this.activateDerivative(z);
+              layerDelta.push(error*dAct);
+            }
+            sampleDeltas[l] = layerDelta;
+          }
+          
+          // input grads
+          for (let i = 0; i < this.inputSize; i++) {
+            let inputGrad = 0;
+            for (let j = 0; j < sampleDeltas[1].length; j++) {
+              inputGrad += sampleDeltas[1][j]*this.weights[0][i][j];
+            }
+            sampleInputGrads[i] = inputGrad;
+          }
+          inputGradients.push(sampleInputGrads);
+          
+          for (let l = 0; l < numLayers; l++) {
+            const prevA = activations[l][s];
+            const currD = sampleDeltas[l+1];
+            for (let i = 0; i < this.weights[l].length; i++) {
+              for (let j = 0; j < this.weights[l][0].length; j++) {
+                weightGrads[l][i][j] += prevA[i]*currD[j];
+              }
+            }
+            if (this.useBias) {
+              for (let j = 0; j < this.biases[l].length; j++) {
+                biasGrads[l][j] += currD[j];
+              }
+            }
+          }
+          for (let l = 1; l <= numLayers; l++) {
+            deltas[l][s] = sampleDeltas[l];
+          }
+        }
+        
+        // average
+        for (let l = 0; l < numLayers; l++) {
+          for (let i = 0; i < this.weights[l].length; i++) {
+            for (let j = 0; j < this.weights[l][0].length; j++) {
+              weightGrads[l][i][j] /= numSamples;
+            }
+          }
+          for (let j = 0; j < this.biases[l].length; j++) {
+            biasGrads[l][j] /= numSamples;
+          }
+        }
+        
+        return { weightGrads, biasGrads, deltas, inputGradients };
+      }
+      
+      // Single-sample style training inside a batch loop
+      trainOneEpoch(trainX, trainY, testX, testY, batchSize=10) {
+        const epochGradients = Array(this.weights.length).fill(0);
+        let batchCount = 0;
+        
+        for (let i = 0; i < trainX.length; i += batchSize) {
+          const batchEnd = Math.min(i+batchSize, trainX.length);
+          for (let j = i; j < batchEnd; j++) {
+            const { activations, zValues } = this.forward(trainX[j]);
+            const { deltas, gradientMagnitudes } = this.backwardSingleSample(trainX[j], [trainY[j]], activations, zValues);
+            // track gradient magnitudes
+            gradientMagnitudes.forEach((g, idx) => {
+              epochGradients[idx] += g;
+            });
+            batchCount++;
+          }
+        }
+        const avgGradients = epochGradients.map(g => g/batchCount);
+        this.averageGradients.push(avgGradients);
+        
+        // compute train loss
+        let trainLossVal = 0;
+        for (let i = 0; i < trainX.length; i++) {
+          const { activations } = this.forward(trainX[i]);
+          const pred = activations[activations.length-1];
+          trainLossVal += this.binaryCrossEntropy([trainY[i]], pred);
+        }
+        trainLossVal /= trainX.length;
+        this.trainingLoss.push(trainLossVal);
+        
+        // compute test loss
+        let testLossVal = 0;
+        for (let i = 0; i < testX.length; i++) {
+          const { activations } = this.forward(testX[i]);
+          const pred = activations[activations.length-1];
+          testLossVal += this.binaryCrossEntropy([testY[i]], pred);
+        }
+        testLossVal /= testX.length;
+        this.testLoss.push(testLossVal);
+        
+        this.currentEpoch++;
+        
+        // re-generate heatmaps after weight updates
+        this.computeAllHeatmaps();
+        
+        return { trainLoss: trainLossVal, testLoss: testLossVal, avgGradients };
+      }
+      
+      // Simple single-sample backward
+      backwardSingleSample(input, target, activations, zValues) {
+        const outputLayer = activations.length - 1;
+        const output = activations[outputLayer];
+        const gradientMagnitudes = [];
+        
+        this.currentGradients = [];
+        for (let l = 0; l < this.weights.length; l++) {
+          const layerGradients = [];
+          for (let i = 0; i < this.weights[l].length; i++) {
+            const neuronGradients = Array(this.weights[l][i].length).fill(0);
+            layerGradients.push(neuronGradients);
+          }
+          this.currentGradients.push(layerGradients);
+        }
+        
+        // output error
+        const outputError = [];
+        for (let i = 0; i < output.length; i++) {
+          const sigDeriv = output[i]*(1 - output[i]);
+          outputError.push((output[i] - target[i]) * sigDeriv);
+        }
+        let currentError = outputError;
+        const deltas = [];
+        
+        // backprop
+        for (let l = this.weights.length-1; l >= 0; l--) {
+          const currentA = activations[l];
+          const layerDelta = [];
+          let layerGradMag = 0;
+          
+          for (let j = 0; j < this.weights[l][0].length; j++) {
+            for (let i = 0; i < currentA.length; i++) {
+              const grad = currentError[j]*currentA[i];
+              if (!layerDelta[i]) layerDelta[i] = [];
+              layerDelta[i][j] = grad;
+              this.currentGradients[l][i][j] = grad;
+              layerGradMag += Math.abs(grad);
+              
+              this.weights[l][i][j] -= this.learningRate*grad;
+            }
+            if (this.useBias) {
+              this.biases[l][j] -= this.learningRate*currentError[j];
+            }
+          }
+          gradientMagnitudes.unshift(layerGradMag/(currentA.length*this.weights[l][0].length));
+          
+          if (l>0) {
+            const nextError = [];
+            for (let i = 0; i < currentA.length; i++) {
+              let e = 0;
+              for (let j = 0; j < currentError.length; j++) {
+                e += currentError[j]*this.weights[l][i][j];
+              }
+              const z = zValues[l-1][i];
+              const dAct = this.activateDerivative(z);
+              nextError.push(e*dAct);
+            }
+            currentError = nextError;
+          }
+          deltas.unshift(layerDelta);
+        }
+        return { deltas, gradientMagnitudes };
+      }
+      
+      setLearningRate(rate) { this.learningRate = rate; }
+      setActivationType(type) { this.activationType = type; }
+      setUseBias(useBias) { this.useBias = useBias; }
+      
+      getHeatmaps() { return this.heatmaps; }
+    }
+    
+    // --------------------------------------------------------------------------------
+    //                               MODEL HISTORY CLASS
+    // --------------------------------------------------------------------------------
+    class ModelHistory {
+      constructor() {
+        this.snapshots = [];
+        this.currentIndex = 0;
+        this.interval = parseInt(document.getElementById('historyInterval').value);
+      }
+      
+      addSnapshot(model, forceAdd=false) {
+        if (forceAdd || model.currentEpoch % this.interval === 0) {
+          if (!model.currentGradients || model.currentGradients.length===0) {
+            model.currentGradients = [];
+            for (let l = 0; l < model.weights.length; l++) {
+              const layerGradients = [];
+              for (let i = 0; i < model.weights[l].length; i++) {
+                const neuronGradients = Array(model.weights[l][i].length).fill(0);
+                layerGradients.push(neuronGradients);
+              }
+              model.currentGradients.push(layerGradients);
+            }
+          }
+          const snapshot = model.clone();
+          this.snapshots.push(snapshot);
+          this.currentIndex = this.snapshots.length - 1;
+          this.updateUI();
+          return true;
+        }
+        return false;
+      }
+      
+      getCurrentSnapshot() {
+        return this.snapshots[this.currentIndex];
+      }
+      
+      setCurrentIndex(index) {
+        if (index>=0 && index<this.snapshots.length) {
+          this.currentIndex = index;
+          return this.snapshots[this.currentIndex];
+        }
+        return null;
+      }
+      
+      getLatestSnapshot() {
+        this.currentIndex = this.snapshots.length-1;
+        return this.snapshots[this.currentIndex];
+      }
+      
+      updateUI() {
+        const slider = document.getElementById('historySlider');
+        const epochLabel = document.getElementById('selectedEpoch');
+        const jumpToLatestButton = document.getElementById('jumpToLatest');
+        
+        if (!this.snapshots || this.snapshots.length===0) {
+          slider.disabled = true;
+          jumpToLatestButton.disabled = true;
+          epochLabel.textContent = "0";
+          return;
+        }
+        slider.min = 0;
+        slider.max = this.snapshots.length-1;
+        slider.value = this.currentIndex;
+        slider.disabled = this.snapshots.length<=1;
+        
+        epochLabel.textContent = this.snapshots[this.currentIndex].currentEpoch;
+        jumpToLatestButton.disabled = (this.currentIndex===this.snapshots.length-1 || this.snapshots.length<=1);
+      }
+      
+      reset() {
+        this.snapshots = [];
+        this.currentIndex = 0;
+        this.interval = parseInt(document.getElementById('historyInterval').value);
+        const newModel = window.model;
+        if (newModel) {
+          this.addSnapshot(newModel, true);
+        }
+        this.updateUI();
+      }
+    }
+    
+    // --------------------------------------------------------------------------------
+    //                           D3 VISUALIZATION FUNCTIONS
+    // --------------------------------------------------------------------------------
+    const featureNames = ['X₁','X₂'];
+    const colors = {
+      input: '#bde0ff',
+      hidden:'#bde0ff',
+      output:'#bde0ff',
+      class0:'#e74c3c',
+      class1:'#3498db',
+      weights:{
+        positive:'#3498db',
+        negative:'#e74c3c',
+        neutral:'#f5f5f5'
+      },
+      gradients:{
+        line:'#4CAF50',
+        area:'rgba(76,175,80,0.1)',
+        positive:'#2ecc71',
+        negative:'#e67e22',
+        neutral:'#f5f5f5'
+      },
+      activations:{
+        low:'#e74c3c',
+        medium:'#f5f5f5',
+        high:'#3498db'
+      }
+    };
+    
+    function setupTabs() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          
+          document.querySelectorAll('.pass-container').forEach(content => {
+            content.style.display = 'none';
+          });
+          
+          const tabName = tab.getAttribute('data-tab');
+          document.getElementById(`${tabName}-content`).style.display = 'block';
+        });
+      });
+    }
+    
+    function createNetworkVisualization(containerId) {
+      const svg = d3.select(containerId)
+        .append('svg')
+        .attr('width','100%')
+        .attr('height','100%')
+        .append('g')
+        .attr('transform','translate(40,10)');
+      
+      svg.append('g').attr('class','links');
+      svg.append('g').attr('class','weight-labels');
+      svg.append('g').attr('class','nodes');
+      svg.append('g').attr('class','bias-labels');
+      svg.append('g').attr('class','feature-labels');
+      svg.append('g').attr('class','layer-labels');
+      return svg;
+    }
+    
+    function updateNetworkVisualization(containerId, model, isBackward=false) {
+      const svg = d3.select(`${containerId} svg g`);
+      const width = parseInt(d3.select(containerId).style('width')) - 80;
+      const height= parseInt(d3.select(containerId).style('height')) - 40;
+      const nodeSize=45;
+      
+      const layers = [model.inputSize];
+      for (let i=0; i<model.hiddenLayers; i++) {
+        layers.push(model.neuronsPerLayer);
+      }
+      layers.push(1);
+      const layerSpacing = width/(layers.length-1);
+      
+      const nodes=[];
+      const links=[];
+      
+      const heatmaps = model.getHeatmaps();
+      if (!heatmaps) return;
+      const heatmapType = isBackward ? 'backward':'forward';
+      if (!heatmaps[heatmapType]) return;
+      
+      let allValues=[];
+      for (const layerKey in heatmaps[heatmapType]) {
+        const layerData = heatmaps[heatmapType][layerKey];
+        for (const neuronKey in layerData) {
+          layerData[neuronKey].forEach(cell => {
+            allValues.push(cell.activation);
+          });
+        }
+      }
+      const globalMin = d3.min(allValues);
+      const globalMax = d3.max(allValues);
+      
+      const globalColorScale = d3.scaleLinear()
+        .domain([globalMin,(globalMin+globalMax)/2,globalMax])
+        .range([colors.class0,'#f5f5f5',colors.class1]);
+      
+      // build node + link data
+      for (let l=0; l<layers.length; l++) {
+        for (let i=0; i<layers[l]; i++) {
+          const nodeType = (l===0) ? 'input' : (l===layers.length-1) ? 'output':'hidden';
+          const nodeId = `${nodeType}-${l}-${i}`;
+          
+          nodes.push({
+            id:nodeId,
+            x:l*layerSpacing,
+            y:(i+0.5)*(height/Math.max(layers[l],1)),
+            layer:l,
+            index:i,
+            type:nodeType,
+            bias:(l>0)?model.biases[l-1][i]:null
+          });
+          
+          if (l>0) {
+            for (let j=0; j<layers[l-1]; j++) {
+              const sourceId = (l===1)?`input-${l-1}-${j}`:`hidden-${l-1}-${j}`;
+              const targetId = nodeId;
+              let linkValue, linkWidth;
+              if (isBackward) {
+                linkValue = model.currentGradients[l-1][j][i];
+                linkWidth = Math.min(Math.abs(linkValue)*10,6);
+              } else {
+                linkValue = model.weights[l-1][j][i];
+                linkWidth = Math.min(Math.abs(linkValue)*3,6);
+              }
+              links.push({
+                id:`${sourceId}-${targetId}`,
+                source:sourceId,
+                target:targetId,
+                sourceNode:null,
+                targetNode:null,
+                weight:linkValue,
+                width:linkWidth
+              });
+            }
+          }
+        }
+      }
+      
+      links.forEach(link=>{
+        link.sourceNode = nodes.find(n=>n.id===link.source);
+        link.targetNode = nodes.find(n=>n.id===link.target);
+      });
+      
+      const linkSelection = svg.select('.links')
+        .selectAll('.link')
+        .data(links,d=>d.id);
+      linkSelection.exit().remove();
+      const linkEnter = linkSelection.enter()
+        .append('path')
+        .attr('class','link')
+        .attr('id',d=>`link-${d.id}`);
+      
+      function getCurvedPath(d) {
+        const sx=d.sourceNode.x, sy=d.sourceNode.y;
+        const tx=d.targetNode.x, ty=d.targetNode.y;
+        const midX = sx + (tx-sx)*0.6;
+        return `M${sx},${sy} C${midX},${sy} ${midX},${ty} ${tx},${ty}`;
+      }
+      
+      linkEnter.merge(linkSelection)
+        .attr('d', getCurvedPath)
+        .attr('stroke-width', d=>d.width)
+        .attr('stroke', d=>{
+          const c = isBackward?colors.gradients:colors.weights;
+          if (d.weight>0.1) return c.positive;
+          if (d.weight<-0.1) return c.negative;
+          return c.neutral;
+        });
+      
+      const weightLabel = svg.select('.weight-labels')
+        .selectAll('.weight-label')
+        .data(links,d=>d.id);
+      weightLabel.exit().remove();
+      const weightLabelEnter = weightLabel.enter()
+        .append('text')
+        .attr('class','weight-label')
+        .attr('id',d=>`weight-${d.id}`)
+        .attr('pointer-events','none');
+      
+      weightLabelEnter.merge(weightLabel)
+        .attr('x', d=>(d.sourceNode.x+d.targetNode.x)/2)
+        .attr('y', d=>(d.sourceNode.y+d.targetNode.y)/2 - 5)
+        .text(d=>d.weight.toFixed(3));
+      
+      const nodeGroups = svg.select('.nodes')
+        .selectAll('.node-group')
+        .data(nodes,d=>d.id);
+      nodeGroups.exit().remove();
+      const nodeGroupsEnter = nodeGroups.enter()
+        .append('g')
+        .attr('class','node-group')
+        .attr('id',d=>`node-${d.id}`)
+        .attr('transform', d=>`translate(${d.x-nodeSize/2},${d.y-nodeSize/2})`);
+      
+      nodeGroupsEnter.append('rect')
+        .attr('class','node')
+        .attr('width',nodeSize)
+        .attr('height',nodeSize)
+        .attr('rx',nodeSize/10)
+        .attr('ry',nodeSize/10)
+        .attr('fill', d=>{
+          if (d.type==='input') return colors.input;
+          if (d.type==='output')return colors.output;
+          return colors.hidden;
+        });
+      
+      nodeGroups.selectAll('.node-heatmap').remove();
+      nodeGroupsEnter.merge(nodeGroups).each(function(d){
+        const layerData = heatmaps[heatmapType][d.layer];
+        if (!layerData || !layerData[d.index]) return;
+        const heatmapData = layerData[d.index];
+        if (!heatmapData) return;
+        
+        const originalGridSize = Math.sqrt(heatmapData.length);
+        const gridSizeMini = 20;
+        const cellSize = nodeSize/gridSizeMini;
+        
+        const adaptedData=[];
+        for (let i=0; i<gridSizeMini; i++) {
+          for (let j=0; j<gridSizeMini; j++) {
+            const origI = Math.floor(i*originalGridSize/gridSizeMini);
+            const origJ = Math.floor(j*originalGridSize/gridSizeMini);
+            const idx = origI*originalGridSize + origJ;
+            if (idx<heatmapData.length) {
+              adaptedData.push({
+                i,j, activation: heatmapData[idx].activation
+              });
+            }
+          }
+        }
+        
+        d3.select(this)
+          .append('g')
+          .attr('class','node-heatmap')
+          .selectAll('rect')
+          .data(adaptedData)
+          .enter()
+          .append('rect')
+          .attr('x', d=>d.i*cellSize)
+          .attr('y', d=>(gridSizeMini-1-d.j)*cellSize)
+          .attr('width',cellSize)
+          .attr('height',cellSize)
+          .attr('fill', d=>globalColorScale(d.activation))
+          .attr('opacity',0.8)
+          .attr('pointer-events','none');
+      });
+      
+      const biasLabel = svg.select('.bias-labels')
+        .selectAll('.bias-label')
+        .data(nodes.filter(d=>d.bias!==null), d=>d.id);
+      biasLabel.exit().remove();
+      const biasLabelEnter = biasLabel.enter()
+        .append('text')
+        .attr('class','bias-label')
+        .attr('id',d=>`bias-${d.id}`)
+        .attr('pointer-events','none');
+      
+      biasLabelEnter.merge(biasLabel)
+        .attr('x', d=>d.x)
+        .attr('y', d=>d.y-20)
+        .attr('text-anchor','middle')
+        .text(d=>{
+          if (isBackward) {
+            return `∇bias: ???`;
+          }
+          return `bias: ${d.bias.toFixed(2)}`;
+        });
+      
+      const inputLabels = svg.select('.feature-labels')
+        .selectAll('.feature-label')
+        .data(nodes.filter(d=>d.type==='input'), d=>d.id);
+      inputLabels.exit().remove();
+      const inputLabelsEnter = inputLabels.enter()
+        .append('text')
+        .attr('class','feature-label');
+      
+      inputLabelsEnter.merge(inputLabels)
+        .attr('x', d=>d.x-20)
+        .attr('y', d=>d.y+5)
+        .text(d=>featureNames[d.index]);
+      
+      const layerLabels = [
+        'Input',
+        ...Array.from({length:model.hiddenLayers},(_,i)=>`Hidden ${i+1}`),
+        'Output'
+      ];
+      const layerLabelEls = svg.select('.layer-labels')
+        .selectAll('.layer-label')
+        .data(layerLabels);
+      layerLabelEls.exit().remove();
+      const layerLabelEnter = layerLabelEls.enter()
+        .append('text')
+        .attr('class','layer-label');
+      
+      layerLabelEnter.merge(layerLabelEls)
+        .attr('x',(d,i)=>i*layerSpacing)
+        .attr('y',height+25)
+        .text(d=>d);
+      
+      // Hover
+      d3.selectAll(`${containerId} .node`)
+        .on('mouseenter', function(evt, d){
+          d3.selectAll(`${containerId} .node, ${containerId} .link,
+                        ${containerId} .feature-label, ${containerId} .layer-label`)
+            .classed('dimmed',true);
+          d3.select(this).classed('highlight-node',true).classed('dimmed',false);
+          
+          if (d.type==='input') {
+            d3.selectAll(`${containerId} .feature-label`)
+              .filter(labelD=>labelD.id===d.id)
+              .classed('highlight-label',true)
+              .classed('dimmed',false);
+          }
+          
+          const inc = links.filter(link=>link.target===d.id);
+          const out = links.filter(link=>link.source===d.id);
+          const relatedLinks = [...inc,...out];
+          const connectedNodes = new Set();
+          relatedLinks.forEach(link=>{
+            connectedNodes.add(link.source);
+            connectedNodes.add(link.target);
+          });
+          connectedNodes.forEach(cid=>{
+            if (cid!==d.id) {
+              d3.select(`${containerId} #node-${cid}`).classed('dimmed',false);
+            }
+          });
+          relatedLinks.forEach(link=>{
+            d3.select(`${containerId} #link-${link.id}`)
+              .classed('highlight-link',true)
+              .classed('dimmed',false);
+            d3.select(`${containerId} #weight-${link.id}`)
+              .style('opacity',1)
+              .classed('dimmed',false);
+          });
+          
+          if (d.bias!==null) {
+            d3.select(`${containerId} #bias-${d.id}`)
+              .style('opacity',1)
+              .classed('dimmed',false);
+          }
+          
+          // Show node’s heatmap in large output
+          if (!(isBackward && d.layer===0)) {
+            if (heatmaps && heatmaps[heatmapType]
+                && heatmaps[heatmapType][d.layer]
+                && heatmaps[heatmapType][d.layer][d.index]) {
+              const outputId = isBackward?'#backward-output':'#forward-output';
+              const nodeHeatmapData = heatmaps[heatmapType][d.layer][d.index];
+              updateOutputVisualization(outputId,nodeHeatmapData);
+            }
+          }
+          
+          document.getElementById('status').textContent=
+            `Examining neuron at layer ${d.layer}, index ${d.index}`;
+        })
+        .on('mouseleave', function(evt, d){
+          d3.selectAll(`${containerId} .node, ${containerId} .link,
+                        ${containerId} .feature-label, ${containerId} .layer-label`)
+            .classed('dimmed',false);
+          d3.select(this).classed('highlight-node',false);
+          d3.selectAll(`${containerId} .feature-label`).classed('highlight-label',false);
+          d3.selectAll(`${containerId} .link`).classed('highlight-link',false);
+          d3.selectAll(`${containerId} .weight-label`).style('opacity',0);
+          d3.selectAll(`${containerId} .bias-label`).style('opacity',0);
+          
+          const outputId = isBackward?'#backward-output':'#forward-output';
+          updateOutputVisualization(outputId);
+          
+          document.getElementById('status').textContent='';
+        });
+    }
+    
+    function createSampleVisualization(containerId) {
+      const svg = d3.select(containerId)
+        .append('svg')
+        .attr('width','100%')
+        .attr('height','100%');
+      
+      const width = parseInt(d3.select(containerId).style('width'));
+      const height= parseInt(d3.select(containerId).style('height'));
+      const margin=30;
+      
+      svg.append('g')
+        .attr('class','x-axis axis')
+        .attr('transform',`translate(0,${height-margin})`)
+        .call(d3.axisBottom(d3.scaleLinear().domain([-6,6]).range([margin,width-margin])));
+      svg.append('g')
+        .attr('class','y-axis axis')
+        .attr('transform',`translate(${margin},0)`)
+        .call(d3.axisLeft(d3.scaleLinear().domain([-6,6]).range([height-margin,margin])));
+      
+      svg.append('text')
+        .attr('text-anchor','middle')
+        .attr('x',width/2)
+        .attr('y',height-5)
+        .attr('font-size','12px')
+        .text('X₁');
+      svg.append('text')
+        .attr('text-anchor','middle')
+        .attr('transform',`translate(12,${height/2}) rotate(-90)`)
+        .attr('font-size','12px')
+        .text('X₂');
+      
+      svg.append('g').attr('class','data-points');
+      return svg;
+    }
+    
+    // NEW OR MODIFIED: we read the data from the model’s currentTrainData
+    function updateSampleVisualization(containerId, model, isGroundTruth=false) {
+      const svg = d3.select(`${containerId} svg`);
+      const width = parseInt(d3.select(containerId).style('width'));
+      const height= parseInt(d3.select(containerId).style('height'));
+      const margin=30;
+      
+      const xScale = d3.scaleLinear().domain([-6,6]).range([margin,width-margin]);
+      const yScale = d3.scaleLinear().domain([-6,6]).range([height-margin,margin]);
+      
+      // If ground truth, draw the ring-like heatmap from model
+      if (isGroundTruth) {
+        svg.select('.data-points').selectAll('*').remove();
+        const heatmaps = model.getHeatmaps();
+        if (!heatmaps || !heatmaps.groundTruth) return;
+        const groundTruth = heatmaps.groundTruth;
+        const gridSize = Math.sqrt(groundTruth.length);
+        const cellWidth  = (width - 2*margin)/gridSize;
+        const cellHeight = (height-2*margin)/gridSize;
+        
+        const colorScale = d3.scaleLinear()
+          .domain([0,0.5,1])
+          .range([colors.class0,'#f5f5f5',colors.class1]);
+        
+        svg.select('.data-points')
+          .selectAll('rect')
+          .data(groundTruth)
+          .enter()
+          .append('rect')
+          .attr('x', d=> xScale(-6 + (d.i/(gridSize-1))*12) - cellWidth/2)
+          .attr('y', d=> yScale(-6 + (d.j/(gridSize-1))*12) - cellHeight/2)
+          .attr('width', cellWidth)
+          .attr('height',cellHeight)
+          .attr('fill', d=>colorScale(d.activation))
+          .attr('opacity',0.8);
+        return;
+      }
+      
+      // Otherwise, scatter the model’s currentTrainData
+      const data = model.currentTrainData.data;
+      const labels= model.currentTrainData.labels;
+      const points=[];
+      for (let i=0; i<data.length; i++) {
+        points.push({ x:data[i][0], y:data[i][1], label:labels[i] });
+      }
+      
+      const circles = svg.select('.data-points')
+        .selectAll('circle')
+        .data(points);
+      circles.exit().remove();
+      const circlesEnter = circles.enter().append('circle').attr('r',3);
+      
+      circlesEnter.merge(circles)
+        .attr('cx', d=>xScale(d.x))
+        .attr('cy', d=>yScale(d.y))
+        .attr('fill', d=> d.label===1?colors.class1:colors.class0)
+        .attr('opacity',0.7)
+        .attr('stroke','#333')
+        .attr('stroke-width',0.5);
+    }
+    
+    function createOutputVisualization(containerId) {
+      const svg = d3.select(containerId)
+        .append('svg')
+        .attr('width','100%')
+        .attr('height','100%');
+      
+      const width = parseInt(d3.select(containerId).style('width'));
+      const height= parseInt(d3.select(containerId).style('height'));
+      const margin=30;
+      
+      svg.append('g')
+        .attr('class','x-axis axis')
+        .attr('transform',`translate(0,${height-margin})`)
+        .call(d3.axisBottom(d3.scaleLinear().domain([-6,6]).range([margin,width-margin])));
+      svg.append('g')
+        .attr('class','y-axis axis')
+        .attr('transform',`translate(${margin},0)`)
+        .call(d3.axisLeft(d3.scaleLinear().domain([-6,6]).range([height-margin,margin])));
+      
+      svg.append('text')
+        .attr('text-anchor','middle')
+        .attr('x',width/2)
+        .attr('y',height-5)
+        .attr('font-size','12px')
+        .text('X₁');
+      svg.append('text')
+        .attr('text-anchor','middle')
+        .attr('transform',`translate(12,${height/2}) rotate(-90)`)
+        .attr('font-size','12px')
+        .text('X₂');
+      
+      svg.append('g').attr('class','heatmap');
+      
+      const legendWidth=200, legendHeight=15;
+      const legendGroup = svg.append('g')
+        .attr('class','heatmap-legend')
+        .attr('transform',`translate(${(width-legendWidth)/2},${height-8})`);
+      
+      const defs = svg.append('defs');
+      const gradient = defs.append('linearGradient')
+        .attr('id',`heatmap-gradient-${containerId.substring(1)}`)
+        .attr('x1','0%')
+        .attr('y1','0%')
+        .attr('x2','100%')
+        .attr('y2','0%');
+      
+      gradient.append('stop')
+        .attr('offset','0%')
+        .attr('stop-color',colors.class0);
+      gradient.append('stop')
+        .attr('offset','50%')
+        .attr('stop-color','#f5f5f5');
+      gradient.append('stop')
+        .attr('offset','100%')
+        .attr('stop-color',colors.class1);
+      
+      legendGroup.append('rect')
+        .attr('width',legendWidth)
+        .attr('height',legendHeight)
+        .attr('fill',`url(#heatmap-gradient-${containerId.substring(1)})`);
+      
+      legendGroup.append('text')
+        .attr('x',0)
+        .attr('y',-5)
+        .attr('font-size','10px')
+        .attr('text-anchor','start')
+        .text('0.00');
+      legendGroup.append('text')
+        .attr('x',legendWidth)
+        .attr('y',-5)
+        .attr('font-size','10px')
+        .attr('text-anchor','end')
+        .text('1.00');
+      
+      return svg;
+    }
+    
+    function updateOutputVisualization(containerId, customHeatmapData) {
+      const svg = d3.select(`${containerId} svg`);
+      const width = parseInt(d3.select(containerId).style('width'));
+      const height= parseInt(d3.select(containerId).style('height'));
+      const margin=30;
+      
+      const xScale = d3.scaleLinear().domain([-6,6]).range([margin,width-margin]);
+      const yScale = d3.scaleLinear().domain([-6,6]).range([height-margin,margin]);
+      
+      const gridSize=40;
+      const cellWidth =(width - 2*margin)/gridSize;
+      const cellHeight=(height-2*margin)/gridSize;
+      
+      const model = window.modelHistory.getCurrentSnapshot();
+      let gridData;
+      
+      if (customHeatmapData !== undefined) {
+        gridData = customHeatmapData.map(d=>{
+          const x = -6 + (d.i/(gridSize-1))*12;
+          const y = -6 + (d.j/(gridSize-1))*12;
+          return { x, y, output:d.activation };
+        });
+      } else {
+        const heatmaps = model.getHeatmaps();
+        if (!heatmaps) return;
+        let outputHeatmap;
+        if (containerId==='#forward-output') {
+          outputHeatmap = heatmaps.forward[model.weights.length][0];
+        } else {
+          outputHeatmap = heatmaps.backward[model.weights.length][0];
+        }
+        if (!outputHeatmap) return;
+        gridData = outputHeatmap.map(d=>{
+          const x = -6 + (d.i/(gridSize-1))*12;
+          const y = -6 + (d.j/(gridSize-1))*12;
+          return { x, y, output:d.activation };
+        });
+      }
+      
+      const minVal = d3.min(gridData,d=>d.output);
+      const maxVal = d3.max(gridData,d=>d.output);
+      
+      const colorScale = d3.scaleLinear()
+        .domain([minVal,(minVal+maxVal)/2,maxVal])
+        .range([colors.class0,'#f5f5f5',colors.class1]);
+      
+      const cells = svg.select('.heatmap')
+        .selectAll('rect')
+        .data(gridData);
+      cells.exit().remove();
+      const cellsEnter = cells.enter().append('rect');
+      
+      cellsEnter.merge(cells)
+        .attr('x', d=>xScale(d.x)-cellWidth/2)
+        .attr('y', d=>yScale(d.y)-cellHeight/2)
+        .attr('width',cellWidth)
+        .attr('height',cellHeight)
+        .attr('fill', d=>colorScale(d.output))
+        .attr('opacity',0.8);
+      
+      const defs = svg.select('defs');
+      const gradientId = `heatmap-gradient-${containerId.substring(1)}`;
+      let gradient = defs.select(`#${gradientId}`);
+      if (gradient.empty()) {
+        gradient = defs.append('linearGradient')
+          .attr('id',gradientId)
+          .attr('x1','0%')
+          .attr('y1','0%')
+          .attr('x2','100%')
+          .attr('y2','0%');
+      }
+      gradient.selectAll('stop').remove();
+      gradient.append('stop')
+        .attr('offset','0%')
+        .attr('stop-color',colorScale(minVal));
+      gradient.append('stop')
+        .attr('offset','50%')
+        .attr('stop-color',colorScale((minVal+maxVal)/2));
+      gradient.append('stop')
+        .attr('offset','100%')
+        .attr('stop-color',colorScale(maxVal));
+      
+      const legendGroup = svg.select('.heatmap-legend');
+      const legendTexts = legendGroup.selectAll('text');
+      legendTexts.nodes()[0].textContent = minVal.toFixed(2);
+      legendTexts.nodes()[1].textContent = maxVal.toFixed(2);
+    }
+    
+    function createLossChart() {
+      const svg = d3.select('#loss-chart')
+        .append('svg')
+        .attr('width','100%')
+        .attr('height','100%');
+      
+      svg.append('g').attr('class','x-axis');
+      svg.append('g').attr('class','y-axis');
+      
+      svg.append('path').attr('class','train-loss').attr('fill','none').attr('stroke','#f8a').attr('stroke-width',2);
+      svg.append('path').attr('class','test-loss').attr('fill','none').attr('stroke','#7ba9e0').attr('stroke-width',2);
+      
+      const legend = svg.append('g')
+        .attr('class','legend')
+        .attr('transform','translate(10,20)');
+      legend.append('rect')
+        .attr('width',10)
+        .attr('height',10)
+        .attr('fill','#f8a');
+      legend.append('text')
+        .attr('x',15)
+        .attr('y',8)
+        .attr('font-size','10px')
+        .text('Training Loss');
+      
+      legend.append('rect')
+        .attr('width',10)
+        .attr('height',10)
+        .attr('fill','#7ba9e0')
+        .attr('transform','translate(100,0)');
+      legend.append('text')
+        .attr('x',115)
+        .attr('y',8)
+        .attr('font-size','10px')
+        .text('Test Loss');
+      
+      svg.append('text')
+        .attr('x',10)
+        .attr('y',10)
+        .attr('font-size','12px')
+        .attr('font-weight','bold')
+        .text('Loss Over Time');
+      
+      return svg;
+    }
+    
+    function updateLossChart(model) {
+      const svg = d3.select('#loss-chart svg');
+      const width = parseInt(d3.select('#loss-chart').style('width'));
+      const height= parseInt(d3.select('#loss-chart').style('height'));
+      const margin={top:30,right:10,bottom:20,left:40};
+      
+      const trainLoss = model.trainingLoss;
+      const testLoss  = model.testLoss;
+      if (trainLoss.length===0) return;
+      
+      const xScale = d3.scaleLinear()
+        .domain([0,Math.max(10, trainLoss.length-1)])
+        .range([margin.left,width-margin.right]);
+      const yMax = Math.max(...trainLoss,...testLoss)*1.1;
+      const yScale = d3.scaleLinear()
+        .domain([0,yMax])
+        .range([height-margin.bottom,margin.top]);
+      
+      const lineGen = d3.line()
+        .x((d,i)=>xScale(i))
+        .y(d=>yScale(d));
+      
+      svg.select('.train-loss')
+        .attr('d', lineGen(trainLoss));
+      svg.select('.test-loss')
+        .attr('d', lineGen(testLoss));
+      
+      const xAxis = d3.axisBottom(xScale).ticks(5);
+      const yAxis = d3.axisLeft(yScale).ticks(5);
+      
+      svg.select('.x-axis')
+        .attr('transform',`translate(0,${height-margin.bottom})`)
+        .call(xAxis);
+      svg.select('.y-axis')
+        .attr('transform',`translate(${margin.left},0)`)
+        .call(yAxis);
+    }
+    
+    function createGradientChart() {
+      const svg = d3.select('#gradient-chart')
+        .append('svg')
+        .attr('width','100%')
+        .attr('height','100%');
+      
+      svg.append('g').attr('class','x-axis');
+      svg.append('g').attr('class','y-axis');
+      svg.append('path').attr('class','gradient-line').attr('fill','none').attr('stroke',colors.gradients.line).attr('stroke-width',2);
+      
+      svg.append('text')
+        .attr('x',10)
+        .attr('y',10)
+        .attr('font-size','12px')
+        .attr('font-weight','bold')
+        .text('Average Gradient Magnitude');
+      return svg;
+    }
+    
+    function updateGradientChart(model) {
+      const svg = d3.select('#gradient-chart svg');
+      const width = parseInt(d3.select('#gradient-chart').style('width'));
+      const height= parseInt(d3.select('#gradient-chart').style('height'));
+      const margin={top:30,right:10,bottom:20,left:40};
+      
+      const grads = model.averageGradients;
+      if (grads.length===0) return;
+      
+      const avgByEpoch = grads.map(layerGrads=>{
+        return layerGrads.reduce((sum,val)=>sum+val,0)/layerGrads.length;
+      });
+      
+      const xScale = d3.scaleLinear()
+        .domain([0, Math.max(10, grads.length-1)])
+        .range([margin.left, width-margin.right]);
+      const yMax = Math.max(...avgByEpoch)*1.1 || 0.1;
+      const yScale = d3.scaleLinear()
+        .domain([0,yMax])
+        .range([height-margin.bottom,margin.top]);
+      
+      const lineGen = d3.line()
+        .x((d,i)=>xScale(i))
+        .y(d=>yScale(d));
+      const areaGen = d3.area()
+        .x((d,i)=>xScale(i))
+        .y0(height-margin.bottom)
+        .y1(d=>yScale(d));
+      
+      const area = svg.selectAll('.gradient-area').data([avgByEpoch]);
+      if (area.empty()) {
+        svg.append('path')
+          .attr('class','gradient-area')
+          .attr('fill',colors.gradients.area)
+          .attr('d', areaGen(avgByEpoch));
+      } else {
+        area.attr('d', areaGen(avgByEpoch));
+      }
+      
+      svg.select('.gradient-line')
+        .attr('d', lineGen(avgByEpoch));
+      
+      const xAxis = d3.axisBottom(xScale).ticks(5);
+      const yAxis = d3.axisLeft(yScale).ticks(5);
+      svg.select('.x-axis')
+        .attr('transform',`translate(0,${height-margin.bottom})`)
+        .call(xAxis);
+      svg.select('.y-axis')
+        .attr('transform',`translate(${margin.left},0)`)
+        .call(yAxis);
+    }
+    
+    // --------------------------------------------------------------------------------
+    //                              MAIN INIT FUNCTION
+    // --------------------------------------------------------------------------------
+    function init() {
+      setupTabs();
+      
+      // Create the model
+      const model = new SimpleNeuralNetwork(2,4,7);
+      window.model = model;
+      
+      // Create model history
+      window.modelHistory = new ModelHistory();
+      window.modelHistory.addSnapshot(model,true);
+      
+      // Build visualizations
+      createNetworkVisualization('#forward-network');
+      createSampleVisualization('#forward-samples');
+      createOutputVisualization('#forward-output');
+      
+      createNetworkVisualization('#backward-network');
+      createSampleVisualization('#backward-samples');
+      createOutputVisualization('#backward-output');
+      
+      createLossChart();
+      createGradientChart();
+      
+      // We won't generate data here. We'll do it via a separate function so we can
+      // switch distributions on the fly without resetting the network.
+      regenerateDataOnly('circle'); // default
+      
+      // Training state
+      let isTraining=false;
+      let animationId=null;
+      
+      function updateTrainingButtons(training) {
+        document.getElementById('train').disabled = training;
+        document.getElementById('pause').disabled= !training;
+        document.getElementById('pause').textContent= training?'Pause':'Continue';
+        document.getElementById('pause').className= training?'pause-button':'continue-button';
+      }
+      
+      function trainingLoop() {
+        if (!isTraining) return;
+        
+        // Train using the model's stored data
+        const trainX = model.currentTrainData.data;
+        const trainY = model.currentTrainData.labels;
+        const testX  = model.currentTestData.data;
+        const testY  = model.currentTestData.labels;
+        
+        const { trainLoss, testLoss } = model.trainOneEpoch(trainX, trainY, testX, testY, 10);
+        
+        if (model.currentEpoch % 3 === 0) {
+          document.getElementById('trainingLoss').textContent = trainLoss.toFixed(3);
+          document.getElementById('testLoss').textContent    = testLoss.toFixed(3);
+          document.getElementById('status').textContent      = `Training... Epoch ${model.currentEpoch}`;
+          document.getElementById('epochCounter').textContent= model.currentEpoch;
+          
+          updateVisualizations(model);
+          
+          if (model.currentEpoch % window.modelHistory.interval===0) {
+            window.modelHistory.addSnapshot(model);
+          }
+        }
+        animationId = requestAnimationFrame(trainingLoop);
+      }
+      
+      document.getElementById('train').addEventListener('click',()=>{
+        if (!isTraining) {
+          isTraining=true;
+          updateTrainingButtons(true);
+          document.getElementById('status').textContent='Training...';
+          trainingLoop();
+        }
+      });
+      
+      document.getElementById('pause').addEventListener('click',()=>{
+        isTraining=!isTraining;
+        updateTrainingButtons(isTraining);
+        if (isTraining) {
+          document.getElementById('status').textContent='Training...';
+          trainingLoop();
+        } else {
+          document.getElementById('status').textContent=`Paused at epoch ${model.currentEpoch}`;
+          if (animationId) {
+            cancelAnimationFrame(animationId);
+            animationId=null;
+          }
+          window.modelHistory.addSnapshot(model,true);
+        }
+      });
+      
+    document.getElementById('reset').addEventListener('click', () => {
+      // Stop training if in progress
+      isTraining = false;
+      updateTrainingButtons(false);
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      
+      // Get current settings
+      const activationType = document.getElementById('activationFunction').value;
+      const learningRate = parseFloat(document.getElementById('learningRate').value);
+      const useBias = document.getElementById('useBias').checked;
+      
+      // Reset the existing model instance (instead of creating a new one)
+      model.reset();
+      model.setUseBias(useBias);
+      model.setActivationType(activationType);
+      model.setLearningRate(learningRate);
+      
+      // // Reset model history
+      // window.modelHistory.snapshots = [];
+      // window.modelHistory.currentIndex = 0;
+      // window.modelHistory.updateUI();
+      
+      // Add a fresh snapshot
+      window.modelHistory.addSnapshot(model, true);
+      
+      // Reset display
+      document.getElementById('trainingLoss').textContent = '-';
+      document.getElementById('testLoss').textContent = '-';
+      document.getElementById('epochCounter').textContent = '0';
+      
+      updateVisualizations(model);
+      
+      document.getElementById('status').textContent = 'Network reset!';
+    });
+      
+      // If user changes distribution, just regenerate data, but do NOT reset network
+      document.getElementById('distributionType').addEventListener('change', e=>{
+        const distType = e.target.value;
+        regenerateDataOnly(distType);
+      });
+      
+      // Show test data checkbox
+      document.getElementById('showTestData').addEventListener('change',()=>{
+        updateOutputVisualization('#forward-output');
+        updateOutputVisualization('#backward-output');
+      });
+      
+      // LR, activation, history
+      document.getElementById('learningRate').addEventListener('change', e=>{
+        const newRate = parseFloat(e.target.value);
+        window.model.setLearningRate(newRate);
+      });
+      document.getElementById('activationFunction').addEventListener('change', e=>{
+        const newType = e.target.value;
+        window.model.setActivationType(newType);
+        updateNetworkVisualization('#forward-network',window.model,false);
+        updateNetworkVisualization('#backward-network',window.model,true);
+      });
+      document.getElementById('historyInterval').addEventListener('input', e=>{
+        window.modelHistory.interval = parseInt(e.target.value);
+      });
+      document.getElementById('historySlider').addEventListener('input', e=>{
+        const idx = parseInt(e.target.value);
+        const snap = window.modelHistory.setCurrentIndex(idx);
+        if (snap) {
+          updateVisualizations(snap);
+          window.modelHistory.updateUI();
+        }
+      });
+      document.getElementById('jumpToLatest').addEventListener('click',()=>{
+        const snap = window.modelHistory.getLatestSnapshot();
+        updateVisualizations(snap);
+        window.modelHistory.updateUI();
+        document.getElementById('status').textContent=`Returned to latest state: Epoch ${snap.currentEpoch}`;
+      });
+    }
+    
+    // NEW OR MODIFIED: function to re-generate data only, keep same network
+    function regenerateDataOnly(distributionType) {
+      // Generate new train/test
+      const trainingSamples=500, testingSamples=100;
+      const newTrain = generateData(trainingSamples, distributionType);
+      const newTest  = generateData(testingSamples, distributionType);
+      
+      // Store them in the existing model
+      window.model.setTrainTestData(newTrain, newTest);
+      
+      // Recompute heatmaps
+      window.model.initializeGridData(50);
+      window.model.computeAllHeatmaps();
+      
+      // Update visuals + snapshot
+      updateVisualizations(window.model);
+      window.modelHistory.addSnapshot(window.model,true);
+      
+      document.getElementById('status').textContent=
+        `Data regenerated for distribution: ${distributionType}`;
+    }
+    
+    function updateVisualizations(model) {
+      if (!model) return;
+      console.log(`Updating visualizations for model at epoch ${model.currentEpoch}`);
+      
+      // Forward
+      updateNetworkVisualization('#forward-network',model,false);
+      updateSampleVisualization('#forward-samples',model,false);
+      updateOutputVisualization('#forward-output');
+      
+      // Backward
+      updateNetworkVisualization('#backward-network',model,true);
+      updateSampleVisualization('#backward-samples',model,true);
+      updateOutputVisualization('#backward-output');
+      
+      updateLossChart(model);
+      updateGradientChart(model);
+      
+      document.getElementById('epochCounter').textContent=model.currentEpoch;
+      if (model.trainingLoss.length>0) {
+        document.getElementById('trainingLoss').textContent =
+          model.trainingLoss[model.trainingLoss.length-1].toFixed(3);
+      }
+      if (model.testLoss.length>0) {
+        document.getElementById('testLoss').textContent =
+          model.testLoss[model.testLoss.length-1].toFixed(3);
+      }
+    }
+    
+    document.addEventListener('DOMContentLoaded',init);
+  </script>
+</body>
+</html>
