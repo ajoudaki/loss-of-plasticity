@@ -1,6 +1,6 @@
 """
-Combined file with all neural network models adapted to use ModuleDict,
-NetworkMonitor for tracking activations and gradients, and wandb for logging experiments.
+Combined file with neural network models, NetworkMonitor for tracking activations and gradients,
+and utilities for metrics computation and continual learning experiments.
 """
 
 import torch
@@ -10,30 +10,22 @@ from collections import defaultdict
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Dataset
 import numpy as np
 import matplotlib.pyplot as plt
 import time
 import os
 import random
-import wandb  # Import wandb for logging experiments
+import wandb  # For logging experiments
 
 ###########################################
 # Utility Functions and Custom Layers
 ###########################################
 
 def get_activation(activation_name):
-    """
-    Returns the activation function based on name.
-    
-    Parameters:
-        activation_name (str): Name of the activation function.
-        
-    Returns:
-        nn.Module: PyTorch activation module.
-    """
+    """Returns the activation function based on name."""
     activations = {
-        'relu': nn.ReLU(inplace=False),  # Use inplace=False for compatibility with hooks
+        'relu': nn.ReLU(inplace=False),
         'leaky_relu': nn.LeakyReLU(0.1, inplace=False),
         'tanh': nn.Tanh(),
         'sigmoid': nn.Sigmoid(),
@@ -50,17 +42,7 @@ def get_activation(activation_name):
     return activations[activation_name.lower()]
 
 def get_normalization(norm_name, num_features, affine=True):
-    """
-    Returns the normalization layer based on name.
-    
-    Parameters:
-        norm_name (str): Name of the normalization ('batch', 'layer', etc.)
-        num_features (int): Number of features for the normalization layer.
-        affine (bool): Whether the normalization layer should have learnable parameters.
-        
-    Returns:
-        nn.Module: PyTorch normalization module or None.
-    """
+    """Returns the normalization layer based on name."""
     if norm_name is None:
         return None
         
@@ -81,6 +63,18 @@ def get_normalization(norm_name, num_features, affine=True):
     
     return normalizations[norm_key]
 
+def set_seed(seed):
+    """Set random seed for reproducibility."""
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+###########################################
+# Model Definitions
+###########################################
 
 class MLP(nn.Module):
     def __init__(self, 
@@ -93,20 +87,7 @@ class MLP(nn.Module):
                  norm_after_activation=False,
                  bias=True,
                  normalization_affine=True):
-        """
-        Fully connected MLP that supports various activations and normalizations.
-        
-        Parameters:
-            input_size (int): Dimensionality of input features.
-            hidden_sizes (list): List of hidden layer dimensions.
-            output_size (int): Number of output classes.
-            activation (str): Activation function to use.
-            dropout_p (float): Dropout probability (0 to disable).
-            normalization (str): Normalization to use ('batch', 'layer', or None).
-            norm_after_activation (bool): If True, apply normalization after activation.
-            bias (bool): Whether to include bias terms in linear layers.
-            normalization_affine (bool): Whether normalization layers have learnable parameters.
-        """
+        """Fully connected MLP with customizable architecture."""
         super(MLP, self).__init__()
         
         self.input_size = input_size
@@ -146,9 +127,6 @@ class MLP(nn.Module):
         return x
 
 
-###########################################
-#  CNN
-###########################################
 
 class CNN(nn.Module):
     def __init__(self, 
@@ -167,26 +145,7 @@ class CNN(nn.Module):
                  use_batchnorm=True,
                  norm_after_activation=False,
                  normalization_affine=True):
-        """
-         CNN with layers, activations, and normalizations.
-        
-        Parameters:
-            in_channels (int): Number of input channels.
-            conv_channels (list): List of convolutional layer output channels.
-            kernel_sizes (list): List of kernel sizes for each conv layer.
-            strides (list): List of stride values for each conv layer.
-            paddings (list): List of padding values for each conv layer.
-            fc_hidden_units (list): List of hidden units for fully connected layers.
-            num_classes (int): Number of output classes.
-            input_size (int): Height/width of the input images.
-            activation (str): Activation function to use.
-            dropout_p (float): Dropout probability.
-            pool_type (str): Type of pooling ('max', 'avg', or None).
-            pool_size (int): Size of the pooling window.
-            use_batchnorm (bool): Whether to use batch normalization.
-            norm_after_activation (bool): Whether to apply normalization after activation.
-            normalization_affine (bool): Whether normalization layers have learnable parameters.
-        """
+        """CNN with configurable layers, activations, and normalizations."""
         super(CNN, self).__init__()
         
         assert len(conv_channels) == len(kernel_sizes) == len(strides) == len(paddings), \
@@ -219,98 +178,24 @@ class CNN(nn.Module):
         
         self.layers['flatten'] = nn.Flatten()
         
+        # Build fully connected layers
         fc_input_size = self.flattened_size
         for i, hidden_units in enumerate(fc_hidden_units):
-          import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
-import matplotlib.pyplot as plt
-
-# ------------------------------
-# Model definition: CoupledMLP
-# ------------------------------
-
-class CoupledMLP(nn.Module):
-    def __init__(self, input_dim=3072, hidden_dim=128, num_classes=10):
-        """
-        A simple MLP with one hidden layer.
-        Two neurons (indices 0 and 1) are forced to be coupled both in their incoming
-        weights (fc1) and outgoing weights (fc2). For fc2, note that the contributions
-        of the hidden units to each output are stored column-wise.
-        """
-        super(CoupledMLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, num_classes)
-        self.initialize_coupled_neurons()
-
-    def initialize_coupled_neurons(self):
-        # Make neuron 0 and 1 in the hidden layer exactly the same (or nearly so)
-        with torch.no_grad():
-            self.fc1.weight[1].copy_(self.fc1.weight[0])
-            self.fc1.bias[1].copy_(self.fc1.bias[0])
-            # For the second layer, the effect of the hidden neurons is given by the columns.
-            # Force the column for neuron 1 to be equal to that for neuron 0.
-            self.fc2.weight[:, 1].copy_(self.fc2.weight[:, 0])
+            self.layers[f'fc_{i}'] = nn.Linear(fc_input_size, hidden_units)
+            self.layers[f'fc_act_{i}'] = get_activation(activation)
+            
+            if dropout_p > 0:
+                self.layers[f'fc_drop_{i}'] = nn.Dropout(dropout_p)
+            
+            fc_input_size = hidden_units
+        
+        self.layers['fc_out'] = nn.Linear(fc_input_size, num_classes)
     
     def forward(self, x):
-        # Flatten CIFAR-10 images (3x32x32=3072)
-        x = x.view(x.size(0), -1)
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.fc2(x)
+        for k, l in self.layers.items():
+            x = l(x)
         return x
 
-# -------------------------------------------
-# Helper: Compute cosine similarity metrics
-# -------------------------------------------
-
-def compute_cosine_similarity(model):
-    """
-    Computes the cosine similarity between:
-      - fc1 neurons 0 and 1 (their weight rows)
-      - fc2 columns 0 and 1 (the outgoing weights corresponding to these neurons)
-    """
-    # For fc1: weight shape [hidden_dim, input_dim]
-    w1 = model.fc1.weight[0].detach().cpu()
-    w2 = model.fc1.weight[1].detach().cpu()
-    cos_sim_fc1 = F.cosine_similarity(w1.unsqueeze(0), w2.unsqueeze(0)).item()
-    
-    # For fc2: weight shape [num_classes, hidden_dim]
-    # Compare the two columns corresponding to the coupled neurons.
-    col0 = model.fc2.weight[:, 0].detach().cpu()
-    col1 = model.fc2.weight[:, 1].detach().cpu()
-    cos_sim_fc2 = F.cosine_similarity(col0.unsqueeze(0), col1.unsqueeze(0)).item()
-    
-    return cos_sim_fc1, cos_sim_fc2
-
-# ------------------------------
-# Standard training loop
-# ------------------------------
-
-def train(model, device, train_loader, optimizer, criterion, epoch, log_interval=100):
-    model.train()
-    running_loss = 0.0
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-        if batch_idx % log_interval == 0:
-            print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
-                  f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
-    avg_loss = running_loss / len(train_loader)
-    return avg_loss
-
-
-###########################################
-# ResNet
-###########################################
 
 class BasicBlock(nn.Module):
     """Basic ResNet block with activation and normalization."""
@@ -372,9 +257,7 @@ class BasicBlock(nn.Module):
 
 
 class ResNet(nn.Module):
-    """
-     ResNet architecture for continual learning experiments.
-    """
+    """ResNet architecture for continual learning experiments."""
     def __init__(self, 
                  block=BasicBlock,
                  layers=[2, 2, 2, 2],
@@ -402,6 +285,7 @@ class ResNet(nn.Module):
         
         self.layers['activation'] = get_activation(activation)
         
+        # Create ResNet blocks
         self._make_layer(block, base_channels, layers[0], stride=1, 
                         activation=activation, use_batchnorm=use_batchnorm, 
                         norm_after_activation=norm_after_activation, 
@@ -431,6 +315,7 @@ class ResNet(nn.Module):
         
         self.layers['fc'] = nn.Linear(base_channels*8*block.expansion, num_classes)
         
+        # Initialize weights
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -484,6 +369,7 @@ class ResNet(nn.Module):
             if 'bn1' in self.layers:
                 x = self.layers['bn1'](x)
         
+        # Forward through ResNet blocks
         for layer_idx in range(1, self.num_layers + 1):
             for block_idx in range(self.blocks_per_layer[layer_idx - 1]):
                 block_name = f'layer{layer_idx}_block{block_idx}'
@@ -557,11 +443,9 @@ class TransformerMLP(nn.Module):
         x = self.layers['drop2'](x)
         return x
 
+
 class PatchEmbedding(nn.Module):
-    """
-    Image to Patch Embedding for Vision Transformer.
-    Adapted to work with ModuleDict and NetworkMonitor.
-    """
+    """Image to Patch Embedding for Vision Transformer."""
     def __init__(self, img_size=32, patch_size=4, in_channels=3, embed_dim=192):
         super().__init__()
         self.img_size = img_size
@@ -582,7 +466,8 @@ class PatchEmbedding(nn.Module):
         B, C, H, W = x.shape
         x = x.flatten(2).transpose(1, 2)
         return x
-        
+
+
 class TransformerBlock(nn.Module):
     """Transformer block with components."""
     def __init__(self, dim, n_heads, mlp_ratio=4., qkv_bias=True, drop=0., 
@@ -612,9 +497,7 @@ class TransformerBlock(nn.Module):
 
 
 class VisionTransformer(nn.Module):
-    """
-    Vision Transformer (ViT) model with architecture.
-    """
+    """Vision Transformer (ViT) model."""
     def __init__(self, 
                  img_size=32, 
                  patch_size=4, 
@@ -682,14 +565,14 @@ class VisionTransformer(nn.Module):
             x = self.layers[f'block_{i}'](x)
         
         x = self.layers['norm'](x)
-        x = x[:, 0]
+        x = x[:, 0]  # Use CLS token for classification
         x = self.layers['head'](x)
             
         return x
 
 
 ###########################################
-# NetworkMonitor Class with Enhanced Control
+# NetworkMonitor Class
 ###########################################
 
 class NetworkMonitor:
@@ -697,10 +580,10 @@ class NetworkMonitor:
         """
         Initialize the network monitor.
         
-        Parameters:
-            model: The neural network model to monitor.
+        Args:
+            model: The neural network model to monitor
             filter_func: Function that takes a layer name and returns 
-                         True if the layer should be monitored.
+                         True if the layer should be monitored
         """
         self.model = model
         self.filter_func = filter_func if filter_func is not None else lambda name: True
@@ -711,6 +594,7 @@ class NetworkMonitor:
         self.hooks_active = False
         
     def set_filter(self, filter_func):
+        """Update the filter function for selecting layers to monitor."""
         was_active = self.hooks_active
         if was_active:
             self.remove_hooks()
@@ -719,6 +603,7 @@ class NetworkMonitor:
             self.register_hooks()
         
     def register_hooks(self):
+        """Register forward and backward hooks on the model."""
         if not self.hooks_active:
             for name, module in self.model.named_modules():
                 if name != '' and self.filter_func(name):
@@ -742,6 +627,7 @@ class NetworkMonitor:
             self.hooks_active = True
     
     def remove_hooks(self):
+        """Remove all hooks from the model."""
         if self.hooks_active:
             for h in self.fwd_hooks + self.bwd_hooks:
                 h.remove()
@@ -750,10 +636,12 @@ class NetworkMonitor:
             self.hooks_active = False
         
     def clear_data(self):
+        """Clear stored activations and gradients."""
         self.activations = defaultdict(list)
         self.gradients = defaultdict(list)
         
     def get_latest_activations(self):
+        """Get the latest activations for all monitored layers."""
         latest_acts = {}
         for name, acts_list in self.activations.items():
             if acts_list:
@@ -761,30 +649,30 @@ class NetworkMonitor:
         return latest_acts
     
     def get_latest_gradients(self):
+        """Get the latest gradients for all monitored layers."""
         latest_grads = {}
         for name, grads_list in self.gradients.items():
             if grads_list:
                 latest_grads[name] = grads_list[-1]
         return latest_grads
 
-###########################################
-# Utility Functions
-###########################################
-
-def flatten_activations(layer_act):
-    shape = layer_act.shape
-    if len(shape) == 4:
-        return layer_act.permute(0, 2, 3, 1).contiguous().view(-1, shape[1])
-    elif len(shape) == 3:
-        return layer_act.contiguous().view(-1, shape[2])
-    else:
-        return layer_act.view(-1, shape[1])
 
 ###########################################
 # Metric Functions 
 ###########################################
 
+def flatten_activations(layer_act):
+    """Reshape layer activations to 2D matrix (samples × features)."""
+    shape = layer_act.shape
+    if len(shape) == 4:  # Convolutional layer
+        return layer_act.permute(0, 2, 3, 1).contiguous().view(-1, shape[1])
+    elif len(shape) == 3:  # Transformer layer
+        return layer_act.contiguous().view(-1, shape[2])
+    else:  # Linear layer
+        return layer_act.view(-1, shape[1])
+
 def measure_dead_neurons(layer_act, dead_threshold=0.95):
+    """Measure fraction of neurons that are inactive (dead)."""
     flattened_act = flatten_activations(layer_act)
     is_zero = (flattened_act.abs() < 1e-7)
     frac_zero_per_neuron = is_zero.float().mean(dim=0)
@@ -793,6 +681,7 @@ def measure_dead_neurons(layer_act, dead_threshold=0.95):
     return dead_fraction
 
 def measure_duplicate_neurons(layer_act, corr_threshold):
+    """Measure fraction of neurons that are duplicates of others."""
     flattened_act = flatten_activations(layer_act)
     flattened_act = flattened_act.t()  
     flattened_act = torch.nn.functional.normalize(flattened_act, p=2, dim=1)
@@ -804,6 +693,7 @@ def measure_duplicate_neurons(layer_act, corr_threshold):
     return fraction_dup
 
 def measure_effective_rank(layer_act, svd_sample_size=1024):
+    """Compute effective rank (entropy of normalized singular values)."""
     flattened_act = flatten_activations(layer_act)
     N = flattened_act.shape[0]
     if N > svd_sample_size:
@@ -819,6 +709,7 @@ def measure_effective_rank(layer_act, svd_sample_size=1024):
     return eff_rank
 
 def measure_stable_rank(layer_act, sample_size=1024, use_gram=True):
+    """Compute stable rank (squared Frobenius norm / spectral norm squared)."""
     flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
     if N > sample_size:
@@ -849,16 +740,7 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
     Saturated neurons are identified as those where the ratio of gradient magnitude
     to mean activation magnitude is very small, indicating the neuron is in a flat
     region of the loss landscape.
-    
-    Parameters:
-        layer_act (torch.Tensor): Activations of the layer.
-        layer_grad (torch.Tensor): Gradients of the layer.
-        saturation_threshold (float): Threshold for considering a neuron saturated.
-        
-    Returns:
-        float: Fraction of saturated neurons in the layer.
     """
-    
     flattened_act = flatten_activations(layer_act)
     flattened_grad = flatten_activations(layer_grad)
     
@@ -885,22 +767,41 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
     
     return saturated_fraction
 
+
 ###########################################
-# Analysis with Single Monitor
+# Analysis with Monitor
 ###########################################
 
-def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets=None, 
-                        criterion=None, dead_threshold=0.95, 
-                        corr_threshold=0.99, 
-                        saturation_threshold=1e-4,saturation_percentage=.99,
+def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
+                        dead_threshold, 
+                        corr_threshold, 
+                        saturation_threshold, 
+                        saturation_percentage,
                         device='cpu'):
+    """
+    Analyze model behavior on a fixed batch to compute metrics.
+    
+    Args:
+        model: Neural network model
+        monitor: NetworkMonitor instance
+        fixed_batch: Input data batch
+        fixed_targets: Target labels
+        criterion: Loss function
+        dead_threshold: Threshold for dead neuron detection
+        corr_threshold: Threshold for duplicate neuron detection
+        saturation_threshold: Threshold for saturated neuron detection
+        saturation_percentage: Percentage of samples required for a neuron to be considered saturated
+        device: Device to run computations on
+        
+    Returns:
+        Dictionary of metrics for each layer
+    """
     if fixed_batch.device != device:
         fixed_batch = fixed_batch.to(device)
         fixed_targets = fixed_targets.to(device)
     
     hooks_were_active = monitor.hooks_active
     monitor.register_hooks()
-    # model.eval()
     
     with torch.set_grad_enabled(criterion is not None):
         outputs = model(fixed_batch)
@@ -911,22 +812,20 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets=None,
     latest_acts = monitor.get_latest_activations()
     latest_grads = monitor.get_latest_gradients()
 
-    
     for layer_name, act in latest_acts.items():
+        # Skip layers without gradients when computing metrics
+        if layer_name not in latest_grads:
+            continue
+            
         grad = latest_grads[layer_name]
         
-        dead_frac = measure_dead_neurons(act, dead_threshold)
-        dup_frac = measure_duplicate_neurons(act, corr_threshold)
-        eff_rank = measure_effective_rank(act)
-        stable_rank = measure_stable_rank(act)
-        saturated_frac = measure_saturated_neurons(act, grad, saturation_threshold)
-        
+        # Compute all metrics for this layer
         metrics[layer_name] = {
-            'dead_fraction': dead_frac,
-            'dup_fraction': dup_frac,
-            'eff_rank': eff_rank,
-            'stable_rank': stable_rank,
-            'saturated_frac': saturated_frac,
+            'dead_fraction': measure_dead_neurons(act, dead_threshold),
+            'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
+            'eff_rank': measure_effective_rank(act),
+            'stable_rank': measure_stable_rank(act),
+            'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
         }
     
     if not hooks_were_active:
@@ -934,19 +833,13 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets=None,
     
     return metrics
 
-###########################################
-# Training and Evaluation Functions
-###########################################
 
-def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+###########################################
+# Data Loading Functions
+###########################################
 
 def get_cifar10_data(batch_size=128):
+    """Load and prepare CIFAR10 data."""
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -969,6 +862,7 @@ def get_cifar10_data(batch_size=128):
     testloader = DataLoader(
         testset, batch_size=batch_size, shuffle=False, num_workers=2)
     
+    # Create fixed subsets for consistent metrics computation
     train_indices = list(range(500))
     fixed_train_set = Subset(trainset, train_indices)
     fixed_trainloader = DataLoader(fixed_train_set, batch_size=100, shuffle=False)
@@ -981,6 +875,7 @@ def get_cifar10_data(batch_size=128):
 
 
 def get_cifar10_data_with_class_selection(batch_size=128, sample_classes=None):
+    """Load CIFAR10 data with optional class selection."""
     transform_train = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
@@ -1022,7 +917,7 @@ def get_cifar10_data_with_class_selection(batch_size=128, sample_classes=None):
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
     testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
     
-    from torch.utils.data import Subset
+    # Create fixed subsets for consistent metrics
     fixed_train_set = Subset(trainset, range(min(500, len(trainset))))
     fixed_trainloader = DataLoader(fixed_train_set, batch_size=batch_size, shuffle=False)
     
@@ -1030,415 +925,6 @@ def get_cifar10_data_with_class_selection(batch_size=128, sample_classes=None):
     fixed_valloader = DataLoader(fixed_val_set, batch_size=batch_size, shuffle=False)
     
     return trainloader, testloader, fixed_trainloader, fixed_valloader
-
-def train_with_separate_monitors(model, trainloader, testloader, fixed_trainloader, fixed_valloader,
-                                 train_monitor, val_monitor, learning_rate=0.001,
-                                 num_epochs=20, metrics_frequency=100, device='cpu'):
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    
-    train_losses = []
-    test_accs = []
-    
-    training_metrics_history = defaultdict(lambda: defaultdict(list))
-    validation_metrics_history = defaultdict(lambda: defaultdict(list))
-    step_history = []
-    
-    fixed_train_batch, fixed_train_targets = next(iter(fixed_trainloader))
-    fixed_val_batch, fixed_val_targets = next(iter(fixed_valloader))
-    
-    fixed_train_batch, fixed_train_targets = fixed_train_batch.to(device), fixed_train_targets.to(device)
-    fixed_val_batch, fixed_val_targets = fixed_val_batch.to(device), fixed_val_targets.to(device)
-    
-    print("Measuring baseline metrics before training...")
-    
-    train_metrics = analyze_fixed_batch(model, train_monitor, fixed_train_batch, fixed_train_targets, criterion, device=device)
-    val_metrics = analyze_fixed_batch(model, val_monitor, fixed_val_batch, fixed_val_targets, criterion, device=device)
-    
-    print("\n=== Training Batch Metrics (before training) ===")
-    for layer_name in train_metrics.keys():
-        metrics = train_metrics[layer_name]
-        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
-              f"Dup: {metrics['dup_fraction']:8.3f}, " +
-              f"EffRank: {metrics['eff_rank']:8.3f}, " +
-              f"StableRank: {metrics['stable_rank']:8.3f}")
-    
-    print("\n=== Validation Batch Metrics (before training) ===")
-    for layer_name in val_metrics.keys():
-        metrics = val_metrics[layer_name]
-        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
-              f"Dup: {metrics['dup_fraction']:8.3f}, " +
-              f"EffRank: {metrics['eff_rank']:8.3f}, " +
-              f"StableRank: {metrics['stable_rank']:8.3f}")
-    
-    step_history.append(0)
-    for layer_name, metrics in train_metrics.items():
-        for metric_name, value in metrics.items():
-            training_metrics_history[layer_name][metric_name].append(value)
-    
-    for layer_name, metrics in val_metrics.items():
-        for metric_name, value in metrics.items():
-            validation_metrics_history[layer_name][metric_name].append(value)
-    
-    total_steps = 0
-    start_time = time.time()
-    for epoch in range(num_epochs):
-        model.train()
-        running_loss = 0.0
-        correct = 0
-        total = 0
-        
-        train_monitor.remove_hooks()
-        val_monitor.remove_hooks()
-        
-        for i, (inputs, targets) in enumerate(trainloader):
-            inputs, targets = inputs.to(device), targets.to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-            
-            total_steps += 1
-            
-            if total_steps % metrics_frequency == 0:
-                print(f"\nStep {total_steps}: Measuring metrics...")
-                
-                train_monitor.clear_data()
-                val_monitor.clear_data()
-                
-                train_metrics = analyze_fixed_batch(model, train_monitor, fixed_train_batch, fixed_train_targets, criterion, device=device)
-                val_metrics = analyze_fixed_batch(model, val_monitor, fixed_val_batch, fixed_val_targets, criterion, device=device)
-                
-                step_history.append(total_steps)
-                for layer_name, metrics in train_metrics.items():
-                    for metric_name, value in metrics.items():
-                        training_metrics_history[layer_name][metric_name].append(value)
-                for layer_name, metrics in val_metrics.items():
-                    for metric_name, value in metrics.items():
-                        validation_metrics_history[layer_name][metric_name].append(value)
-                
-                # Log fixed batch metrics to wandb
-                fixed_metrics_log = {"step": total_steps, "epoch": epoch}
-                for layer_name, metrics in train_metrics.items():
-                    for metric_name, value in metrics.items():
-                        fixed_metrics_log[f"fixed_train/{layer_name}/{metric_name}"] = value
-                for layer_name, metrics in val_metrics.items():
-                    for metric_name, value in metrics.items():
-                        fixed_metrics_log[f"fixed_val/{layer_name}/{metric_name}"] = value
-                wandb.log(fixed_metrics_log)
-                
-                print(f"\n=== Training Batch Metrics (step {total_steps}) ===")
-                for layer_name in train_metrics.keys():
-                    metrics = train_metrics[layer_name]
-                    print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
-                          f"Dup: {metrics['dup_fraction']:8.3f}, " +
-                          f"Saturated: {metrics['saturated_frac']:8.3f}, " +
-                          f"EffRank: {metrics['eff_rank']:8.3f}, " +
-                          f"StableRank: {metrics['stable_rank']:8.3f}")
-                
-                print(f"\n=== Validation Batch Metrics (step {total_steps}) ===")
-                for layer_name in val_metrics.keys():
-                    metrics = val_metrics[layer_name]
-                    print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
-                          f"Dup: {metrics['dup_fraction']:8.3f}, " +
-                          f"Saturated: {metrics['saturated_frac']:8.3f}, " +
-                          f"EffRank: {metrics['eff_rank']:8.3f}, " +
-                          f"StableRank: {metrics['stable_rank']:8.3f}")
-        
-        model.eval()
-        test_loss = 0
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for inputs, targets in testloader:
-                inputs, targets = inputs.to(device), targets.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                
-                test_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
-        
-        train_loss = running_loss / len(trainloader)
-        test_acc = 100. * correct / total
-        
-        train_losses.append(train_loss)
-        test_accs.append(test_acc)
-        
-        elapsed = time.time() - start_time
-        print(f'\nEpoch {epoch+1}/{num_epochs}:')
-        print(f'Train Loss: {train_loss:.4f} | Test Acc: {test_acc:.2f}%')
-        print(f'Time: {elapsed:.2f}s')
-        
-        # Log epoch-level metrics to wandb
-        wandb.log({
-            "epoch": epoch+1,
-            "train_loss": train_loss,
-            "test_acc": test_acc,
-            "elapsed_time": elapsed
-        })
-    
-    print("\nFinal metrics:")
-    
-    train_monitor.clear_data()
-    val_monitor.clear_data()
-    
-    train_metrics = analyze_fixed_batch(model, train_monitor, fixed_train_batch, fixed_train_targets, criterion, device=device)
-    val_metrics = analyze_fixed_batch(model, val_monitor, fixed_val_batch, fixed_val_targets, criterion, device=device)
-    
-    print("\n=== Final Training Batch Metrics ===")
-    for layer_name in train_metrics.keys():
-        metrics = train_metrics[layer_name]
-        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
-              f"Dup: {metrics['dup_fraction']:8.3f}, " +
-              f"EffRank: {metrics['eff_rank']:8.3f}, " +
-              f"StableRank: {metrics['stable_rank']:8.3f}")
-    
-    print("\n=== Final Validation Batch Metrics ===")
-    for layer_name in val_metrics.keys():
-        metrics = val_metrics[layer_name]
-        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
-              f"Dup: {metrics['dup_fraction']:8.3f}, " +
-              f"EffRank: {metrics['eff_rank']:8.3f}, " +
-              f"StableRank: {metrics['stable_rank']:8.3f}")
-    
-    step_history.append(total_steps)
-    for layer_name, metrics in train_metrics.items():
-        for metric_name, value in metrics.items():
-            training_metrics_history[layer_name][metric_name].append(value)
-    
-    for layer_name, metrics in val_metrics.items():
-        for metric_name, value in metrics.items():
-            validation_metrics_history[layer_name][metric_name].append(value)
-    
-    train_monitor.remove_hooks()
-    val_monitor.remove_hooks()
-    
-    return {
-        'train_losses': train_losses,
-        'test_accs': test_accs,
-        'training_metrics_history': dict(training_metrics_history),
-        'validation_metrics_history': dict(validation_metrics_history),
-        'step_history': step_history,
-        'train_monitor': train_monitor,
-        'val_monitor': val_monitor
-    }
-
-###########################################
-# Visualization Functions
-###########################################
-
-def plot_training_curves(history, save_path=None):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    
-    ax1.plot(history['train_losses'])
-    ax1.set_title('Training Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    
-    ax2.plot(history['test_accs'])
-    ax2.set_title('Test Accuracy')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy (%)')
-    
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(f"{save_path}/training_curves.png", dpi=300, bbox_inches='tight')
-    plt.show()
-
-def plot_metric_evolution(history, metric_name, layer_names=None, is_train=True, save_path=None):
-    prefix = "Training" if is_train else "Validation"
-    metrics_history = history['training_metrics_history'] if is_train else history['validation_metrics_history']
-    steps = history['step_history']
-    
-    if layer_names is None:
-        layer_names = list(metrics_history.keys())
-    
-    layer_names = [layer for layer in layer_names if layer in metrics_history]
-    
-    plt.figure(figsize=(12, 6))
-    for layer in layer_names:
-        if layer in metrics_history and metric_name in metrics_history[layer]:
-            plt.plot(steps, metrics_history[layer][metric_name], label=layer)
-    
-    plt.title(f'{prefix} {metric_name.replace("_", " ").title()} Evolution')
-    plt.xlabel('Training Steps')
-    plt.ylabel(metric_name.replace("_", " ").title())
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(f"{save_path}/{prefix.lower()}_{metric_name}.png", dpi=300, bbox_inches='tight')
-    plt.show()
-
-def plot_all_metrics(history, layer_names=None, save_path=None):
-    if save_path:
-        os.makedirs(save_path, exist_ok=True)
-        
-    metrics = ['dead_fraction', 'dup_fraction', 'eff_rank', 'stable_rank']
-    
-    for metric in metrics:
-        plot_metric_evolution(history, metric, layer_names, is_train=True, save_path=save_path)
-    
-    for metric in metrics:
-        plot_metric_evolution(history, metric, layer_names, is_train=False, save_path=save_path)
-        
-def plot_comparison_metrics(history, metric_names=None, layer_names=None, save_path=None):
-    if metric_names is None:
-        metric_names = ['dead_fraction', 'dup_fraction', 'eff_rank', 'stable_rank']
-    
-    if layer_names is None:
-        layer_names = [layer_name for layer_name in history['training_metrics_history'].keys()
-                      if not (layer_name.startswith('dropout') or 'flatten' in layer_name)]
-                      
-    final_index = -1
-    
-    for metric in metric_names:
-        plt.figure(figsize=(12, 6))
-        
-        valid_layers = [layer for layer in layer_names 
-                        if layer in history['training_metrics_history'] 
-                        and layer in history['validation_metrics_history']
-                        and metric in history['training_metrics_history'][layer]
-                        and metric in history['validation_metrics_history'][layer]]
-        
-        train_values = [history['training_metrics_history'][layer][metric][final_index] for layer in valid_layers]
-        val_values = [history['validation_metrics_history'][layer][metric][final_index] for layer in valid_layers]
-        
-        x = np.arange(len(valid_layers))
-        width = 0.35
-        
-        plt.bar(x - width/2, train_values, width, label='Training')
-        plt.bar(x + width/2, val_values, width, label='Validation')
-        
-        plt.xlabel('Layer')
-        plt.ylabel(metric.replace('_', ' ').title())
-        plt.title(f'Comparison of {metric.replace("_", " ").title()} Between Training and Validation')
-        plt.xticks(x, [layer.split('.')[-1] for layer in valid_layers], rotation=45, ha='right')
-        plt.legend()
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(f"{save_path}/comparison_{metric}.png", dpi=300, bbox_inches='tight')
-        plt.show()
-
-###########################################
-# Main Function with Centralized Configuration and wandb Logging
-###########################################
-
-if __name__ == "__main__":
-    # Centralized configuration dictionary
-    config = {
-        "seed": 42,
-        "sample_classes": [0, 1, 2,],
-        "batch_size": 128,
-        "learning_rate": 0.001,
-        "num_epochs": 50,
-        "metrics_frequency": 100,
-        "model_type": "MLP",  # Options: "MLP", "CNN", "VisionTransformer",
-        "model": {
-            "input_size": 3 * 32 * 32,
-            "hidden_sizes": [1024] * 10,
-            "activation": "relu",
-            "normalization": "layer",
-            "norm_after_activation": False,
-            "normalization_affine": False,
-            "dropout_p": 0,
-            # output_size is set dynamically based on number of sample classes
-        }
-    }
-    
-    # Initialize wandb run (specify project and optionally entity)
-    wandb.init(project="CL-plasticity", config=config)
-    
-    # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-    
-    # Set random seed for reproducibility
-    def set_seed(seed):
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-    set_seed(config["seed"])
-    
-    num_classes = len(config["sample_classes"])
-    
-    print("Loading CIFAR10 dataset...")
-    trainloader, testloader, fixed_trainloader, fixed_valloader = get_cifar10_data_with_class_selection(
-        batch_size=config["batch_size"],
-        sample_classes=config["sample_classes"]
-    )
-    
-    print("Creating model...")
-    if config["model_type"] == "MLP":
-        config["model"]["output_size"] = num_classes
-        model = MLP(**config["model"])
-    # Options for CNN or VisionTransformer can be added here similarly.
-    
-    model = model.to(device)
-    
-    def module_filter(name):
-        return name[-4:] == '.mlp' or 'linear' in name
-    train_monitor = NetworkMonitor(model, module_filter)
-    val_monitor = NetworkMonitor(model, module_filter)
-    
-    print("\nModel Architecture:")
-    for name, module in model.named_modules():
-        if len(name) > 0:
-            print(f"{name}: {module.__class__.__name__}")
-    
-    print("\nStarting training with separate monitors...")
-    history = train_with_separate_monitors(
-        model, trainloader, testloader, fixed_trainloader, fixed_valloader,
-        train_monitor, val_monitor,
-        learning_rate=config["learning_rate"],
-        num_epochs=config["num_epochs"],
-        metrics_frequency=config["metrics_frequency"],
-        device=device
-    )
-    
-    # Log final metrics to wandb
-    wandb.log({
-        "final_train_loss": history["train_losses"][-1],
-        "final_test_acc": history["test_accs"][-1]
-    })
-    
-    results_dir = './results'
-    os.makedirs(results_dir, exist_ok=True)
-    
-    print("\nPlotting results...")
-    plot_training_curves(history, save_path=results_dir)
-    plot_all_metrics(history, save_path=results_dir)
-
-
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torchvision
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Subset, Dataset
-import numpy as np
-import matplotlib.pyplot as plt
-import time
-import os
-import random
-import wandb
-from collections import defaultdict
 
 
 ###########################################
@@ -1465,8 +951,6 @@ class SubsetDataset(Dataset):
     
     def __getitem__(self, idx):
         image, label = self.dataset[self.indices[idx]]
-        # Map the original label to a new index if needed
-        # This part can be modified to remap labels based on the continual learning strategy
         return image, label
 
 
@@ -1600,8 +1084,257 @@ def get_cifar10_continual_data(class_sequence, batch_size=128):
 
 
 ###########################################
-# Continual Learning Training Functions
+# Training Functions
 ###########################################
+
+def train_with_separate_monitors(model, 
+                                 trainloader, 
+                                 testloader, 
+                                 fixed_trainloader, 
+                                 fixed_valloader,
+                                 train_monitor, 
+                                 val_monitor,
+                                 config,
+                                 device='cpu'):
+    """
+    Train a model while monitoring metrics on fixed data batches.
+    
+    Args:
+        model: The neural network model
+        trainloader: DataLoader for training data
+        testloader: DataLoader for test data
+        fixed_trainloader: DataLoader for fixed training batch (for consistent metrics)
+        fixed_valloader: DataLoader for fixed validation batch (for consistent metrics)
+        train_monitor: NetworkMonitor for training batch
+        val_monitor: NetworkMonitor for validation batch
+        learning_rate: Learning rate for optimizer
+        num_epochs: Number of training epochs
+        metrics_frequency: Number of steps between metrics measurements
+        device: Device to train on
+        
+    Returns:
+        Dictionary with training history
+    """
+     
+    learning_rate=config['learning_rate']
+    num_epochs=config['num_epochs']
+    metrics_frequency=config['num_epochs']
+    dead_threshold=config['dead_threshold']
+    corr_threshold=config['corr_threshold']
+    saturation_threshold=config['saturation_threshold']
+    saturation_percentage=config['saturation_percentage']
+    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    
+    train_losses = []
+    test_accs = []
+    
+    training_metrics_history = defaultdict(lambda: defaultdict(list))
+    validation_metrics_history = defaultdict(lambda: defaultdict(list))
+    step_history = []
+    
+    fixed_train_batch, fixed_train_targets = next(iter(fixed_trainloader))
+    fixed_val_batch, fixed_val_targets = next(iter(fixed_valloader))
+    
+    fixed_train_batch, fixed_train_targets = fixed_train_batch.to(device), fixed_train_targets.to(device)
+    fixed_val_batch, fixed_val_targets = fixed_val_batch.to(device), fixed_val_targets.to(device)
+    
+    print("Measuring baseline metrics before training...")
+
+    def analyze_callback(monitor, fixed_batch, fixed_targets,):
+        return analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, device=device, 
+                                   dead_threshold=dead_threshold, corr_threshold=corr_threshold, 
+                                   saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage, )
+    def analyze_train_callback():
+        return analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
+
+    def analyze_val_callback():
+        return analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
+        
+    
+    train_metrics = analyze_train_callback()
+    val_metrics = analyze_val_callback()
+    
+    print("\n=== Training Batch Metrics (before training) ===")
+    for layer_name in train_metrics.keys():
+        metrics = train_metrics[layer_name]
+        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
+              f"Dup: {metrics['dup_fraction']:8.3f}, " +
+              f"EffRank: {metrics['eff_rank']:8.3f}, " +
+              f"StableRank: {metrics['stable_rank']:8.3f}")
+    
+    print("\n=== Validation Batch Metrics (before training) ===")
+    for layer_name in val_metrics.keys():
+        metrics = val_metrics[layer_name]
+        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
+              f"Dup: {metrics['dup_fraction']:8.3f}, " +
+              f"EffRank: {metrics['eff_rank']:8.3f}, " +
+              f"StableRank: {metrics['stable_rank']:8.3f}")
+    
+    step_history.append(0)
+    for layer_name, metrics in train_metrics.items():
+        for metric_name, value in metrics.items():
+            training_metrics_history[layer_name][metric_name].append(value)
+    
+    for layer_name, metrics in val_metrics.items():
+        for metric_name, value in metrics.items():
+            validation_metrics_history[layer_name][metric_name].append(value)
+    
+    total_steps = 0
+    start_time = time.time()
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        correct = 0
+        total = 0
+        
+        train_monitor.remove_hooks()
+        val_monitor.remove_hooks()
+        
+        for i, (inputs, targets) in enumerate(trainloader):
+            inputs, targets = inputs.to(device), targets.to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+            
+            total_steps += 1
+            
+            if total_steps % metrics_frequency == 0:
+                print(f"\nStep {total_steps}: Measuring metrics...")
+                
+                train_monitor.clear_data()
+                val_monitor.clear_data()
+                
+                train_metrics = analyze_train_callback()
+                val_metrics = analyze_val_callback()
+                
+                step_history.append(total_steps)
+                for layer_name, metrics in train_metrics.items():
+                    for metric_name, value in metrics.items():
+                        training_metrics_history[layer_name][metric_name].append(value)
+                for layer_name, metrics in val_metrics.items():
+                    for metric_name, value in metrics.items():
+                        validation_metrics_history[layer_name][metric_name].append(value)
+                
+                # Log fixed batch metrics to wandb
+                fixed_metrics_log = {"step": total_steps, "epoch": epoch}
+                for layer_name, metrics in train_metrics.items():
+                    for metric_name, value in metrics.items():
+                        fixed_metrics_log[f"fixed_train/{layer_name}/{metric_name}"] = value
+                for layer_name, metrics in val_metrics.items():
+                    for metric_name, value in metrics.items():
+                        fixed_metrics_log[f"fixed_val/{layer_name}/{metric_name}"] = value
+                wandb.log(fixed_metrics_log)
+                
+                print(f"\n=== Training Batch Metrics (step {total_steps}) ===")
+                for layer_name in train_metrics.keys():
+                    metrics = train_metrics[layer_name]
+                    print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
+                          f"Dup: {metrics['dup_fraction']:8.3f}, " +
+                          f"Saturated: {metrics['saturated_frac']:8.3f}, " +
+                          f"EffRank: {metrics['eff_rank']:8.3f}, " +
+                          f"StableRank: {metrics['stable_rank']:8.3f}")
+                
+                print(f"\n=== Validation Batch Metrics (step {total_steps}) ===")
+                for layer_name in val_metrics.keys():
+                    metrics = val_metrics[layer_name]
+                    print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
+                          f"Dup: {metrics['dup_fraction']:8.3f}, " +
+                          f"Saturated: {metrics['saturated_frac']:8.3f}, " +
+                          f"EffRank: {metrics['eff_rank']:8.3f}, " +
+                          f"StableRank: {metrics['stable_rank']:8.3f}")
+        
+        # Evaluate model after each epoch
+        model.eval()
+        test_loss = 0
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for inputs, targets in testloader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                
+                test_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+        
+        train_loss = running_loss / len(trainloader)
+        test_acc = 100. * correct / total
+        
+        train_losses.append(train_loss)
+        test_accs.append(test_acc)
+        
+        elapsed = time.time() - start_time
+        print(f'\nEpoch {epoch+1}/{num_epochs}:')
+        print(f'Train Loss: {train_loss:.4f} | Test Acc: {test_acc:.2f}%')
+        print(f'Time: {elapsed:.2f}s')
+        
+        # Log epoch-level metrics to wandb
+        wandb.log({
+            "epoch": epoch+1,
+            "train_loss": train_loss,
+            "test_acc": test_acc,
+            "elapsed_time": elapsed
+        })
+    
+    # Record final metrics
+    print("\nFinal metrics:")
+    
+    train_monitor.clear_data()
+    val_monitor.clear_data()
+
+    train_metrics = analyze_train_callback()
+    val_metrics = analyze_val_callback()
+    
+    print("\n=== Final Training Batch Metrics ===")
+    for layer_name in train_metrics.keys():
+        metrics = train_metrics[layer_name]
+        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
+              f"Dup: {metrics['dup_fraction']:8.3f}, " +
+              f"EffRank: {metrics['eff_rank']:8.3f}, " +
+              f"StableRank: {metrics['stable_rank']:8.3f}")
+    
+    print("\n=== Final Validation Batch Metrics ===")
+    for layer_name in val_metrics.keys():
+        metrics = val_metrics[layer_name]
+        print(f"{layer_name:15}: Dead: {metrics['dead_fraction']:8.3f}, " +
+              f"Dup: {metrics['dup_fraction']:8.3f}, " +
+              f"EffRank: {metrics['eff_rank']:8.3f}, " +
+              f"StableRank: {metrics['stable_rank']:8.3f}")
+    
+    step_history.append(total_steps)
+    for layer_name, metrics in train_metrics.items():
+        for metric_name, value in metrics.items():
+            training_metrics_history[layer_name][metric_name].append(value)
+    
+    for layer_name, metrics in val_metrics.items():
+        for metric_name, value in metrics.items():
+            validation_metrics_history[layer_name][metric_name].append(value)
+    
+    train_monitor.remove_hooks()
+    val_monitor.remove_hooks()
+    
+    return {
+        'train_losses': train_losses,
+        'test_accs': test_accs,
+        'training_metrics_history': dict(training_metrics_history),
+        'validation_metrics_history': dict(validation_metrics_history),
+        'step_history': step_history,
+        'train_monitor': train_monitor,
+        'val_monitor': val_monitor
+    }
+
 
 def evaluate_model(model, dataloader, criterion, device='cpu'):
     """
@@ -1629,7 +1362,14 @@ def evaluate_model(model, dataloader, criterion, device='cpu'):
     return running_loss / len(dataloader), 100. * correct / total
 
 
-def train_continual_learning(model, task_dataloaders, config, device='cpu'):
+###########################################
+# Continual Learning Training Functions
+###########################################
+
+def train_continual_learning(model, 
+                             task_dataloaders, 
+                             config, 
+                             device='cpu'):
     """
     Train a model using continual learning on a sequence of tasks.
     
@@ -1644,8 +1384,12 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
     """
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
-    
-    # Create module filter function similar to the original code
+    dead_threshold=config['dead_threshold'], 
+    corr_threshold=config['corr_threshold'], 
+    saturation_threshold=config['saturation_threshold'], 
+    saturation_percentage=config['saturation_percentage'],
+
+    # Create module filter function
     def module_filter(name):
         return 'linear' in name or '.mlp' in name or 'fc' in name or name.endswith('.proj')
     
@@ -1659,6 +1403,18 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
     }
     
     print(f"Starting continual learning with {len(task_dataloaders)} tasks...")
+
+
+    
+    def analyze_callback(monitor, fixed_batch, fixed_targets,):
+        return analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, device=device, 
+                                   dead_threshold=dead_threshold, corr_threshold=corr_threshold, 
+                                   saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage,)
+    def analyze_train_callback():
+        return analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
+
+    def analyze_val_callback():
+        return analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
     
     for task_id, task_data in task_dataloaders.items():
         print(f"\n{'='*50}")
@@ -1701,10 +1457,8 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
             # Initial metrics
             print("Measuring initial metrics...")
             
-            train_metrics = analyze_fixed_batch(model, train_monitor, fixed_train_batch, 
-                                              fixed_train_targets, criterion, device=device)
-            val_metrics = analyze_fixed_batch(model, val_monitor, fixed_val_batch, 
-                                            fixed_val_targets, criterion, device=device)
+            train_metrics = analyze_train_callback()
+            val_metrics = analyze_val_callback()
             
             for layer_name, metrics in train_metrics.items():
                 for metric_name, value in metrics.items():
@@ -1803,20 +1557,12 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
                     val_monitor.clear_data()
                     
                     # Analyze current fixed batches
-                    train_metrics = analyze_fixed_batch(model, train_monitor, fixed_train_batch, 
-                                                      fixed_train_targets, criterion, 
-                                                      dead_threshold=0.95, 
-                                                      corr_threshold=0.99, 
-                                                      saturation_threshold=1e-6,
-                                                      saturation_percentage=0.99,
-                                                      device=device)
-                    val_metrics = analyze_fixed_batch(model, val_monitor, fixed_val_batch, 
-                                                    fixed_val_targets, criterion, 
-                                                    dead_threshold=0.95, 
-                                                    corr_threshold=0.99, 
-                                                    saturation_threshold=1e-6,
-                                                    saturation_percentage=0.99,
-                                                    device=device)
+                    # train_metrics = analyze_fixed_batch(model, train_monitor, fixed_train_batch, 
+                    #                                  fixed_train_targets, criterion, device=device)
+                    # val_metrics = analyze_fixed_batch(model, val_monitor, fixed_val_batch, 
+                    #                                fixed_val_targets, criterion, device=device)
+                    train_metrics = analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
+                    val_metrics = analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
                     
                     # Log current fixed batch metrics to wandb
                     fixed_metrics_log = {"task": task_id, "epoch": epoch}
@@ -1846,20 +1592,12 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
                             val_monitor.clear_data()
                             
                             # Analyze old fixed batches
-                            old_train_metrics = analyze_fixed_batch(model, train_monitor, old_fixed_train_batch, 
-                                                                old_fixed_train_targets, criterion, 
-                                                                dead_threshold=0.95, 
-                                                                corr_threshold=0.99, 
-                                                                saturation_threshold=1e-6,
-                                                                saturation_percentage=0.99,
-                                                                device=device)
-                            old_val_metrics = analyze_fixed_batch(model, val_monitor, old_fixed_val_batch, 
-                                                              old_fixed_val_targets, criterion, 
-                                                              dead_threshold=0.95, 
-                                                              corr_threshold=0.99, 
-                                                              saturation_threshold=1e-6,
-                                                              saturation_percentage=0.99,
-                                                              device=device)
+                            # old_train_metrics = analyze_fixed_batch(model, train_monitor, old_fixed_train_batch, 
+                            #                                     old_fixed_train_targets, criterion, device=device)
+                            # old_val_metrics = analyze_fixed_batch(model, val_monitor, old_fixed_val_batch, 
+                            #                                   old_fixed_val_targets, criterion, device=device)
+                            old_train_metrics = analyze_callback(train_monitor, old_fixed_train_batch, old_fixed_train_targets)
+                            old_val_metrics = analyze_callback(val_monitor, old_fixed_val_batch, old_fixed_val_targets)
                             
                             # Log old fixed batch metrics to wandb
                             for layer_name, metrics in old_train_metrics.items():
@@ -1889,10 +1627,10 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
             log_data = {
                 "task": task_id,
                 "epoch": epoch,
-                "current_train_loss": epoch_train_loss,
-                "current_train_acc": epoch_train_acc,
-                "current_val_loss": current_val_loss,
-                "current_val_acc": current_val_acc
+                "train_loss": epoch_train_loss,
+                "train_acc": epoch_train_acc,
+                "val_loss": current_val_loss,
+                "val_acc": current_val_acc
             }
             
             if has_old_data:
@@ -1923,19 +1661,6 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
             'history': task_history
         }
         
-        # Log task summary
-        wandb.log({
-            "task_completed": task_id,
-            "final_current_train_acc": task_history['current']['train_acc'][-1],
-            "final_current_val_acc": task_history['current']['val_acc'][-1],
-            "elapsed_time": time.time() - start_time
-        })
-        
-        if has_old_data:
-            wandb.log({
-                "final_old_train_acc": task_history['old']['train_acc'][-1],
-                "final_old_val_acc": task_history['old']['val_acc'][-1],
-            })
     
     return history
 
@@ -1944,10 +1669,112 @@ def train_continual_learning(model, task_dataloaders, config, device='cpu'):
 # Visualization Functions
 ###########################################
 
+def plot_training_curves(history, save_path=None):
+    """Plot basic training and accuracy curves."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    
+    ax1.plot(history['train_losses'])
+    ax1.set_title('Training Loss')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    
+    ax2.plot(history['test_accs'])
+    ax2.set_title('Test Accuracy')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Accuracy (%)')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(f"{save_path}/training_curves.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_metric_evolution(history, metric_name, layer_names=None, is_train=True, save_path=None):
+    """Plot the evolution of a specific metric over training steps."""
+    prefix = "Training" if is_train else "Validation"
+    metrics_history = history['training_metrics_history'] if is_train else history['validation_metrics_history']
+    steps = history['step_history']
+    
+    if layer_names is None:
+        layer_names = list(metrics_history.keys())
+    
+    layer_names = [layer for layer in layer_names if layer in metrics_history]
+    
+    plt.figure(figsize=(12, 6))
+    for layer in layer_names:
+        if layer in metrics_history and metric_name in metrics_history[layer]:
+            plt.plot(steps, metrics_history[layer][metric_name], label=layer)
+    
+    plt.title(f'{prefix} {metric_name.replace("_", " ").title()} Evolution')
+    plt.xlabel('Training Steps')
+    plt.ylabel(metric_name.replace("_", " ").title())
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(f"{save_path}/{prefix.lower()}_{metric_name}.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_all_metrics(history, layer_names=None, save_path=None):
+    """Plot all metrics for both training and validation sets."""
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+        
+    metrics = ['dead_fraction', 'dup_fraction', 'eff_rank', 'stable_rank']
+    
+    for metric in metrics:
+        plot_metric_evolution(history, metric, layer_names, is_train=True, save_path=save_path)
+    
+    for metric in metrics:
+        plot_metric_evolution(history, metric, layer_names, is_train=False, save_path=save_path)
+
+
+def plot_comparison_metrics(history, metric_names=None, layer_names=None, save_path=None):
+    """Plot comparison of metrics between training and validation sets."""
+    if metric_names is None:
+        metric_names = ['dead_fraction', 'dup_fraction', 'eff_rank', 'stable_rank']
+    
+    if layer_names is None:
+        layer_names = [layer_name for layer_name in history['training_metrics_history'].keys()
+                      if not (layer_name.startswith('dropout') or 'flatten' in layer_name)]
+                      
+    final_index = -1
+    
+    for metric in metric_names:
+        plt.figure(figsize=(12, 6))
+        
+        valid_layers = [layer for layer in layer_names 
+                        if layer in history['training_metrics_history'] 
+                        and layer in history['validation_metrics_history']
+                        and metric in history['training_metrics_history'][layer]
+                        and metric in history['validation_metrics_history'][layer]]
+        
+        train_values = [history['training_metrics_history'][layer][metric][final_index] for layer in valid_layers]
+        val_values = [history['validation_metrics_history'][layer][metric][final_index] for layer in valid_layers]
+        
+        x = np.arange(len(valid_layers))
+        width = 0.35
+        
+        plt.bar(x - width/2, train_values, width, label='Training')
+        plt.bar(x + width/2, val_values, width, label='Validation')
+        
+        plt.xlabel('Layer')
+        plt.ylabel(metric.replace('_', ' ').title())
+        plt.title(f'Comparison of {metric.replace("_", " ").title()} Between Training and Validation')
+        plt.xticks(x, [layer.split('.')[-1] for layer in valid_layers], rotation=45, ha='right')
+        plt.legend()
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(f"{save_path}/comparison_{metric}.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+
 def plot_continual_learning_curves(history, save_path=None):
-    """
-    Plot learning curves for continual learning experiment.
-    """
+    """Plot learning curves for continual learning experiment."""
     num_tasks = len(history['tasks'])
     fig, axs = plt.subplots(num_tasks, 2, figsize=(15, 5 * num_tasks))
     
@@ -1997,9 +1824,7 @@ def plot_continual_learning_curves(history, save_path=None):
 
 
 def plot_forgetting_curve(history, save_path=None):
-    """
-    Plot forgetting curve for old tasks as training progresses.
-    """
+    """Plot forgetting curve for old tasks as training progresses."""
     num_tasks = len(history['tasks'])
     
     if num_tasks <= 1:
@@ -2030,9 +1855,7 @@ def plot_forgetting_curve(history, save_path=None):
 
 
 def plot_task_transition(history, save_path=None):
-    """
-    Plot accuracy transitions between tasks.
-    """
+    """Plot accuracy transitions between tasks."""
     num_tasks = len(history['tasks'])
     
     if num_tasks <= 1:
@@ -2072,3 +1895,85 @@ def plot_task_transition(history, save_path=None):
         plt.savefig(f"{save_path}/task_transition.png", dpi=300, bbox_inches='tight')
     
     plt.show()
+
+
+###########################################
+# Main Function
+###########################################
+
+if __name__ == "__main__":
+    # Centralized configuration dictionary
+    config = {
+        "seed": 42,
+        "sample_classes": [0, 1, 2],
+        "batch_size": 128,
+        "learning_rate": 0.001,
+        "num_epochs": 50,
+        "metrics_frequency": 100,
+        "model_type": "MLP",  # Options: "MLP", "CNN", "VisionTransformer"
+        "model": {
+            "input_size": 3 * 32 * 32,
+            "hidden_sizes": [1024] * 10,
+            "activation": "relu",
+            "normalization": "layer",
+            "norm_after_activation": False,
+            "normalization_affine": False,
+            "dropout_p": 0,
+            # output_size is set dynamically based on number of sample classes
+        }
+    }
+    
+    # Initialize wandb run
+    wandb.init(project="CL-plasticity", config=config)
+    
+    # Set device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # Set random seed for reproducibility
+    set_seed(config["seed"])
+    
+    num_classes = len(config["sample_classes"])
+    
+    print("Loading CIFAR10 dataset...")
+    trainloader, testloader, fixed_trainloader, fixed_valloader = get_cifar10_data_with_class_selection(
+        batch_size=config["batch_size"],
+        sample_classes=config["sample_classes"]
+    )
+    
+    print("Creating model...")
+    if config["model_type"] == "MLP":
+        config["model"]["output_size"] = num_classes
+        model = MLP(**config["model"])
+    # Add options for CNN or VisionTransformer if needed
+    
+    model = model.to(device)
+    
+    def module_filter(name):
+        return name[-4:] == '.mlp' or 'linear' in name
+    train_monitor = NetworkMonitor(model, module_filter)
+    val_monitor = NetworkMonitor(model, module_filter)
+    
+    print("\nModel Architecture:")
+    for name, module in model.named_modules():
+        if len(name) > 0:
+            print(f"{name}: {module.__class__.__name__}")
+    
+    print("\nStarting training with separate monitors...")
+    history = train_with_separate_monitors(
+        model, trainloader, testloader, fixed_trainloader, fixed_valloader,
+        train_monitor, val_monitor,config=config,device=device
+    )
+    
+    # Log final metrics to wandb
+    wandb.log({
+        "final_train_loss": history["train_losses"][-1],
+        "final_test_acc": history["test_accs"][-1]
+    })
+    
+    results_dir = './results'
+    os.makedirs(results_dir, exist_ok=True)
+    
+    print("\nPlotting results...")
+    plot_training_curves(history, save_path=results_dir)
+    plot_all_metrics(history, save_path=results_dir)
