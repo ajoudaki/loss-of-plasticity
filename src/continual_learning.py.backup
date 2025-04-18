@@ -126,8 +126,6 @@ class MLP(nn.Module):
         
         return x
 
-
-
 class CNN(nn.Module):
     def __init__(self, 
                  in_channels=3,
@@ -1384,10 +1382,10 @@ def train_continual_learning(model,
     """
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
-    dead_threshold=config['dead_threshold'], 
-    corr_threshold=config['corr_threshold'], 
-    saturation_threshold=config['saturation_threshold'], 
-    saturation_percentage=config['saturation_percentage'],
+    dead_threshold=config['dead_threshold'] 
+    corr_threshold=config['corr_threshold'] 
+    saturation_threshold=config['saturation_threshold'] 
+    saturation_percentage=config['saturation_percentage']
 
     # Create module filter function
     def module_filter(name):
