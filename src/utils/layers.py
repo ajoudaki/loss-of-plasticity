@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import random
+import numpy as np
 
 def get_activation(activation_name):
     """Returns the activation function based on name."""
@@ -41,3 +43,12 @@ def get_normalization(norm_name, num_features, affine=True):
                      f"Choose from: {list(normalizations.keys())}")
     
     return normalizations[norm_key]
+
+def set_seed(seed):
+    """Set random seed for reproducibility."""
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
