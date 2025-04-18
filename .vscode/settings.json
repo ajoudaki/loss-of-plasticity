@@ -1,5 +1,5 @@
 {
-    "latex-workshop.latex.rootFile": "./main.tex",
+    "latex-workshop.latex.rootFile": "./paper/main.tex",
     "latex-workshop.latex.tools": [
       {
         "name": "latexmk",
@@ -9,8 +9,8 @@
           "-interaction=nonstopmode",
           "-file-line-error",
           "-pdf",
-          "-outdir=out",
-          "-aux-directory=out", 
+          "-outdir=./paper/out",
+          "-aux-directory=./paper/out", 
           "%DOC%"
         ]
       }
@@ -35,5 +35,5 @@
       "*.vrb", "*.bcf", "*.run.xml"
   ],
   "latex-workshop.latex.clean.subfolder.enabled": true,
-  "latex-workshop.latex.outDir": "out"
+  "latex-workshop.latex.outDir": "./paper/out"
   }

@@ -1,0 +1,10 @@
+{
+    "model": "cnn",
+    "dataset": "cifar10",
+    "tasks": 5,
+    "epochs": 20,
+    "batch_size": 128,
+    "lr": 0.001,
+    "seed": 42,
+    "device": "cuda"
+}
