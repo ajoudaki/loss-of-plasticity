@@ -28,7 +28,7 @@ def process_file(file_path, ext):
     if ext == ".ipynb":
         cells = extract_notebook_content(file_path)
         for idx, cell in enumerate(cells, start=1):
-            print(f"\nCell {idx} ({cell['type']}):")
+            print(f"\nCell {idx} ({cell['type']}):\n")
             print(cell['source'])
             print("-" * 40)
     else:
