@@ -1,0 +1,9 @@
+{
+    "hidden_sizes": [512, 256, 128],
+    "activation": "relu",
+    "dropout_p": 0.1,
+    "normalization": "batch",
+    "norm_after_activation": false,
+    "bias": true,
+    "normalization_affine": true
+}
