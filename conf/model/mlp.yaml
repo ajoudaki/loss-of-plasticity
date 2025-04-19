@@ -1,0 +1,13 @@
+# @package _global_.model
+name: mlp
+
+# MLP configuration
+mlp:
+  _target_: src.models.MLP
+  hidden_sizes: [512, 256, 128]
+  activation: relu
+  dropout_p: 0.2
+  normalization: batch
+  norm_after_activation: false
+  bias: true
+  normalization_affine: true

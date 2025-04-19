@@ -1,16 +1,18 @@
-import torch
 import torch.nn as nn
-import torch.optim as optim
 import time
 import wandb
 from collections import defaultdict
+from omegaconf import DictConfig
+from typing import Dict, Any, Optional
+
 from ..utils.monitor import NetworkMonitor
 from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch
+from .training_utils import reinitialize_output_weights, create_optimizer
 
 def train_continual_learning(model, 
                              task_dataloaders, 
-                             config, 
+                             cfg: DictConfig, 
                              device='cpu'):
     """
     Train a model using continual learning on a sequence of tasks.
@@ -18,18 +20,20 @@ def train_continual_learning(model,
     Args:
         model: The neural network model
         task_dataloaders: Dictionary mapping task_id -> task data loaders
-        config: Configuration dictionary
+        cfg: Hydra configuration object
         device: Device to train on
     
     Returns:
         Dictionary with training history
     """
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
-    dead_threshold = config['dead_threshold'] 
-    corr_threshold = config['corr_threshold'] 
-    saturation_threshold = config['saturation_threshold'] 
-    saturation_percentage = config['saturation_percentage']
+    optimizer = create_optimizer(model, cfg)
+    
+    # Extract metrics parameters from config
+    dead_threshold = cfg.metrics.dead_threshold 
+    corr_threshold = cfg.metrics.corr_threshold 
+    saturation_threshold = cfg.metrics.saturation_threshold 
+    saturation_percentage = cfg.metrics.saturation_percentage
 
     # Create module filter function
     def module_filter(name):
@@ -71,13 +75,26 @@ def train_continual_learning(model,
     
     for task_id, task_data in task_dataloaders.items():
         print(f"\n{'='*50}")
-        print(f"Starting Task {task_id}: Classes {task_data['current']['classes']}")
+        print(f"Starting Task {task_id}: Classes {task_data['classes']}")
         print(f"{'='*50}")
         
-        train_loader = task_data['current']['train']
-        val_loader = task_data['current']['val']
-        fixed_train_loader = task_data['current']['fixed_train']
-        fixed_val_loader = task_data['current']['fixed_val']
+        train_loader = task_data['train']
+        val_loader = task_data['val']
+        fixed_train_loader = task_data['fixed_train']
+        fixed_val_loader = task_data['fixed_val']
+        
+        # Reinitialize output weights if configured
+        if cfg.training.reinit_output:
+            reinitialize_output_weights(
+                model, 
+                task_data['classes'], 
+                cfg.model.name.lower()
+            )
+
+        # Reinitialize optimizer state if configured
+        if cfg.optimizer.reinit_adam and task_id > 0:
+            optimizer = create_optimizer(model, cfg)
+            print("Reinitialized optimizer state for new task")
         
         task_history = {
             'epochs': [],
@@ -145,7 +162,7 @@ def train_continual_learning(model,
         
         # Training loop for this task
         start_time = time.time()
-        for local_epoch in range(1, config["epochs_per_task"] + 1):
+        for local_epoch in range(1, cfg.training.epochs_per_task + 1):
             global_epoch += 1
             model.train()
             running_loss = 0.0
@@ -194,7 +211,7 @@ def train_continual_learning(model,
             history['global_metrics']['val_acc'].append(val_acc)
             
             # Periodically collect network metrics
-            if local_epoch % config["metrics_frequency"] == 0 or local_epoch == config["epochs_per_task"]:
+            if local_epoch % cfg.metrics.metrics_frequency == 0 or local_epoch == cfg.training.epochs_per_task:
                 try:
                     train_monitor.clear_data()
                     val_monitor.clear_data()
@@ -219,8 +236,9 @@ def train_continual_learning(model,
                         for metric_name, value in metrics.items():
                             fixed_metrics_log[f"val/{layer_name}/{metric_name}"] = value
                     
-                    # Log all metrics to wandb
-                    wandb.log(fixed_metrics_log)
+                    # Log all metrics to wandb if enabled
+                    if cfg.logging.use_wandb:
+                        wandb.log(fixed_metrics_log)
                     
                     # Store metrics in history for later analysis
                     for layer_name, metrics in train_metrics.items():
@@ -233,7 +251,7 @@ def train_continual_learning(model,
                 except Exception as e:
                     print(f"Error collecting metrics: {e}")
             
-            # Log to wandb
+            # Log to wandb if enabled
             log_data = {
                 "task_id": task_id,
                 "local_epoch": local_epoch,
@@ -246,18 +264,19 @@ def train_continual_learning(model,
                 "val_acc": val_acc
             }
             
-            wandb.log(log_data)
+            if cfg.logging.use_wandb:
+                wandb.log(log_data)
             
             # Print progress
             elapsed = time.time() - start_time
-            print(f'Task {task_id}, Epoch {local_epoch}/{config["epochs_per_task"]} (Global: {global_epoch}):')
+            print(f'Task {task_id}, Epoch {local_epoch}/{cfg.training.epochs_per_task} (Global: {global_epoch}):')
             print(f'  Train Loss: {epoch_train_loss:.4f}, Train Acc: {epoch_train_acc:.2f}%, '
                   f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
             print(f'  Steps: {local_step} (Global: {global_step}), Time: {elapsed:.2f}s')
         
         # Store task history
         history['tasks'][task_id] = {
-            'classes': task_data['current']['classes'],
+            'classes': task_data['classes'],
             'history': task_history
         }
     

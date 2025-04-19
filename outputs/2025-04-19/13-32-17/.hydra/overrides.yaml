@@ -1,0 +1,5 @@
+- dataset.name=mnist
+- model.name=mlp
+- task.tasks=2
+- training.epochs_per_task=1
+- dryrun=false
