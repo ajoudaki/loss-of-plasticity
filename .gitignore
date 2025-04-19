@@ -11,6 +11,7 @@ artifacts/
 **/saved_models/
 **/checkpoints/
 **/out/
+**/outputs/
 
 # Python
 *.pyc
