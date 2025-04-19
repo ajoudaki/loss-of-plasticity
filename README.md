@@ -1,37 +1,59 @@
 # Neural Network Dynamic Scaling
 
-This project investigates dynamic scaling properties of neural networks during training, with a particular focus on continual learning scenarios.
+This project investigates dynamic scaling properties of neural networks during training, with a particular focus on continual learning scenarios. It provides a framework for analyzing how neural networks adapt to new information and maintain previously learned knowledge.
 
 ## Project Structure
 
 ```
 project/
-├── configs/                # Experiment configuration files
-│   └── default_experiment.json
+├── conf/                  # Hydra configuration files
+│   ├── config.yaml        # Main configuration
+│   ├── model/             # Model configurations
+│   │   ├── mlp.yaml
+│   │   ├── cnn.yaml
+│   │   ├── resnet.yaml
+│   │   └── vit.yaml       # Vision Transformer config
+│   ├── dataset/           # Dataset configurations
+│   │   ├── mnist.yaml
+│   │   ├── cifar10.yaml
+│   │   ├── cifar100.yaml
+│   │   └── tiny_imagenet.yaml
+│   ├── optimizer/         # Optimizer configurations
+│   ├── metrics/           # Metrics configurations
+│   └── training/          # Training configurations
+├── data/                  # Directory for datasets
+├── notebooks/             # Jupyter notebooks for analysis
+│   ├── CL.ipynb           # Continual learning experiments
+│   ├── coupling.ipynb     # Weight coupling analysis
+│   └── main.ipynb         # Main experiments notebook
+├── paper/                 # Academic paper materials
 ├── scripts/               # Utility scripts
 │   ├── check_imports.py    # Check for import issues
 │   ├── download_tiny_imagenet.py # Dataset download script
 │   ├── extract_notebook.py # Extract content from Jupyter notebooks
-│   └── run_experiment.py   # Script to run experiments
-└── src/                   # Main source code
-    ├── main.py             # Entry point
-    ├── models/             # Model definitions
-    │   ├── __init__.py
-    │   ├── mlp.py          # MLP model
-    │   ├── cnn.py          # CNN model
-    │   ├── resnet.py       # ResNet model
-    │   └── vit.py          # Vision Transformer model
-    ├── utils/              # Utility modules
-    │   ├── __init__.py
-    │   ├── layers.py       # Layer utilities
-    │   ├── metrics.py      # Metrics functions
-    │   ├── monitor.py      # NetworkMonitor class
-    │   ├── data.py         # Data loading utilities
-    │   └── visualization.py # Plotting functions
-    └── training/           # Training code
-        ├── __init__.py
-        ├── eval.py         # Evaluation functions
-        └── train_continual.py # Continual learning training loop
+│   └── run_experiment.py   # Main experiment script with Hydra
+├── src/                   # Main source code
+│   ├── config_schema.py    # Dataclass schemas for Hydra configs
+│   ├── register_configs.py # Register configs with Hydra's ConfigStore
+│   ├── continual_learning.py # CL-specific functionality
+│   ├── models/             # Model definitions
+│   │   ├── __init__.py
+│   │   ├── mlp.py          # MLP model
+│   │   ├── cnn.py          # CNN model
+│   │   ├── resnet.py       # ResNet model
+│   │   └── vit.py          # Vision Transformer model
+│   ├── utils/              # Utility modules
+│   │   ├── __init__.py
+│   │   ├── layers.py       # Layer utilities
+│   │   ├── metrics.py      # Metrics functions
+│   │   ├── monitor.py      # NetworkMonitor class
+│   │   ├── data.py         # Data loading utilities
+│   │   └── visualization.py # Plotting functions
+│   └── training/           # Training code
+│       ├── __init__.py
+│       ├── eval.py         # Evaluation functions
+│       └── train_continual.py # Continual learning training loop
+└── saved_models/          # Directory for saving trained models
 ```
 
 ## Installation
@@ -47,42 +69,104 @@ project/
    pip install -r requirements.txt
    ```
 
+3. (Optional) Download the Tiny ImageNet dataset:
+   ```bash
+   python scripts/download_tiny_imagenet.py
+   ```
+
 ## Usage
 
-### Running an Experiment
+### Running an Experiment with Hydra
 
-Use the provided experiment script:
-
-```bash
-# Run with a configuration file
-python scripts/run_experiment.py --config configs/default_experiment.json
-
-# Or with command line arguments
-python scripts/run_experiment.py --model cnn --dataset cifar10 --tasks 5 --epochs 20
-```
-
-### Downloading Datasets
-
-For Tiny ImageNet:
+This project uses [Hydra](https://hydra.cc/) for configuration management, allowing for flexible and composable configuration overrides. Here are some examples of how to run experiments:
 
 ```bash
-python scripts/download_tiny_imagenet.py
+# Run with default configuration (CNN on CIFAR-10)
+python scripts/run_experiment.py
+
+# Change the model (use MLP instead of CNN)
+python scripts/run_experiment.py model=mlp
+
+# Change both model and dataset
+python scripts/run_experiment.py model=mlp dataset=mnist
+
+# Change specific parameters
+python scripts/run_experiment.py optimizer=sgd optimizer.lr=0.01 training.batch_size=64
+
+# Run for fewer epochs (dry run mode to test setup)
+python scripts/run_experiment.py training.epochs_per_task=2 dryrun=true
+
+# Enable Weights & Biases logging
+python scripts/run_experiment.py logging.use_wandb=true
+
+# Use Vision Transformer on CIFAR-100 with custom task setting
+python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.classes_per_task=10
 ```
 
-### Running Directly
+### Available Configurations
 
-You can also run the main module directly:
+#### Models
+- `model=mlp`: Multi-Layer Perceptron
+- `model=cnn`: Convolutional Neural Network
+- `model=resnet`: ResNet model
+- `model=vit`: Vision Transformer
 
-```bash
-python -m src.main --model cnn --dataset cifar10 --tasks 5 --epochs 20 --batch-size 128 --lr 0.001 --seed 42 --use-wandb
-```
+#### Datasets
+- `dataset=mnist`: MNIST handwritten digits
+- `dataset=cifar10`: CIFAR-10 image classification
+- `dataset=cifar100`: CIFAR-100 image classification
+- `dataset=tiny_imagenet`: Tiny ImageNet
+
+#### Optimizers
+- `optimizer=adam`: Adam optimizer (default)
+- `optimizer=sgd`: Stochastic Gradient Descent
+- `optimizer=rmsprop`: RMSProp optimizer
+
+#### Training Settings
+- `training.epochs_per_task`: Number of epochs per task
+- `training.batch_size`: Batch size for training
+- `training.seed`: Random seed for reproducibility
+- `training.reinit_output`: Whether to reinitialize output weights for new tasks
+
+#### Task Settings
+- `task.tasks`: Number of tasks in the continual learning sequence
+- `task.classes_per_task`: Number of classes per task
+
+#### Experiment Tracking
+- `logging.use_wandb=true`: Enable Weights & Biases logging
+- `logging.wandb_project="your-project"`: Set the W&B project name
 
 ## Key Features
 
-- Modular neural network architectures (MLP, CNN, ResNet, ViT)
-- Comprehensive metrics for tracking network dynamics
-- Continual learning experimentation framework
-- Integration with Weights & Biases for experiment tracking
+- **Modular Architecture**: Easily swap between different neural network models
+- **Dynamic Analysis**: Track metrics like weight norms, gradient magnitudes, and activation patterns
+- **Continual Learning Framework**: Evaluate how networks adapt to sequences of tasks
+- **Visualization Tools**: Plot learning trajectories, forgetting curves, and network dynamics
+- **Configuration System**: Hydra-based configuration for reproducible experiments
+- **Type Safety**: Structured configs with dataclasses providing validation and type checking
+
+## Extending the Framework
+
+### Adding a New Model
+
+1. Create a new model class in `src/models/`
+2. Add a configuration dataclass in `src/config_schema.py`
+3. Register it in `src/register_configs.py`
+4. Create a YAML config file in `conf/model/`
+
+### Adding a New Dataset
+
+1. Update the data loading utilities in `src/utils/data.py`
+2. Add dataset configuration in `src/config_schema.py`
+3. Create a YAML config file in `conf/dataset/`
+
+## Notebooks
+
+Explore the included Jupyter notebooks for analysis:
+
+```bash
+jupyter notebook notebooks/
+```
 
 ## Contributing
 

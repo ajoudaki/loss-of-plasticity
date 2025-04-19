@@ -1,0 +1,6 @@
+# @package _global_.dataset
+name: tiny-imagenet
+input_size: 12288  # 64*64*3 for MLP
+img_size: 64       # For CNN, ResNet, ViT
+in_channels: 3
+num_classes: 200

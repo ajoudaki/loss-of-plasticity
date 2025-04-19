@@ -1,0 +1,22 @@
+# @package _global_
+
+# MLP model on MNIST dataset
+defaults:
+  - override /model: mlp
+  - override /dataset: mnist
+  - override /optimizer: adam
+
+model:
+  mlp:
+    hidden_sizes: [256, 128, 64]
+    dropout_p: 0.2
+
+optimizer:
+  lr: 0.002
+
+training:
+  epochs_per_task: 15
+  batch_size: 64
+
+metrics:
+  metrics_frequency: 3
