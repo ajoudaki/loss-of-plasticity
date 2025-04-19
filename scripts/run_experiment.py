@@ -7,9 +7,7 @@ This script uses Hydra for configuration management.
 import os
 import sys
 import torch
-import torch.nn as nn
 import hydra
-from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict, Any, Optional
 import wandb
@@ -18,12 +16,11 @@ import wandb
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import project modules
-from src.utils.layers import set_seed
+from src.models.layers import set_seed
 from src.training.train_continual import train_continual_learning
-from src.config_schema import ExperimentConfig
-from src.register_configs import register_configs
-from src.utils.dataset_manager import prepare_continual_learning_dataloaders
-from src.utils.config_utils import get_device, setup_wandb
+from src.config import register_configs
+from src.utils.data import prepare_continual_learning_dataloaders
+from src.config.utils import get_device, setup_wandb
 from src.models.model_factory import create_model
 
 # Register all configurations with Hydra
