@@ -1,0 +1,17 @@
+# @package _global_.model
+name: cnn
+_target_: src.models.CNN
+
+cnn:
+  conv_channels: [64, 128, 256]
+  kernel_sizes: [3, 3, 3]
+  strides: [1, 1, 1]
+  paddings: [1, 1, 1]
+  fc_hidden_units: [512]
+  activation: relu
+  dropout_p: 0.1
+  pool_type: max
+  pool_size: 2
+  use_batchnorm: true
+  norm_after_activation: false
+  normalization_affine: true

@@ -1,0 +1,9 @@
+# @package _global_.training
+epochs_per_task: 20
+batch_size: 128
+no_augment: false
+early_stopping_steps: 0
+reinit_output: false
+reset: false
+seed: 42
+device: null
