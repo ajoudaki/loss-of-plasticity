@@ -4,7 +4,7 @@ This enables proper validation and type checking of configuration values.
 """
 
 from hydra.core.config_store import ConfigStore
-from .config_schema import (
+from .schema import (
     ExperimentConfig,
     ModelConfig,
     MLPConfig,
