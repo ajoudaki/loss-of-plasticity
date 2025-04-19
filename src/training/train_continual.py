@@ -83,16 +83,26 @@ def train_continual_learning(model,
         fixed_train_loader = task_data['fixed_train']
         fixed_val_loader = task_data['fixed_val']
         
-        # Reinitialize output weights if configured
-        if cfg.training.reinit_output:
+        # Reset entire model if configured
+        if cfg.training.reset and task_id > 0:
+            # Create a new model with the same configuration
+            from ..models.model_factory import create_model
+            new_model = create_model(cfg).to(device)
+            model.load_state_dict(new_model.state_dict())
+            del new_model
+            print("Reinitialized all model weights for new task")
+            # When we reset the model, we should also reset the optimizer
+            optimizer = create_optimizer(model, cfg)
+        # Reinitialize only output weights if configured
+        elif cfg.training.reinit_output:
             reinitialize_output_weights(
                 model, 
                 task_data['classes'], 
                 cfg.model.name.lower()
             )
 
-        # Reinitialize optimizer state if configured
-        if cfg.optimizer.reinit_adam and task_id > 0:
+        # Reinitialize optimizer state if configured (and we haven't already reset it)
+        if cfg.optimizer.reinit_adam and task_id > 0 and not cfg.training.reset:
             optimizer = create_optimizer(model, cfg)
             print("Reinitialized optimizer state for new task")
         

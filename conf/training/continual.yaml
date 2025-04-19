@@ -7,3 +7,4 @@ early_stopping_steps: 5
 reinit_output: true
 reset: false
 seed: 42
+device: null  # Will auto-select based on availability
