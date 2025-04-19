@@ -43,11 +43,17 @@ def setup_wandb(cfg: DictConfig) -> bool:
         # Prepare wandb config
         wandb_config = OmegaConf.to_container(cfg, resolve=True)
         
-        wandb.init(
-            project=cfg.logging.wandb_project,
-            entity=cfg.logging.wandb_entity,
-            config=wandb_config
-        )
+        # Initialize wandb with optional entity parameter
+        init_args = {
+            "project": cfg.logging.wandb_project,
+            "config": wandb_config
+        }
+        
+        # Add entity parameter if it exists
+        if hasattr(cfg.logging, "wandb_entity"):
+            init_args["entity"] = cfg.logging.wandb_entity
+            
+        wandb.init(**init_args)
         return True
     return False
 
