@@ -109,29 +109,32 @@ def reinitialize_output_weights(model: nn.Module, task_classes: List[int], model
     """
     # Get the output layer
     if model_type == 'mlp':
-        # For MLP, the output layer is the last layer in the sequential model
-        output_layer = model.model[-1]
+        # For MLP, the output layer is accessible through the layers ModuleDict with key 'out'
+        output_layer = model.layers['out']
     elif model_type == 'cnn':
-        # For CNN, the output layer is typically the last fully connected layer
-        output_layer = model.fc_layers[-1]
+        # For CNN, the output layer is the final fc layer in the ModuleDict
+        output_layer = model.layers['fc_out']
     elif model_type == 'resnet':
-        # For ResNet, the output layer is the linear layer
-        output_layer = model.fc
+        # For ResNet, the output layer is the linear layer in the layers ModuleDict
+        output_layer = model.layers['fc']
     elif model_type == 'vit':
-        # For ViT, the output layer is the head
-        output_layer = model.head
+        # For ViT, the output layer is the head in the ModuleDict
+        output_layer = model.layers['head']
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
     
     # Only reinitialize weights for task classes
     with torch.no_grad():
-        # Reinitialize weights for task classes
+        # Calculate the current layer norm for proper scaling
         layer_norm = (output_layer.weight**2).mean().item()**0.5
-        for cls in range(len(output_layer.weight)):
-            # Initialize the weights for this class, use layer std
-            nn.init.normal_(output_layer.weight[cls], std=layer_norm)
-            # Initialize the bias for this class
-            if output_layer.bias is not None:
-                nn.init.zeros_(output_layer.bias[cls])
+        
+        # Reinitialize weights only for the specific task classes
+        for cls in task_classes:
+            if cls < len(output_layer.weight):  # Ensure class index is valid
+                # Initialize the weights for this class, use layer std
+                nn.init.normal_(output_layer.weight[cls], std=layer_norm)
+                # Initialize the bias for this class
+                if output_layer.bias is not None:
+                    nn.init.zeros_(output_layer.bias[cls])
     
     print(f"Reinitialized output weights for classes: {task_classes}")
