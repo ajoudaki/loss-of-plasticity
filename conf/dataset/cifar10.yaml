@@ -1,0 +1,6 @@
+# @package _global_.dataset
+name: cifar10
+input_size: 3072  # 32*32*3 for MLP
+img_size: 32      # For CNN, ResNet, ViT
+in_channels: 3
+num_classes: 10

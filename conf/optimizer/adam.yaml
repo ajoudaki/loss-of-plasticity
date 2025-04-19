@@ -1,0 +1,5 @@
+# @package _global_.optimizer
+name: adam
+lr: 0.001
+weight_decay: 0.0
+reinit_adam: false

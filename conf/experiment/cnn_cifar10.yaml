@@ -1,0 +1,21 @@
+# @package _global_
+
+# CNN model on CIFAR-10 dataset
+defaults:
+  - override /model: cnn
+  - override /dataset: cifar10
+  - override /optimizer: adam
+
+model:
+  cnn:
+    conv_channels: [32, 64, 128]
+    fc_hidden_units: [256]
+    dropout_p: 0.2
+
+task:
+  tasks: 5
+  classes_per_task: 2
+
+training:
+  batch_size: 128
+  epochs_per_task: 20
