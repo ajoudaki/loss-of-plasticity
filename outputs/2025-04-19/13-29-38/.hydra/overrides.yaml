@@ -1,0 +1,3 @@
+- dryrun=true
+- dataset.name=mnist
+- model.name=mlp

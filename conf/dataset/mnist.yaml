@@ -1,0 +1,6 @@
+# @package _global_.dataset
+name: mnist
+input_size: 784  # 28*28 for MLP
+img_size: 28    # For CNN, ResNet, ViT
+in_channels: 1
+num_classes: 10
