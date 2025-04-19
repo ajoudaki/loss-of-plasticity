@@ -135,7 +135,7 @@ class TrainingConfig:
 @dataclass
 class TaskConfig:
     """Configuration for continual learning tasks."""
-    tasks: int = 5  # Number of tasks
+    tasks: int = 10  # Number of tasks
     classes_per_task: int = 2  # Classes per task
     partitions: Optional[List[List[int]]] = None  # Custom class partitions
 
