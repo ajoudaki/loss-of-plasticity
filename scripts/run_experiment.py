@@ -203,7 +203,7 @@ def run_experiment(args):
     transform_train, transform_test = get_transforms(args.dataset, args.no_augment)
     
     # Get dataset
-    train_dataset, test_dataset, num_classes = get_dataset(
+    train_dataset, val_dataset, num_classes = get_dataset(
         args.dataset, transform_train, transform_test)
     
     # Parse partitions if provided
@@ -227,6 +227,7 @@ def run_experiment(args):
             list(range(i * classes_per_task, min((i + 1) * classes_per_task, num_classes)))
             for i in range(args.tasks)
         ]
+        
     else:
         # Use provided partitions
         class_sequence = [list(p) for p in partitions]
@@ -244,27 +245,22 @@ def run_experiment(args):
         hidden_sizes = [512, 256, 128]
     
     # Create class partitions for continual learning
-    partitioned_datasets = create_class_partitions(
+    # partitioned_datasets = create_class_partitions(
+    #     train_dataset, [tuple(cls_list) for cls_list in class_sequence])
+    
+    # Create class partitions for continual learning for training data
+    partitioned_train_datasets = create_class_partitions(
         train_dataset, [tuple(cls_list) for cls_list in class_sequence])
+
+    # Create class partitions for the test dataset too
+    partitioned_val_datasets = create_class_partitions(
+        val_dataset, [tuple(cls_list) for cls_list in class_sequence])
+
     
     # Create data loaders for each partition
     task_dataloaders = {}
-    for task_id, task_dataset in enumerate(partitioned_datasets):
-        # Split into training and validation
-        dataset_size = len(task_dataset)
-        val_split = 0.2  # Using 20% for validation
-        val_size = int(val_split * dataset_size)
-        train_size = dataset_size - val_size
-        
-        indices = list(range(dataset_size))
-        random.shuffle(indices)
-        train_indices = indices[:train_size]
-        val_indices = indices[train_size:]
-        
-        train_subset = Subset(task_dataset, train_indices)
-        val_subset = Subset(task_dataset, val_indices)
-        
-        train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True, num_workers=2)
+    for task_id, (train_subset,val_subset) in enumerate(zip(partitioned_train_datasets, partitioned_val_datasets)):
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
         val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False, num_workers=2)
         
         # Fixed batches for metrics
