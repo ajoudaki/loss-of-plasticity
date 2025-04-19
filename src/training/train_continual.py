@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from ..utils.monitor import NetworkMonitor
 from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch
-from .training_utils import reinitialize_output_weights, create_optimizer
+from ..config.utils import reinitialize_output_weights, create_optimizer
 
 def train_continual_learning(model, 
                              task_dataloaders, 

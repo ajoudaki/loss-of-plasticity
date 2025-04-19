@@ -2,7 +2,7 @@
 
 # Default configuration for experiments
 defaults:
-  - model: cnn
+  - model: mlp
   - dataset: cifar10
   - optimizer: adam
   - training: standard
