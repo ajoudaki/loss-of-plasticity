@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from ..utils.layers import get_activation, get_normalization
+from .layers import get_activation, get_normalization
 
 class Attention(nn.Module):
     """Multi-head attention module."""
