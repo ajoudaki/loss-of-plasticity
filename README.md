@@ -145,6 +145,42 @@ python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.c
 - **Configuration System**: Hydra-based configuration for reproducible experiments
 - **Type Safety**: Structured configs with dataclasses providing validation and type checking
 
+## Metrics
+
+The framework tracks several metrics to analyze neural network dynamics during training. These metrics help identify various learning phenomena such as dead neurons, redundancy, and saturation.
+
+### Dead Neurons (`dead_fraction`)
+Measures the fraction of neurons that are inactive (producing zero or near-zero activations) across most input samples.
+- **Definition**: A neuron is considered "dead" if it produces activations close to zero (abs < 1e-7) for more than the specified threshold (default: 95%) of input samples.
+- **Configuration**: `metrics.dead_threshold` (default: 0.95)
+- **Interpretation**: High values indicate neurons that aren't contributing to the network's function, suggesting wasted capacity or potential training issues.
+
+### Duplicate Neurons (`dup_fraction`)
+Measures the fraction of neurons that are functionally similar to other neurons in the same layer.
+- **Definition**: A neuron is considered a "duplicate" if its normalized activation pattern has a correlation above the threshold (default: 0.95) with another neuron in the same layer.
+- **Configuration**: `metrics.corr_threshold` (default: 0.95)
+- **Interpretation**: High values suggest redundant representations and inefficient use of network capacity.
+
+### Effective Rank (`eff_rank`)
+Measures the effective dimensionality of neural representations as entropy of normalized singular values.
+- **Definition**: The exponent of the entropy of the normalized singular values of the activation matrix.
+- **Calculation**: `exp(-sum(p * log(p)))` where `p` are the normalized singular values.
+- **Interpretation**: Indicates how many independent dimensions the network is effectively using for representing data. Higher values suggest more distributed and potentially more robust representations.
+
+### Stable Rank (`stable_rank`)
+A numerically stable approximation of the rank of activations.
+- **Definition**: The ratio of squared Frobenius norm to squared spectral norm of the activation matrix.
+- **Calculation**: `||A||_F^2 / ||A||_2^2` where `||A||_F` is the Frobenius norm and `||A||_2` is the spectral norm.
+- **Interpretation**: Provides insight into how many significant singular values contribute to the representation. Higher values indicate more dimensions are being effectively utilized.
+
+### Saturated Neurons (`saturated_frac`)
+Measures the fraction of neurons that are saturated, meaning they have very small gradients relative to their activations.
+- **Definition**: A neuron is considered "saturated" if the ratio of gradient magnitude to mean activation magnitude is below the saturation threshold for more than the specified percentage of samples.
+- **Configuration**: 
+  - `metrics.saturation_threshold` (default: 1e-4)
+  - `metrics.saturation_percentage` (default: 0.99)
+- **Interpretation**: High values indicate neurons whose weights are not being effectively updated during training, suggesting they may be stuck in flat regions of the loss landscape.
+
 ## Extending the Framework
 
 ### Adding a New Model
