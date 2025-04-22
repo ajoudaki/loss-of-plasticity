@@ -36,12 +36,12 @@ def train_continual_learning(model,
     saturation_percentage = cfg.metrics.saturation_percentage
 
     # Create module filter function
-    def module_filter(name):
-        return 'linear' in name or '.mlp' in name or 'fc' in name or name.endswith('.proj')
+    # def module_filter(name):
+    #     return 'linear' in name or '.mlp' in name or 'fc' in name or name.endswith('.proj')
     
     # For monitoring metrics
-    train_monitor = NetworkMonitor(model, module_filter)
-    val_monitor = NetworkMonitor(model, module_filter)
+    train_monitor = NetworkMonitor(model, )
+    val_monitor = NetworkMonitor(model, )
     
     # History tracking
     history = {
