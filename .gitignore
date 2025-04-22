@@ -12,6 +12,7 @@ artifacts/
 **/checkpoints/
 **/out/
 **/outputs/
+**/multirun/
 
 # Python
 *.pyc
