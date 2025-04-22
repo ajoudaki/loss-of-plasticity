@@ -43,10 +43,46 @@ def setup_wandb(cfg: DictConfig) -> bool:
         # Prepare wandb config
         wandb_config = OmegaConf.to_container(cfg, resolve=True)
         
-        # Initialize wandb with optional entity parameter
+        # Create a descriptive run name with the requested parameters
+        model_name = cfg.model.name
+        
+        # Get normalization type based on model
+        if model_name == 'mlp':
+            normalization = cfg.model.mlp.normalization
+            dropout = cfg.model.mlp.dropout_p
+            depth = len(cfg.model.mlp.hidden_sizes)
+        elif model_name == 'cnn':
+            normalization = "batchnorm" if cfg.model.cnn.use_batchnorm else "none"
+            dropout = cfg.model.cnn.dropout_p
+            depth = len(cfg.model.cnn.conv_channels)
+        elif model_name == 'resnet':
+            normalization = "batchnorm" if cfg.model.resnet.use_batchnorm else "none"
+            dropout = cfg.model.resnet.dropout_p
+            depth = sum(cfg.model.resnet.layers)
+        elif model_name == 'vit':
+            normalization = cfg.model.vit.normalization
+            dropout = cfg.model.vit.drop_rate
+            depth = cfg.model.vit.depth
+        else:
+            normalization = "unknown"
+            dropout = 0.0
+            depth = 0
+        
+        # Determine if we're resetting all weights or just output weights
+        reset_type = "all_reset" if cfg.training.reset else ("output_reset" if cfg.training.reinit_output else "no_reset")
+        
+        # Add timestamp to ensure unique run names
+        import time
+        timestamp = int(time.time())
+        
+        # Create run name with all requested parameters and timestamp
+        run_name = f"{model_name}_{normalization}_drop{dropout}_depth{depth}_{reset_type}_cls{cfg.task.classes_per_task}_{timestamp}"
+        
+        # Initialize wandb with optional entity parameter and the created run name
         init_args = {
             "project": cfg.logging.wandb_project,
-            "config": wandb_config
+            "config": wandb_config,
+            "name": run_name
         }
         
         # Add entity parameter if it exists
