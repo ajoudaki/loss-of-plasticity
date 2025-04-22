@@ -81,12 +81,53 @@ class ViTConfig:
 
 @dataclass
 class ModelConfig:
-    """Container for all model configurations."""
+    """Configuration for neural network models."""
     name: str = "mlp"
-    mlp: MLPConfig = field(default_factory=MLPConfig)
-    cnn: CNNConfig = field(default_factory=CNNConfig)
-    resnet: ResNetConfig = field(default_factory=ResNetConfig)
-    vit: ViTConfig = field(default_factory=ViTConfig)
+    # Common parameters
+    _target_: str = "src.models.MLP"  # Will be set based on model name
+    
+    # Parameters for all model types
+    # MLP parameters
+    hidden_sizes: List[int] = field(default_factory=lambda: [512, 256, 128])
+    
+    # General parameters that exist across models
+    activation: str = "relu"
+    dropout_p: float = 0.1
+    normalization: str = "batch"
+    norm_after_activation: bool = False
+    normalization_affine: bool = True
+    bias: bool = True
+    
+    # CNN parameters
+    conv_channels: List[int] = field(default_factory=lambda: [64, 128, 256])
+    kernel_sizes: List[int] = field(default_factory=lambda: [3, 3, 3])
+    strides: List[int] = field(default_factory=lambda: [1, 1, 1])
+    paddings: List[int] = field(default_factory=lambda: [1, 1, 1])
+    fc_hidden_units: List[int] = field(default_factory=lambda: [512])
+    pool_type: str = "max"
+    pool_size: int = 2
+    use_batchnorm: bool = True
+    
+    # ResNet parameters
+    layers: List[int] = field(default_factory=lambda: [2, 2, 2, 2])
+    base_channels: int = 64
+    
+    # ViT parameters
+    patch_size: int = 8
+    embed_dim: int = 384
+    depth: int = 6
+    n_heads: int = 6
+    mlp_ratio: float = 4.0
+    qkv_bias: bool = True
+    drop_rate: float = 0.1
+    attn_drop_rate: float = 0.1
+    
+    # Dynamic parameters that will be set based on dataset
+    input_size: Optional[int] = None
+    output_size: Optional[int] = None
+    in_channels: Optional[int] = None
+    num_classes: Optional[int] = None
+    img_size: Optional[int] = None
 
 
 @dataclass
