@@ -47,26 +47,24 @@ def setup_wandb(cfg: DictConfig) -> bool:
         model_name = cfg.model.name
         
         # Get normalization type based on model
+        normalization = cfg.model.normalization
+        dropout = cfg.model.dropout_p if model_name != 'vit' else cfg.model.drop_rate
+        
+        # Get depth based on model type
         if model_name == 'mlp':
-            normalization = cfg.model.mlp.normalization
-            dropout = cfg.model.mlp.dropout_p
-            depth = len(cfg.model.mlp.hidden_sizes)
+            depth = len(cfg.model.hidden_sizes)
         elif model_name == 'cnn':
-            normalization = "batchnorm" if cfg.model.cnn.use_batchnorm else "none"
-            dropout = cfg.model.cnn.dropout_p
-            depth = len(cfg.model.cnn.conv_channels)
+            depth = len(cfg.model.conv_channels)
         elif model_name == 'resnet':
-            normalization = "batchnorm" if cfg.model.resnet.use_batchnorm else "none"
-            dropout = cfg.model.resnet.dropout_p
-            depth = sum(cfg.model.resnet.layers)
+            depth = len(cfg.model.layers)
         elif model_name == 'vit':
-            normalization = cfg.model.vit.normalization
-            dropout = cfg.model.vit.drop_rate
-            depth = cfg.model.vit.depth
+            depth = cfg.model.depth
         else:
-            normalization = "unknown"
-            dropout = 0.0
             depth = 0
+            
+        # Override normalization for CNN and ResNet (they use use_batchnorm flag)
+        if model_name in ['cnn', 'resnet']:
+            normalization = "batchnorm" if cfg.model.use_batchnorm else "none"
         
         # Determine if we're resetting all weights or just output weights
         reset_type = "all_reset" if cfg.training.reset else ("output_reset" if cfg.training.reinit_output else "no_reset")
