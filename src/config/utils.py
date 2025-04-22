@@ -108,6 +108,8 @@ def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer
         return torch.optim.Adam(
             model.parameters(),
             lr=cfg.optimizer.lr,
+            betas=tuple(cfg.optimizer.betas),
+            eps=cfg.optimizer.eps,
             weight_decay=cfg.optimizer.weight_decay
         )
     elif optimizer_name == 'sgd':
@@ -115,18 +117,26 @@ def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer
             model.parameters(),
             lr=cfg.optimizer.lr,
             momentum=cfg.optimizer.momentum,
-            weight_decay=cfg.optimizer.weight_decay
+            dampening=cfg.optimizer.dampening,
+            weight_decay=cfg.optimizer.weight_decay,
+            nesterov=cfg.optimizer.nesterov
         )
     elif optimizer_name == 'rmsprop':
         return torch.optim.RMSprop(
             model.parameters(),
             lr=cfg.optimizer.lr,
-            weight_decay=cfg.optimizer.weight_decay
+            alpha=cfg.optimizer.alpha,
+            eps=cfg.optimizer.eps,
+            weight_decay=cfg.optimizer.weight_decay,
+            momentum=cfg.optimizer.momentum,
+            centered=cfg.optimizer.centered
         )
     elif optimizer_name == 'adamw':
         return torch.optim.AdamW(
             model.parameters(),
             lr=cfg.optimizer.lr,
+            betas=tuple(cfg.optimizer.betas),
+            eps=cfg.optimizer.eps,
             weight_decay=cfg.optimizer.weight_decay
         )
     else:
