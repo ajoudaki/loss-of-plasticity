@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import random
 
 def plot_metrics_history(history, metric_name, title=None, figsize=(14, 8)):
     """
@@ -115,7 +116,7 @@ def plot_layer_metrics_over_time(history, layer_name, metric_name, title=None, f
     
     return plt.gcf()
 
-def visualize_activations(activations, n_cols=5, figsize=(15, 10)):
+def visualize_activations(activations, n_cols=5, figsize=(15, 10), seed=None):
     """
     Visualize activation patterns for a layer.
     
@@ -123,12 +124,25 @@ def visualize_activations(activations, n_cols=5, figsize=(15, 10)):
         activations: Tensor of activations [batch_size, features]
         n_cols: Number of columns for the visualization grid
         figsize: Figure size tuple
+        seed: Random seed for sample selection, uses global seed if None
     """
     if isinstance(activations, torch.Tensor):
         activations = activations.detach().cpu().numpy()
     
     batch_size, n_features = activations.shape
-    sample_idx = np.random.choice(batch_size, min(16, batch_size), replace=False)
+    
+    # Use provided seed or maintain the current random state
+    if seed is not None:
+        # Save current state
+        np_state = np.random.get_state()
+        # Set temporary seed for this operation
+        np.random.seed(seed)
+        sample_idx = np.random.choice(batch_size, min(16, batch_size), replace=False)
+        # Restore previous state
+        np.random.set_state(np_state)
+    else:
+        # Use current random state (which should be seeded globally)
+        sample_idx = np.random.choice(batch_size, min(16, batch_size), replace=False)
     
     activations = activations[sample_idx]
     

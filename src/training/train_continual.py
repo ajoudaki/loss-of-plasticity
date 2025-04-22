@@ -65,7 +65,8 @@ def train_continual_learning(model,
     def analyze_callback(monitor, fixed_batch, fixed_targets):
         return analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, device=device, 
                                   dead_threshold=dead_threshold, corr_threshold=corr_threshold, 
-                                  saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage)
+                                  saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage,
+                                  seed=cfg.training.seed)
                                 
     def analyze_train_callback():
         return analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
