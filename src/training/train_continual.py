@@ -103,7 +103,7 @@ def train_continual_learning(model,
             )
 
         # Reinitialize optimizer state if configured (and we haven't already reset it)
-        if cfg.optimizer.reinit_adam and task_id > 0 and not cfg.training.reset:
+        if cfg.optimizer.reinit_optimizer and task_id > 0 and not cfg.training.reset:
             optimizer = create_optimizer(model, cfg)
             print("Reinitialized optimizer state for new task")
         

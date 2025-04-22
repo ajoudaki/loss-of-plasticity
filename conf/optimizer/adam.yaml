@@ -2,4 +2,6 @@
 name: adam
 lr: 0.001
 weight_decay: 0.0
-reinit_adam: false
+reinit_optimizer: false
+betas: [0.9, 0.999]  # Default Adam betas
+eps: 1e-8  # Default Adam epsilon
