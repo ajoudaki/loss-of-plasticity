@@ -31,12 +31,25 @@ def measure_duplicate_neurons(layer_act, corr_threshold):
     fraction_dup = neuron_is_dup.float().mean().item()
     return fraction_dup
 
-def measure_effective_rank(layer_act, svd_sample_size=1024):
-    """Compute effective rank (entropy of normalized singular values)."""
+def measure_effective_rank(layer_act, svd_sample_size=1024, seed=None):
+    """
+    Compute effective rank (entropy of normalized singular values).
+    
+    Args:
+        layer_act: Layer activations
+        svd_sample_size: Maximum number of samples to use for SVD
+        seed: Optional random seed for sampling
+    """
     flattened_act = flatten_activations(layer_act)
     N = flattened_act.shape[0]
     if N > svd_sample_size:
-        idx = torch.randperm(N)[:svd_sample_size]
+        # Use seed if provided, otherwise use the current random state
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+            idx = torch.randperm(N, generator=generator)[:svd_sample_size]
+        else:
+            idx = torch.randperm(N)[:svd_sample_size]
         flattened_act = flattened_act[idx]
     U, S, Vt = torch.linalg.svd(flattened_act, full_matrices=False)
     S_sum = S.sum()
@@ -47,12 +60,26 @@ def measure_effective_rank(layer_act, svd_sample_size=1024):
     eff_rank = torch.exp(-p_log_p.sum()).item()
     return eff_rank
 
-def measure_stable_rank(layer_act, sample_size=1024, use_gram=True):
-    """Compute stable rank (squared Frobenius norm / spectral norm squared)."""
+def measure_stable_rank(layer_act, sample_size=1024, use_gram=True, seed=None):
+    """
+    Compute stable rank (squared Frobenius norm / spectral norm squared).
+    
+    Args:
+        layer_act: Layer activations
+        sample_size: Maximum number of samples to use
+        use_gram: Whether to use the Gram matrix approach
+        seed: Optional random seed for sampling
+    """
     flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
     if N > sample_size:
-        idx = torch.randperm(N)[:sample_size]
+        # Use seed if provided, otherwise use the current random state
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+            idx = torch.randperm(N, generator=generator)[:sample_size]
+        else:
+            idx = torch.randperm(N)[:sample_size]
         flattened_act = flattened_act[idx]
         N = sample_size
     flattened_act = flattened_act - flattened_act.mean(dim=0, keepdim=True)
@@ -112,7 +139,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                       corr_threshold, 
                       saturation_threshold, 
                       saturation_percentage,
-                      device='cpu'):
+                      device='cpu',
+                      seed=None):
     """
     Analyze model behavior on a fixed batch to compute metrics.
     
@@ -127,6 +155,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         saturation_threshold: Threshold for saturated neuron detection
         saturation_percentage: Percentage of samples required for a neuron to be considered saturated
         device: Device to run computations on
+        seed: Optional random seed for sampling operations
         
     Returns:
         Dictionary of metrics for each layer
@@ -158,8 +187,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         metrics[layer_name] = {
             'dead_fraction': measure_dead_neurons(act, dead_threshold),
             'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
-            'eff_rank': measure_effective_rank(act),
-            'stable_rank': measure_stable_rank(act),
+            'eff_rank': measure_effective_rank(act, seed=seed),
+            'stable_rank': measure_stable_rank(act, seed=seed),
             'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
         }
     
