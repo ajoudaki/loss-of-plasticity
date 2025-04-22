@@ -146,8 +146,22 @@ class OptimizerConfig:
     name: str = "adam"
     lr: float = 0.001
     weight_decay: float = 0.0
-    momentum: float = 0.9  # For SGD
-    reinit_adam: bool = False  # Reinitialize optimizer state for each new task
+    
+    # Adam parameters
+    betas: List[float] = field(default_factory=lambda: [0.9, 0.999])
+    eps: float = 1e-8
+    
+    # SGD parameters  
+    momentum: float = 0.9
+    dampening: float = 0.0
+    nesterov: bool = False
+    
+    # RMSprop parameters
+    alpha: float = 0.99
+    centered: bool = False
+    
+    # Special flags
+    reinit_optimizer: bool = False  # Reinitialize optimizer state for each new task
 
 
 @dataclass
