@@ -16,12 +16,21 @@ def compute_activation_statistics(layer_act):
     """
     Compute mean and standard deviation of activations for each unit.
     
+    This function calculates the mean and standard deviation of activations for each
+    neuron in a layer. These statistics provide insights into the activation distribution
+    and can be used to detect neurons with unusual behavior.
+    
     Args:
         layer_act: Layer activations of shape [batch_size, n_units]
         
     Returns:
         means: Mean activation of each unit
         stds: Standard deviation of each unit's activation
+    
+    Example:
+        >>> means, stds = compute_activation_statistics(layer_activations)
+        >>> print(f"Mean range: {means.min().item():.4f} to {means.max().item():.4f}")
+        >>> print(f"Std range: {stds.min().item():.4f} to {stds.max().item():.4f}")
     """
     flattened_act = flatten_activations(layer_act)
     means = flattened_act.mean(dim=0)
@@ -155,19 +164,40 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
     """
     Measure the distance to Gaussianity for each neuron's activations.
     
+    This function quantifies how much the distribution of activations for each neuron
+    deviates from a Gaussian (normal) distribution. In many neural network theories,
+    activations that follow Gaussian distributions are considered optimal for information
+    transfer and learning. Significant deviations may indicate issues with network training
+    or specialized feature extraction.
+    
+    The function supports multiple statistical tests to measure non-Gaussianity:
+    
     Args:
-        layer_act: Layer activations
-        sample_size: Maximum number of samples to use for the test
+        layer_act: Layer activations tensor of shape [batch_size, n_units]
+        sample_size: Maximum number of samples to use for the test (for efficiency)
         seed: Optional random seed for sampling
         method: Method to use for Gaussianity testing:
                 - "shapiro": Shapiro-Wilk test (more accurate for smaller samples)
-                - "ks": Kolmogorov-Smirnov test
-                - "anderson": Anderson-Darling test
+                  Returns 1-W where W is in [0,1], higher values mean less Gaussian
+                - "ks": Kolmogorov-Smirnov test against normal distribution
+                  Returns D statistic, higher values mean less Gaussian
+                - "anderson": Anderson-Darling test (more sensitive to tails)
+                  Returns A² statistic normalized by critical value, higher values mean less Gaussian
                 - "kurtosis": Use excess kurtosis as a measure of non-Gaussianity
+                  Returns absolute value of excess kurtosis, 0 = perfectly Gaussian
     
     Returns:
-        A measure of non-Gaussianity (averaged across neurons).
+        A measure of non-Gaussianity (averaged across all neurons in the layer).
         Higher values indicate greater deviation from Gaussian distribution.
+        The range depends on the method used:
+        - shapiro: [0, 1] where 0 = perfectly Gaussian
+        - ks: [0, 1] where 0 = perfectly Gaussian
+        - anderson: [0, 10] (capped) where 0 = perfectly Gaussian
+        - kurtosis: [0, 10] (capped) where 0 = perfectly Gaussian
+    
+    Example:
+        >>> non_gaussian_score = measure_gaussianity(layer_act, method="kurtosis")
+        >>> print(f"Non-Gaussianity score: {non_gaussian_score:.4f}")
     """
     flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
@@ -268,31 +298,49 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                       device='cpu',
                       seed=None):
     """
-    Analyze model behavior on a fixed batch to compute metrics.
+    Analyze model behavior on a fixed batch to compute comprehensive metrics.
+    
+    This function performs a forward and backward pass with the provided batch,
+    then computes a variety of metrics to analyze the model's internal behavior.
+    The metrics include measures of dead neurons, duplicate neurons, effective rank,
+    stable rank, neuron saturation, and non-Gaussianity of activations.
+    
+    Additionally, it computes statistics of neuron activations (means and standard deviations)
+    and can format these for visualization with Weights & Biases.
     
     Args:
-        model: Neural network model
-        monitor: NetworkMonitor instance
-        fixed_batch: Input data batch
-        fixed_targets: Target labels
-        criterion: Loss function
-        dead_threshold: Threshold for dead neuron detection
-        corr_threshold: Threshold for duplicate neuron detection
-        saturation_threshold: Threshold for saturated neuron detection
+        model: Neural network model to analyze
+        monitor: NetworkMonitor instance for collecting activations and gradients
+        fixed_batch: Input data batch for analysis
+        fixed_targets: Target labels for the batch
+        criterion: Loss function to compute gradients
+        dead_threshold: Threshold for dead neuron detection (fraction of zero activations)
+        corr_threshold: Threshold for duplicate neuron detection (correlation cutoff)
+        saturation_threshold: Threshold for saturated neuron detection (gradient magnitude ratio)
         saturation_percentage: Percentage of samples required for a neuron to be considered saturated
-        gaussianity_method: Method to use for Gaussianity measurement
-        use_wandb: Whether wandb is being used for logging
-        log_histograms: Whether to prepare histograms for logging
-        prefix: Prefix for metrics (e.g., "train/" or "val/")
+        gaussianity_method: Method to use for Gaussianity measurement ("shapiro", "ks", "anderson", "kurtosis")
+        use_wandb: Whether Weights & Biases is being used for logging
+        log_histograms: Whether to prepare histograms of activation statistics for logging
+        prefix: Prefix for metrics (e.g., "train/" or "val/") for organizing in dashboards
         metrics_log: Dictionary to add metrics to (if None, a new one is created)
-        device: Device to run computations on
-        seed: Optional random seed for sampling operations
+        device: Device to run computations on ('cpu', 'cuda', 'mps')
+        seed: Optional random seed for sampling operations (for reproducibility)
         
     Returns:
         Tuple containing:
-        - Dictionary of metrics for each layer
-        - Dictionary of activation statistics for each layer
+        - Dictionary of metrics for each layer (metric_name -> value)
+        - Dictionary of activation statistics for each layer (means, stds)
         - Dictionary of metrics formatted for wandb logging (if use_wandb is True)
+    
+    Example:
+        >>> metrics, act_stats, metrics_log = analyze_fixed_batch(
+        >>>     model, monitor, batch, targets, loss_fn,
+        >>>     dead_threshold=0.95, corr_threshold=0.95,
+        >>>     use_wandb=True, log_histograms=True, prefix="train/"
+        >>> )
+        >>> # metrics contains numerical values for each computed metric
+        >>> # act_stats contains activation means and standard deviations
+        >>> # metrics_log is ready for wandb.log()
     """
     if fixed_batch.device != device:
         fixed_batch = fixed_batch.to(device)
