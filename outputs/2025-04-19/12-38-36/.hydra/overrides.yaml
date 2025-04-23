@@ -1,3 +1,0 @@
-- optimizer=sgd
-- optimizer.lr=0.01
-- dryrun=true
