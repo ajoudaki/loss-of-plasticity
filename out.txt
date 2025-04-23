@@ -1,0 +1,2444 @@
+--- Processing: ./src/utils/metrics.py ---
+import torch
+
+def flatten_activations(layer_act):
+    """Reshape layer activations to 2D matrix (samples × features)."""
+    shape = layer_act.shape
+    if len(shape) == 4:  # Convolutional layer
+        return layer_act.permute(0, 2, 3, 1).contiguous().view(-1, shape[1])
+    elif len(shape) == 3:  # Transformer layer
+        return layer_act.contiguous().view(-1, shape[2])
+    else:  # Linear layer
+        return layer_act.view(-1, shape[1])
+
+def measure_dead_neurons(layer_act, dead_threshold=0.95):
+    """Measure fraction of neurons that are inactive (dead)."""
+    flattened_act = flatten_activations(layer_act)
+    is_zero = (flattened_act.abs() < 1e-7)
+    frac_zero_per_neuron = is_zero.float().mean(dim=0)
+    dead_mask = (frac_zero_per_neuron > dead_threshold)
+    dead_fraction = dead_mask.float().mean().item()
+    return dead_fraction
+
+def measure_duplicate_neurons(layer_act, corr_threshold):
+    """Measure fraction of neurons that are duplicates of others."""
+    flattened_act = flatten_activations(layer_act)
+    flattened_act = flattened_act.t()  
+    flattened_act = torch.nn.functional.normalize(flattened_act, p=2, dim=1)
+    similarity_matrix = torch.matmul(flattened_act, flattened_act.t())
+    upper_tri_mask = torch.triu(torch.ones_like(similarity_matrix), diagonal=1).bool()
+    dup_pairs = (similarity_matrix > corr_threshold) & upper_tri_mask
+    neuron_is_dup = dup_pairs.any(dim=1)
+    fraction_dup = neuron_is_dup.float().mean().item()
+    return fraction_dup
+
+def measure_effective_rank(layer_act, svd_sample_size=1024):
+    """Compute effective rank (entropy of normalized singular values)."""
+    flattened_act = flatten_activations(layer_act)
+    N = flattened_act.shape[0]
+    if N > svd_sample_size:
+        idx = torch.randperm(N)[:svd_sample_size]
+        flattened_act = flattened_act[idx]
+    U, S, Vt = torch.linalg.svd(flattened_act, full_matrices=False)
+    S_sum = S.sum()
+    if S_sum < 1e-9:
+        return 0.0
+    p = S / S_sum
+    p_log_p = p * torch.log(p + 1e-12)
+    eff_rank = torch.exp(-p_log_p.sum()).item()
+    return eff_rank
+
+def measure_stable_rank(layer_act, sample_size=1024, use_gram=True):
+    """Compute stable rank (squared Frobenius norm / spectral norm squared)."""
+    flattened_act = flatten_activations(layer_act)
+    N, D = flattened_act.shape
+    if N > sample_size:
+        idx = torch.randperm(N)[:sample_size]
+        flattened_act = flattened_act[idx]
+        N = sample_size
+    flattened_act = flattened_act - flattened_act.mean(dim=0, keepdim=True)
+    if use_gram or D < N:
+        frob_norm_sq = torch.sum(flattened_act**2).item()
+        gram = torch.matmul(flattened_act.t(), flattened_act)
+        trace_gram_squared = torch.sum(gram**2).item()
+        if trace_gram_squared < 1e-9:
+            return 0.0
+        stable_rank = (frob_norm_sq**2) / trace_gram_squared
+    else:
+        cov = torch.matmul(flattened_act, flattened_act.t())
+        trace_cov = torch.trace(cov).item()
+        trace_cov_squared = torch.sum(cov**2).item()
+        if trace_cov_squared < 1e-9:
+            return 0.0
+        stable_rank = (trace_cov**2) / trace_cov_squared
+    return stable_rank
+
+def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, saturation_percentage=0.99):
+    """
+    Measures the fraction of saturated neurons in a layer.
+    
+    Saturated neurons are identified as those where the ratio of gradient magnitude
+    to mean activation magnitude is very small, indicating the neuron is in a flat
+    region of the loss landscape.
+    """
+    flattened_act = flatten_activations(layer_act)
+    flattened_grad = flatten_activations(layer_grad)
+    
+    # Calculate the mean activation magnitude for each neuron
+    mean_act_magnitude = flattened_act.abs().mean(dim=0, keepdim=True)
+    
+    # Avoid division by zero
+    mean_act_magnitude = torch.clamp(mean_act_magnitude, min=1e-12)
+    
+    # Calculate the ratio of gradient magnitude to mean activation magnitude
+    saturation_ratio = flattened_grad.abs() / mean_act_magnitude
+    
+    # Mark neurons as saturated if the ratio is below the threshold
+    is_saturated = (saturation_ratio < saturation_threshold).float()
+    
+    # Calculate fraction of samples where each neuron appears saturated
+    saturation_per_neuron = is_saturated.mean(dim=0)
+    
+    # Consider a neuron truly saturated if it's saturated in most samples
+    saturated_mask = (saturation_per_neuron > saturation_percentage)
+    
+    # Calculate the overall fraction of saturated neurons
+    saturated_fraction = saturated_mask.float().mean().item()
+    
+    return saturated_fraction
+
+
+def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
+                      dead_threshold, 
+                      corr_threshold, 
+                      saturation_threshold, 
+                      saturation_percentage,
+                      device='cpu'):
+    """
+    Analyze model behavior on a fixed batch to compute metrics.
+    
+    Args:
+        model: Neural network model
+        monitor: NetworkMonitor instance
+        fixed_batch: Input data batch
+        fixed_targets: Target labels
+        criterion: Loss function
+        dead_threshold: Threshold for dead neuron detection
+        corr_threshold: Threshold for duplicate neuron detection
+        saturation_threshold: Threshold for saturated neuron detection
+        saturation_percentage: Percentage of samples required for a neuron to be considered saturated
+        device: Device to run computations on
+        
+    Returns:
+        Dictionary of metrics for each layer
+    """
+    if fixed_batch.device != device:
+        fixed_batch = fixed_batch.to(device)
+        fixed_targets = fixed_targets.to(device)
+    
+    hooks_were_active = monitor.hooks_active
+    monitor.register_hooks()
+    
+    with torch.set_grad_enabled(criterion is not None):
+        outputs = model(fixed_batch)
+        loss = criterion(outputs, fixed_targets)
+        loss.backward()
+    
+    metrics = {}
+    latest_acts = monitor.get_latest_activations()
+    latest_grads = monitor.get_latest_gradients()
+
+    for layer_name, act in latest_acts.items():
+        # Skip layers without gradients when computing metrics
+        if layer_name not in latest_grads:
+            continue
+            
+        grad = latest_grads[layer_name]
+        
+        # Compute all metrics for this layer
+        metrics[layer_name] = {
+            'dead_fraction': measure_dead_neurons(act, dead_threshold),
+            'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
+            'eff_rank': measure_effective_rank(act),
+            'stable_rank': measure_stable_rank(act),
+            'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
+        }
+    
+    if not hooks_were_active:
+        monitor.remove_hooks()
+    
+    return metrics
+
+================================================================================
+
+--- Processing: ./src/utils/data.py ---
+"""
+Dataset management utilities for neural network training and continual learning experiments.
+"""
+import os
+import random
+import time
+from typing import Dict, List, Tuple, Any
+
+import torch
+import torchvision
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, Subset, Dataset
+from omegaconf import DictConfig
+
+class SubsetDataset(Dataset):
+    """Dataset wrapper for class subset selection"""
+    def __init__(self, dataset, class_indices):
+        self.dataset = dataset
+        self.class_indices = class_indices
+        self.indices = self._get_indices()
+        
+    def _get_indices(self):
+        indices = []
+        for i in range(len(self.dataset)):
+            _, label = self.dataset[i]
+            if label in self.class_indices:
+                indices.append(i)
+        return indices
+    
+    def __len__(self):
+        return len(self.indices)
+    
+    def __getitem__(self, idx):
+        image, label = self.dataset[self.indices[idx]]
+        return image, label
+
+
+def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, val_split=0.2):
+    """
+    Prepare dataloaders for continual learning on a sequence of class subsets.
+    
+    Args:
+        dataset: The full dataset (e.g., CIFAR10)
+        class_sequence: List of lists, where each inner list contains class indices for a task
+        batch_size: Batch size for dataloaders
+        val_split: Fraction of data to use for validation
+    
+    Returns:
+        Dictionary mapping task_id -> (train_loader, val_loader, fixed_train_loader, fixed_val_loader)
+    """
+    dataloaders = {}
+    all_seen_classes = set()
+    
+    for task_id, classes in enumerate(class_sequence):
+        current_classes = set(classes)
+        
+        # Create current task dataset
+        current_dataset = SubsetDataset(dataset, classes)
+        
+        # Split into training and validation
+        dataset_size = len(current_dataset)
+        val_size = int(val_split * dataset_size)
+        train_size = dataset_size - val_size
+        
+        indices = list(range(dataset_size))
+        random.shuffle(indices)
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size:]
+        
+        train_subset = Subset(current_dataset, train_indices)
+        val_subset = Subset(current_dataset, val_indices)
+        
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+        
+        # Fixed batches for metrics
+        fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
+        fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
+        
+        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False)
+        
+        # For previous tasks (old classes)
+        old_loaders = {}
+        if task_id > 0:
+            old_classes = all_seen_classes - current_classes
+            if old_classes:
+                old_dataset = SubsetDataset(dataset, list(old_classes))
+                old_size = len(old_dataset)
+                old_indices = list(range(old_size))
+                random.shuffle(old_indices)
+                
+                old_train_size = int((1 - val_split) * old_size)
+                old_train_indices = old_indices[:old_train_size]
+                old_val_indices = old_indices[old_train_size:]
+                
+                old_train_subset = Subset(old_dataset, old_train_indices)
+                old_val_subset = Subset(old_dataset, old_val_indices)
+                
+                old_train_loader = DataLoader(old_train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
+                old_val_loader = DataLoader(old_val_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+                
+                # Fixed old batches for metrics
+                fixed_old_train = Subset(old_train_subset, range(min(500, len(old_train_subset))))
+                fixed_old_val = Subset(old_val_subset, range(min(500, len(old_val_subset))))
+                
+                fixed_old_train_loader = DataLoader(fixed_old_train, batch_size=batch_size, shuffle=False)
+                fixed_old_val_loader = DataLoader(fixed_old_val, batch_size=batch_size, shuffle=False)
+                
+                old_loaders = {
+                    'train': old_train_loader,
+                    'val': old_val_loader,
+                    'fixed_train': fixed_old_train_loader,
+                    'fixed_val': fixed_old_val_loader
+                }
+        
+        # Store the dataloaders for this task
+        dataloaders[task_id] = {
+            'current': {
+                'train': train_loader,
+                'val': val_loader,
+                'fixed_train': fixed_train_loader,
+                'fixed_val': fixed_val_loader,
+                'classes': classes
+            },
+            'old': old_loaders
+        }
+        
+        # Update the set of all seen classes
+        all_seen_classes.update(current_classes)
+    
+    return dataloaders
+
+
+def get_transforms(dataset_name, no_augment=False):
+    """
+    Get appropriate data transformations for the dataset.
+    
+    Args:
+        dataset_name: Name of the dataset
+        no_augment: Whether to disable data augmentation
+        
+    Returns:
+        transform_train: Transformations for training data
+        transform_test: Transformations for test data
+    """
+    if dataset_name.lower() == 'cifar10':
+        # CIFAR-10 normalization stats
+        mean = (0.4914, 0.4822, 0.4465)
+        std = (0.2023, 0.1994, 0.2010)
+        img_size = 32
+    elif dataset_name.lower() == 'cifar100':
+        # CIFAR-100 normalization stats
+        mean = (0.5071, 0.4867, 0.4408)
+        std = (0.2675, 0.2565, 0.2761)
+        img_size = 32
+    elif dataset_name.lower() == 'tiny-imagenet':
+        # Tiny ImageNet normalization stats (approximated ImageNet stats)
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        img_size = 64
+    elif dataset_name.lower() == 'mnist':
+        mean = (0.1307,)
+        std = (0.3081,)
+        img_size = 28
+    else:
+        mean = (0.5, 0.5, 0.5)
+        std = (0.5, 0.5, 0.5)
+        img_size = 32
+
+    # Create transform with or without augmentation
+    if no_augment:
+        print("Data augmentation disabled")
+        if dataset_name.lower() == 'mnist':
+            transform_train = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+        else:
+            transform_train = transforms.Compose([
+                transforms.Resize(img_size) if img_size != 64 else transforms.Lambda(lambda x: x),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+    else:
+        if dataset_name.lower() == 'tiny-imagenet':
+            # Transforms for Tiny ImageNet
+            transform_train = transforms.Compose([
+                transforms.RandomCrop(64, padding=8),
+                transforms.RandomHorizontalFlip(),
+                transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+        elif dataset_name.lower() == 'mnist':
+            transform_train = transforms.Compose([
+                transforms.RandomRotation(10),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+        else:
+            # Transforms for CIFAR datasets
+            transform_train = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+    
+    # Test transforms
+    if dataset_name.lower() == 'tiny-imagenet':
+        transform_test = transforms.Compose([
+            transforms.Resize(64),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ])
+    else:
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ])
+    
+    return transform_train, transform_test
+
+
+def get_dataset(dataset_name, transform_train=None, transform_test=None, download=True):
+    """
+    Get the specified dataset.
+    
+    Args:
+        dataset_name: Name of the dataset
+        transform_train: Transformations for training data
+        transform_test: Transformations for test data
+        download: Whether to download the dataset
+        
+    Returns:
+        train_dataset: Training dataset
+        test_dataset: Test dataset
+        num_classes: Number of classes in the dataset
+    """
+    # Generate default transforms if not provided
+    if transform_train is None or transform_test is None:
+        transform_train, transform_test = get_transforms(dataset_name)
+    
+    # Get the path to the data directory relative to the project root
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    data_dir = os.path.join(script_dir, 'data')
+    
+    if dataset_name.lower() == 'cifar10':
+        train_dataset = torchvision.datasets.CIFAR10(
+            root=data_dir, train=True, download=download, transform=transform_train)
+            
+        test_dataset = torchvision.datasets.CIFAR10(
+            root=data_dir, train=False, download=download, transform=transform_test)
+        
+        num_classes = 10
+    
+    elif dataset_name.lower() == 'cifar100':
+        train_dataset = torchvision.datasets.CIFAR100(
+            root=data_dir, train=True, download=download, transform=transform_train)
+            
+        test_dataset = torchvision.datasets.CIFAR100(
+            root=data_dir, train=False, download=download, transform=transform_test)
+        
+        num_classes = 100
+            
+    elif dataset_name.lower() == 'mnist':
+        train_dataset = torchvision.datasets.MNIST(
+            root=data_dir, train=True, download=download, transform=transform_train)
+            
+        test_dataset = torchvision.datasets.MNIST(
+            root=data_dir, train=False, download=download, transform=transform_test)
+        
+        num_classes = 10
+    
+    elif dataset_name.lower() == 'tiny-imagenet':
+        # Check if Tiny ImageNet dataset exists, if not suggest downloading
+        tiny_imagenet_path = os.path.join(data_dir, 'tiny-imagenet-200')
+        if not os.path.exists(tiny_imagenet_path):
+            script_path = os.path.join(script_dir, 'scripts', 'download_tiny_imagenet.py')
+            print(f"Tiny ImageNet dataset not found at {tiny_imagenet_path}")
+            print(f"Please run: python {script_path}")
+            raise FileNotFoundError(f"Tiny ImageNet dataset not found at {tiny_imagenet_path}")
+        
+        # Use ImageFolder to load Tiny ImageNet
+        train_dataset = torchvision.datasets.ImageFolder(
+            root=os.path.join(tiny_imagenet_path, 'train'),
+            transform=transform_train
+        )
+        test_dataset = torchvision.datasets.ImageFolder(
+            root=os.path.join(tiny_imagenet_path, 'val'),
+            transform=transform_test
+        )
+        num_classes = 200
+        print(f"Loaded Tiny ImageNet with {len(train_dataset)} training samples and {len(test_dataset)} validation samples")
+    
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+    
+    return train_dataset, test_dataset, num_classes
+
+
+def create_class_partitions(dataset, partition_sizes):
+    """
+    Create partitions of the dataset based on class labels.
+    Uses an optimized algorithm that processes the dataset only once,
+    creating a dictionary mapping from class label to indices to handle
+    large datasets efficiently.
+    
+    Args:
+        dataset: The full dataset
+        partition_sizes: List of tuples defining the classes in each partition
+                         e.g. [(0,1), (2,3), (4,5), (6,7,8,9)]
+    
+    Returns:
+        List of dataset subsets, one for each partition
+    """
+    # Initialize empty lists for each class
+    class_to_indices = {}
+    
+    # Group indices by class with a single pass through the dataset
+    print("Creating partitions (this may take a moment for large datasets)...")
+    start_time = time.time()
+    
+    # Process dataset in batches for large datasets
+    for i, (_, label) in enumerate(dataset):
+        label_int = int(label)
+        if label_int not in class_to_indices:
+            class_to_indices[label_int] = []
+        class_to_indices[label_int].append(i)
+    
+    # Create partitions using the collected indices
+    partitions = []
+    for class_list in partition_sizes:
+        partition_indices = []
+        for cls in class_list:
+            if cls in class_to_indices:
+                partition_indices.extend(class_to_indices[cls])
+        partitions.append(Subset(dataset, partition_indices))
+    
+    print(f"Partitioning completed in {time.time() - start_time:.2f} seconds")
+    return partitions
+
+
+# Dataset Manager Functions from dataset_manager.py
+
+def generate_class_sequence(cfg: DictConfig, num_classes: int) -> List[List[int]]:
+    """
+    Generate a sequence of class partitions for continual learning tasks.
+    
+    Args:
+        cfg: Configuration object
+        num_classes: Total number of classes in the dataset
+        
+    Returns:
+        List of class lists, one for each task
+    """
+    # Parse partitions if provided
+    if cfg.task.partitions is not None:
+        # Use provided partitions
+        return [list(p) for p in cfg.task.partitions]
+    else:
+        # Auto-generate partitions
+        tasks = cfg.task.tasks
+        classes_per_task = cfg.task.classes_per_task
+        
+        # Ensure we have enough tasks for all classes
+        if tasks is None:
+            tasks = num_classes // classes_per_task
+        
+        # Create class sequence
+        return [
+            list(range(i * classes_per_task, min((i + 1) * classes_per_task, num_classes)))
+            for i in range(tasks)
+        ]
+
+def create_task_dataloaders(
+    partitioned_train_datasets: List[Subset],
+    partitioned_val_datasets: List[Subset],
+    class_sequence: List[List[int]],
+    batch_size: int
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Create data loaders for each task.
+    
+    Args:
+        partitioned_train_datasets: List of training dataset partitions
+        partitioned_val_datasets: List of validation dataset partitions
+        class_sequence: List of class lists, one for each task
+        batch_size: Batch size for the data loaders
+        
+    Returns:
+        Dictionary mapping task IDs to data loaders
+    """
+    task_dataloaders = {}
+    
+    for task_id, (train_subset, val_subset) in enumerate(zip(partitioned_train_datasets, partitioned_val_datasets)):
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+        
+        # Fixed batches for metrics
+        fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
+        fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
+        
+        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False)
+        
+        task_dataloaders[task_id] = {
+            'train': train_loader,
+            'val': val_loader,
+            'fixed_train': fixed_train_loader,
+            'fixed_val': fixed_val_loader,
+            'classes': class_sequence[task_id]
+        }
+    
+    return task_dataloaders
+
+def update_dataset_config(cfg: DictConfig, dataset_name: str, num_classes: int) -> None:
+    """
+    Update dataset configuration parameters based on the dataset name.
+    
+    Args:
+        cfg: Configuration object
+        dataset_name: Name of the dataset
+        num_classes: Number of classes in the dataset
+    """
+    # Set dataset specific parameters
+    if dataset_name.lower() == 'mnist':
+        cfg.dataset.input_size = 784  # 28x28
+        cfg.dataset.img_size = 28
+        cfg.dataset.in_channels = 1
+    elif dataset_name.lower() == 'cifar10':
+        cfg.dataset.input_size = 3072  # 32x32x3
+        cfg.dataset.img_size = 32
+        cfg.dataset.in_channels = 3
+    elif dataset_name.lower() == 'cifar100':
+        cfg.dataset.input_size = 3072  # 32x32x3
+        cfg.dataset.img_size = 32
+        cfg.dataset.in_channels = 3
+    elif dataset_name.lower() == 'tiny-imagenet':
+        cfg.dataset.input_size = 12288  # 64x64x3
+        cfg.dataset.img_size = 64
+        cfg.dataset.in_channels = 3
+    
+    # Update number of classes
+    cfg.dataset.num_classes = num_classes
+
+def prepare_continual_learning_dataloaders(cfg: DictConfig) -> Tuple[Dict[int, Dict[str, Any]], int, List[List[int]]]:
+    """
+    Prepare dataloaders for continual learning experiments.
+    
+    Args:
+        cfg: Configuration object
+        
+    Returns:
+        task_dataloaders: Dictionary mapping task IDs to data loaders
+        num_classes: Number of classes in the dataset
+        class_sequence: List of class lists, one for each task
+    """
+    # Create transforms with or without augmentation
+    transform_train, transform_test = get_transforms(cfg.dataset.name, cfg.training.no_augment)
+    
+    # Get dataset
+    train_dataset, val_dataset, num_classes = get_dataset(cfg.dataset.name, transform_train, transform_test)
+    
+    # Update dataset config parameters
+    update_dataset_config(cfg, cfg.dataset.name, num_classes)
+    
+    # Generate class sequence
+    class_sequence = generate_class_sequence(cfg, num_classes)
+    print(f"Class sequence: {class_sequence}")
+    
+    # Create partition datasets
+    partitioned_train_datasets = create_class_partitions(
+        train_dataset, [tuple(cls_list) for cls_list in class_sequence])
+    
+    partitioned_val_datasets = create_class_partitions(
+        val_dataset, [tuple(cls_list) for cls_list in class_sequence])
+    
+    # Create dataloader dict
+    task_dataloaders = create_task_dataloaders(
+        partitioned_train_datasets, 
+        partitioned_val_datasets, 
+        class_sequence, 
+        cfg.training.batch_size
+    )
+    
+    return task_dataloaders, num_classes, class_sequence
+
+================================================================================
+
+--- Processing: ./src/utils/monitor.py ---
+import torch
+from collections import defaultdict
+
+class NetworkMonitor:
+    def __init__(self, model, filter_func=None):
+        """
+        Initialize the network monitor.
+        
+        Args:
+            model: The neural network model to monitor
+            filter_func: Function that takes a layer name and returns 
+                         True if the layer should be monitored
+        """
+        self.model = model
+        self.filter_func = filter_func if filter_func is not None else lambda name: True
+        self.activations = defaultdict(list)
+        self.gradients = defaultdict(list)
+        self.fwd_hooks = []
+        self.bwd_hooks = []
+        self.hooks_active = False
+        
+    def set_filter(self, filter_func):
+        """Update the filter function for selecting layers to monitor."""
+        was_active = self.hooks_active
+        if was_active:
+            self.remove_hooks()
+        self.filter_func = filter_func if filter_func is not None else lambda name: True
+        if was_active:
+            self.register_hooks()
+        
+    def register_hooks(self):
+        """Register forward and backward hooks on the model."""
+        if not self.hooks_active:
+            for name, module in self.model.named_modules():
+                if name != '' and self.filter_func(name):
+                    def make_fwd_hook(name=name):
+                        def hook(module, input, output):
+                            self.activations[f"{name}"].append(output.clone().detach().cpu())
+                        return hook
+                    
+                    def make_bwd_hook(name=name):
+                        def hook(module, grad_input, grad_output):
+                            if len(grad_output) > 0 and grad_output[0] is not None:
+                                self.gradients[f"{name}"].append(grad_output[0].clone().detach().cpu())
+                            return grad_input
+                        return hook
+                    
+                    h1 = module.register_forward_hook(make_fwd_hook())
+                    h2 = module.register_full_backward_hook(make_bwd_hook())
+                    self.fwd_hooks.append(h1)
+                    self.bwd_hooks.append(h2)
+            
+            self.hooks_active = True
+    
+    def remove_hooks(self):
+        """Remove all hooks from the model."""
+        if self.hooks_active:
+            for h in self.fwd_hooks + self.bwd_hooks:
+                h.remove()
+            self.fwd_hooks = []
+            self.bwd_hooks = []
+            self.hooks_active = False
+        
+    def clear_data(self):
+        """Clear stored activations and gradients."""
+        self.activations = defaultdict(list)
+        self.gradients = defaultdict(list)
+        
+    def get_latest_activations(self):
+        """Get the latest activations for all monitored layers."""
+        latest_acts = {}
+        for name, acts_list in self.activations.items():
+            if acts_list:
+                latest_acts[name] = acts_list[-1]
+        return latest_acts
+    
+    def get_latest_gradients(self):
+        """Get the latest gradients for all monitored layers."""
+        latest_grads = {}
+        for name, grads_list in self.gradients.items():
+            if grads_list:
+                latest_grads[name] = grads_list[-1]
+        return latest_grads
+
+
+================================================================================
+
+--- Processing: ./src/utils/__init__.py ---
+
+
+================================================================================
+
+--- Processing: ./src/utils/visualization.py ---
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+def plot_metrics_history(history, metric_name, title=None, figsize=(14, 8)):
+    """
+    Plot the history of metrics over tasks and epochs.
+    
+    Args:
+        history: Dictionary containing task training history
+        metric_name: Name of the metric to plot
+        title: Optional title for the plot
+        figsize: Figure size tuple
+    """
+    plt.figure(figsize=figsize)
+    
+    for task_id, task_info in history['tasks'].items():
+        task_history = task_info['history']
+        epochs = task_history['epochs']
+        
+        # Plot current task metrics
+        plt.plot(epochs, task_history['current'][metric_name], 
+                marker='o', linestyle='-', 
+                label=f'Task {task_id} (Classes {task_info["classes"]})')
+        
+        # Plot old task metrics if available
+        if 'old' in task_history and len(task_history['old'][metric_name]) > 0:
+            plt.plot(epochs, task_history['old'][metric_name],
+                    marker='x', linestyle='--',
+                    label=f'Old Classes after Task {task_id}')
+    
+    plt.xlabel('Epoch')
+    plt.ylabel(metric_name.replace('_', ' ').title())
+    if title:
+        plt.title(title)
+    else:
+        plt.title(f'{metric_name.replace("_", " ").title()} During Continual Learning')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    return plt.gcf()
+
+def plot_layer_metrics(metrics_dict, metric_name, title=None, figsize=(14, 8)):
+    """
+    Plot metrics for different layers.
+    
+    Args:
+        metrics_dict: Dictionary mapping layer_name -> metrics
+        metric_name: Name of the metric to plot
+        title: Optional title for the plot
+        figsize: Figure size tuple
+    """
+    plt.figure(figsize=figsize)
+    
+    # Extract layer names and metric values
+    layer_names = list(metrics_dict.keys())
+    metric_values = [metrics_dict[layer][metric_name] for layer in layer_names]
+    
+    # Create bar plot
+    y_pos = np.arange(len(layer_names))
+    plt.barh(y_pos, metric_values)
+    plt.yticks(y_pos, layer_names)
+    plt.xlabel(metric_name.replace('_', ' ').title())
+    
+    if title:
+        plt.title(title)
+    else:
+        plt.title(f'{metric_name.replace("_", " ").title()} by Layer')
+    
+    plt.tight_layout()
+    return plt.gcf()
+
+def plot_layer_metrics_over_time(history, layer_name, metric_name, title=None, figsize=(14, 8)):
+    """
+    Plot how a specific layer metric changes over time during training.
+    
+    Args:
+        history: Dictionary containing task training history
+        layer_name: Name of the layer to plot metrics for
+        metric_name: Name of the metric to plot
+        title: Optional title for the plot
+        figsize: Figure size tuple
+    """
+    plt.figure(figsize=figsize)
+    
+    for task_id, task_info in history['tasks'].items():
+        task_history = task_info['history']
+        
+        if layer_name in task_history['training_metrics_history']:
+            # Only include epochs where we collected metrics
+            epochs = [ep for i, ep in enumerate(task_history['epochs']) 
+                     if i < len(task_history['training_metrics_history'][layer_name][metric_name])]
+            
+            train_values = task_history['training_metrics_history'][layer_name][metric_name]
+            val_values = task_history['validation_metrics_history'][layer_name][metric_name]
+            
+            plt.plot(epochs, train_values, 
+                    marker='o', linestyle='-', 
+                    label=f'Task {task_id} Train')
+            
+            plt.plot(epochs, val_values, 
+                    marker='x', linestyle='--', 
+                    label=f'Task {task_id} Val')
+    
+    plt.xlabel('Epoch')
+    plt.ylabel(metric_name.replace('_', ' ').title())
+    
+    if title:
+        plt.title(title)
+    else:
+        plt.title(f'{metric_name.replace("_", " ").title()} for Layer {layer_name}')
+    
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    return plt.gcf()
+
+def visualize_activations(activations, n_cols=5, figsize=(15, 10)):
+    """
+    Visualize activation patterns for a layer.
+    
+    Args:
+        activations: Tensor of activations [batch_size, features]
+        n_cols: Number of columns for the visualization grid
+        figsize: Figure size tuple
+    """
+    if isinstance(activations, torch.Tensor):
+        activations = activations.detach().cpu().numpy()
+    
+    batch_size, n_features = activations.shape
+    sample_idx = np.random.choice(batch_size, min(16, batch_size), replace=False)
+    
+    activations = activations[sample_idx]
+    
+    n_rows = (len(sample_idx) + n_cols - 1) // n_cols
+    plt.figure(figsize=figsize)
+    
+    for i, idx in enumerate(sample_idx):
+        plt.subplot(n_rows, n_cols, i + 1)
+        plt.imshow(activations[i].reshape(-1, 1), aspect='auto', cmap='viridis')
+        plt.colorbar()
+        plt.title(f'Sample {i}')
+        plt.tight_layout()
+    
+    return plt.gcf()
+
+================================================================================
+
+--- Processing: ./src/config/registry.py ---
+"""
+Registers all structured configurations with Hydra's ConfigStore.
+This enables proper validation and type checking of configuration values.
+"""
+
+from hydra.core.config_store import ConfigStore
+from .schema import (
+    ExperimentConfig,
+    ModelConfig,
+    MLPConfig,
+    CNNConfig,
+    ResNetConfig,
+    ViTConfig,
+    DatasetConfig,
+    OptimizerConfig,
+    MetricsConfig,
+    TrainingConfig,
+    TaskConfig,
+    LoggingConfig
+)
+
+def register_configs():
+    """Register all configuration schemas with Hydra's ConfigStore."""
+    cs = ConfigStore.instance()
+    
+    # Register the main experiment config schema
+    cs.store(name="experiment_schema", node=ExperimentConfig)
+    
+    # Register component schemas
+    cs.store(group="model", name="mlp_schema", node=MLPConfig)
+    cs.store(group="model", name="cnn_schema", node=CNNConfig)
+    cs.store(group="model", name="resnet_schema", node=ResNetConfig)
+    cs.store(group="model", name="vit_schema", node=ViTConfig)
+    
+    cs.store(group="dataset", name="dataset_schema", node=DatasetConfig)
+    cs.store(group="optimizer", name="optimizer_schema", node=OptimizerConfig)
+    cs.store(group="metrics", name="metrics_schema", node=MetricsConfig)
+    cs.store(group="training", name="training_schema", node=TrainingConfig)
+    cs.store(group="task", name="task_schema", node=TaskConfig)
+    cs.store(group="logging", name="logging_schema", node=LoggingConfig)
+    
+    return cs
+
+================================================================================
+
+--- Processing: ./src/config/schema.py ---
+"""
+Config schemas for Hydra structured configs.
+These dataclasses define the structure and defaults for all configuration options.
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Optional
+from omegaconf import MISSING
+
+
+@dataclass
+class MLPConfig:
+    """Configuration for Multi-Layer Perceptron model."""
+    _target_: str = "src.models.MLP"
+    hidden_sizes: List[int] = field(default_factory=lambda: [512, 256, 128])
+    activation: str = "relu"
+    dropout_p: float = 0.1
+    normalization: str = "batch"
+    norm_after_activation: bool = False
+    bias: bool = True
+    normalization_affine: bool = True
+    input_size: Optional[int] = None  # Will be set based on dataset
+    output_size: Optional[int] = None  # Will be set based on dataset
+
+
+@dataclass
+class CNNConfig:
+    """Configuration for Convolutional Neural Network model."""
+    _target_: str = "src.models.CNN"
+    conv_channels: List[int] = field(default_factory=lambda: [64, 128, 256])
+    kernel_sizes: List[int] = field(default_factory=lambda: [3, 3, 3])
+    strides: List[int] = field(default_factory=lambda: [1, 1, 1])
+    paddings: List[int] = field(default_factory=lambda: [1, 1, 1])
+    fc_hidden_units: List[int] = field(default_factory=lambda: [512])
+    activation: str = "relu"
+    dropout_p: float = 0.1
+    pool_type: str = "max"
+    pool_size: int = 2
+    use_batchnorm: bool = True
+    norm_after_activation: bool = False
+    normalization_affine: bool = True
+    input_size: Optional[int] = None  # Will be set based on dataset
+    in_channels: Optional[int] = None  # Will be set based on dataset
+    num_classes: Optional[int] = None  # Will be set based on dataset
+
+
+@dataclass
+class ResNetConfig:
+    """Configuration for ResNet model."""
+    _target_: str = "src.models.ResNet"
+    layers: List[int] = field(default_factory=lambda: [2, 2, 2, 2])
+    base_channels: int = 64
+    activation: str = "relu"
+    dropout_p: float = 0.1
+    use_batchnorm: bool = True
+    norm_after_activation: bool = False
+    normalization_affine: bool = True
+    in_channels: Optional[int] = None  # Will be set based on dataset
+    num_classes: Optional[int] = None  # Will be set based on dataset
+
+
+@dataclass
+class ViTConfig:
+    """Configuration for Vision Transformer model."""
+    _target_: str = "src.models.VisionTransformer"
+    patch_size: int = 8
+    embed_dim: int = 384
+    depth: int = 6
+    n_heads: int = 6
+    mlp_ratio: float = 4.0
+    qkv_bias: bool = True
+    drop_rate: float = 0.1
+    attn_drop_rate: float = 0.1
+    activation: str = "gelu"
+    normalization: str = "layer"
+    normalization_affine: bool = True
+    img_size: Optional[int] = None  # Will be set based on dataset
+    in_channels: Optional[int] = None  # Will be set based on dataset
+    num_classes: Optional[int] = None  # Will be set based on dataset
+
+
+@dataclass
+class ModelConfig:
+    """Container for all model configurations."""
+    name: str = "mlp"
+    mlp: MLPConfig = field(default_factory=MLPConfig)
+    cnn: CNNConfig = field(default_factory=CNNConfig)
+    resnet: ResNetConfig = field(default_factory=ResNetConfig)
+    vit: ViTConfig = field(default_factory=ViTConfig)
+
+
+@dataclass
+class DatasetConfig:
+    """Configuration for datasets."""
+    name: str = "cifar10"
+    input_size: int = MISSING  # Will be set based on dataset
+    img_size: int = MISSING    # Will be set based on dataset
+    in_channels: int = MISSING  # Will be set based on dataset 
+    num_classes: int = MISSING  # Will be set based on dataset
+
+
+@dataclass
+class OptimizerConfig:
+    """Configuration for optimizers."""
+    name: str = "adam"
+    lr: float = 0.001
+    weight_decay: float = 0.0
+    momentum: float = 0.9  # For SGD
+    reinit_adam: bool = False  # Reinitialize optimizer state for each new task
+
+
+@dataclass
+class MetricsConfig:
+    """Configuration for metrics collection and thresholds."""
+    metrics_frequency: int = 5
+    dead_threshold: float = 0.95
+    corr_threshold: float = 0.95
+    saturation_threshold: float = 1e-4
+    saturation_percentage: float = 0.99
+
+
+@dataclass
+class TrainingConfig:
+    """Configuration for training procedures."""
+    epochs_per_task: int = 20
+    batch_size: int = 128
+    no_augment: bool = False
+    early_stopping_steps: int = 0
+    reinit_output: bool = False  # Reinitialize output weights for task classes
+    reset: bool = False  # Reset model weights before training on each new task
+    seed: int = 42
+    device: Optional[str] = None  # 'cuda', 'cpu', or 'mps'
+
+
+@dataclass
+class TaskConfig:
+    """Configuration for continual learning tasks."""
+    tasks: int = 10  # Number of tasks
+    classes_per_task: int = 2  # Classes per task
+    partitions: Optional[List[List[int]]] = None  # Custom class partitions
+
+
+@dataclass
+class LoggingConfig:
+    """Configuration for experiment logging."""
+    use_wandb: bool = False
+    wandb_project: str = "continual-learning-experiment" 
+    wandb_entity: Optional[str] = None
+    summary: bool = True  # Show summary after each task
+
+
+@dataclass
+class ExperimentConfig:
+    """Master configuration for experiments."""
+    model: ModelConfig = field(default_factory=ModelConfig)
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
+    metrics: MetricsConfig = field(default_factory=MetricsConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    task: TaskConfig = field(default_factory=TaskConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    dryrun: bool = False
+
+================================================================================
+
+--- Processing: ./src/config/utils.py ---
+"""
+Utilities for working with configurations and model setup.
+"""
+import os
+import torch
+import torch.nn as nn
+import wandb
+from omegaconf import DictConfig, OmegaConf
+from typing import Dict, Any, Optional, List
+
+def get_device(device_str: Optional[str] = None) -> torch.device:
+    """
+    Get the appropriate torch device.
+    
+    Args:
+        device_str: Device string (e.g., 'cuda', 'cpu', 'mps')
+               If None, will select the best available device
+    
+    Returns:
+        torch.device: The selected device
+    """
+    if device_str is None:
+        if torch.cuda.is_available():
+            return torch.device('cuda')
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return torch.device('mps')
+        else:
+            return torch.device('cpu')
+    else:
+        return torch.device(device_str)
+
+def setup_wandb(cfg: DictConfig) -> bool:
+    """
+    Setup weights & biases logging.
+    
+    Args:
+        cfg: Configuration object
+        
+    Returns:
+        bool: True if wandb was initialized, False otherwise
+    """
+    if cfg.logging.use_wandb:
+        # Prepare wandb config
+        wandb_config = OmegaConf.to_container(cfg, resolve=True)
+        
+        # Initialize wandb with optional entity parameter
+        init_args = {
+            "project": cfg.logging.wandb_project,
+            "config": wandb_config
+        }
+        
+        # Add entity parameter if it exists
+        if hasattr(cfg.logging, "wandb_entity"):
+            init_args["entity"] = cfg.logging.wandb_entity
+            
+        wandb.init(**init_args)
+        return True
+    return False
+
+def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer:
+    """
+    Create an optimizer based on configuration.
+    
+    Args:
+        model: The model whose parameters will be optimized
+        cfg: Configuration object containing optimizer settings
+        
+    Returns:
+        Optimizer instance
+    """
+    optimizer_name = cfg.optimizer.name.lower()
+    
+    if optimizer_name == 'adam':
+        return torch.optim.Adam(
+            model.parameters(),
+            lr=cfg.optimizer.lr,
+            weight_decay=cfg.optimizer.weight_decay
+        )
+    elif optimizer_name == 'sgd':
+        return torch.optim.SGD(
+            model.parameters(),
+            lr=cfg.optimizer.lr,
+            momentum=cfg.optimizer.momentum,
+            weight_decay=cfg.optimizer.weight_decay
+        )
+    elif optimizer_name == 'rmsprop':
+        return torch.optim.RMSprop(
+            model.parameters(),
+            lr=cfg.optimizer.lr,
+            weight_decay=cfg.optimizer.weight_decay
+        )
+    elif optimizer_name == 'adamw':
+        return torch.optim.AdamW(
+            model.parameters(),
+            lr=cfg.optimizer.lr,
+            weight_decay=cfg.optimizer.weight_decay
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+def reinitialize_output_weights(model: nn.Module, task_classes: List[int], model_type: str = 'mlp') -> None:
+    """
+    Reinitialize the output weights for the specified task classes.
+    
+    Args:
+        model: The neural network model
+        task_classes: List of class indices for the current task
+        model_type: Type of model ('mlp', 'cnn', 'resnet', or 'vit')
+    """
+    # Get the output layer
+    if model_type == 'mlp':
+        # For MLP, the output layer is accessible through the layers ModuleDict with key 'out'
+        output_layer = model.layers['out']
+    elif model_type == 'cnn':
+        # For CNN, the output layer is the final fc layer in the ModuleDict
+        output_layer = model.layers['fc_out']
+    elif model_type == 'resnet':
+        # For ResNet, the output layer is the linear layer in the layers ModuleDict
+        output_layer = model.layers['fc']
+    elif model_type == 'vit':
+        # For ViT, the output layer is the head in the ModuleDict
+        output_layer = model.layers['head']
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+    
+    # Only reinitialize weights for task classes
+    with torch.no_grad():
+        # Calculate the current layer norm for proper scaling
+        layer_norm = (output_layer.weight**2).mean().item()**0.5
+        
+        # Reinitialize weights only for the specific task classes
+        for cls in task_classes:
+            if cls < len(output_layer.weight):  # Ensure class index is valid
+                # Initialize the weights for this class, use layer std
+                nn.init.normal_(output_layer.weight[cls], std=layer_norm)
+                # Initialize the bias for this class
+                if output_layer.bias is not None:
+                    nn.init.zeros_(output_layer.bias[cls])
+    
+    print(f"Reinitialized output weights for classes: {task_classes}")
+
+================================================================================
+
+--- Processing: ./src/config/__init__.py ---
+"""
+Configuration module for the NN-dynamic-scaling project.
+Provides schema definitions, registration, and utilities for configuration management.
+"""
+
+from .schema import (
+    ExperimentConfig,
+    ModelConfig,
+    MLPConfig,
+    CNNConfig,
+    ResNetConfig,
+    ViTConfig,
+    DatasetConfig,
+    OptimizerConfig,
+    MetricsConfig,
+    TrainingConfig,
+    TaskConfig,
+    LoggingConfig
+)
+
+from .registry import register_configs
+from .utils import (
+    get_device,
+    setup_wandb,
+    create_optimizer,
+    reinitialize_output_weights
+)
+
+__all__ = [
+    # Schema classes
+    'ExperimentConfig',
+    'ModelConfig',
+    'MLPConfig',
+    'CNNConfig',
+    'ResNetConfig',
+    'ViTConfig',
+    'DatasetConfig',
+    'OptimizerConfig',
+    'MetricsConfig',
+    'TrainingConfig',
+    'TaskConfig',
+    'LoggingConfig',
+    
+    # Registration function
+    'register_configs',
+    
+    # Utility functions
+    'get_device',
+    'setup_wandb',
+    'create_optimizer',
+    'reinitialize_output_weights'
+]
+
+================================================================================
+
+--- Processing: ./src/models/mlp.py ---
+import torch
+import torch.nn as nn
+from .layers import get_activation, get_normalization
+
+class MLP(nn.Module):
+    def __init__(self, 
+                 input_size=784, 
+                 hidden_sizes=[512, 256, 128], 
+                 output_size=10, 
+                 activation='relu',
+                 dropout_p=0.0,
+                 normalization=None,
+                 norm_after_activation=False,
+                 bias=True,
+                 normalization_affine=True):
+        """Fully connected MLP with customizable architecture."""
+        super(MLP, self).__init__()
+        
+        self.input_size = input_size
+        self.hidden_sizes = hidden_sizes
+        self.output_size = output_size
+        self.norm_after_activation = norm_after_activation
+        
+        self.layers = nn.ModuleDict()
+        in_features = input_size
+        
+        for i, hidden_size in enumerate(hidden_sizes):
+            self.layers[f'linear_{i}'] = nn.Linear(in_features, hidden_size, bias=bias)
+            
+            if norm_after_activation:
+                self.layers[f'act_{i}'] = get_activation(activation)
+                if normalization:
+                    self.layers[f'norm_{i}'] = get_normalization(normalization, hidden_size, affine=normalization_affine)
+            else:
+                if normalization:
+                    self.layers[f'norm_{i}'] = get_normalization(normalization, hidden_size, affine=normalization_affine)
+                self.layers[f'act_{i}'] = get_activation(activation)
+            
+            if dropout_p > 0:
+                self.layers[f'drop_{i}'] = nn.Dropout(dropout_p)
+            
+            in_features = hidden_size
+        
+        self.layers['out'] = nn.Linear(in_features, output_size, bias=bias)
+        
+    def forward(self, x):
+        if x.dim() > 2:
+            x = x.view(x.size(0), -1)
+        
+        for k, l in self.layers.items():
+            x = l(x)
+        
+        return x
+
+
+================================================================================
+
+--- Processing: ./src/models/model_factory.py ---
+"""
+Factory module for creating neural network models.
+"""
+import torch.nn as nn
+from omegaconf import DictConfig, OmegaConf
+from typing import Dict, Any, Optional
+
+from . import MLP, CNN, ResNet, VisionTransformer
+
+def create_model(cfg: DictConfig) -> nn.Module:
+    """
+    Factory function to create models based on configuration.
+    
+    Args:
+        cfg: Configuration object containing model and dataset specifications
+        
+    Returns:
+        An initialized PyTorch model
+    """
+    model_name = cfg.model.name.lower()
+    model_params = {}
+    
+    # Get model config based on name and convert to dict
+    if hasattr(cfg.model, model_name):
+        model_config = getattr(cfg.model, model_name)
+        model_params = OmegaConf.to_container(model_config, resolve=True)
+        # Remove _target_ if present
+        if '_target_' in model_params:
+            del model_params['_target_']
+    
+    # Add dataset parameters based on model type
+    if model_name == 'mlp':
+        model_params['input_size'] = cfg.dataset.input_size
+        model_params['output_size'] = cfg.dataset.num_classes
+        return MLP(**model_params)
+    
+    elif model_name == 'cnn':
+        model_params['in_channels'] = cfg.dataset.in_channels
+        model_params['num_classes'] = cfg.dataset.num_classes
+        model_params['input_size'] = cfg.dataset.img_size
+        return CNN(**model_params)
+    
+    elif model_name == 'resnet':
+        model_params['num_classes'] = cfg.dataset.num_classes
+        model_params['in_channels'] = cfg.dataset.in_channels
+        return ResNet(**model_params)
+    
+    elif model_name == 'vit':
+        model_params['img_size'] = cfg.dataset.img_size
+        model_params['in_channels'] = cfg.dataset.in_channels
+        model_params['num_classes'] = cfg.dataset.num_classes
+        return VisionTransformer(**model_params)
+    
+    else:
+        raise ValueError(f"Unsupported model: {model_name}")
+
+================================================================================
+
+--- Processing: ./src/models/vit.py ---
+import torch
+import torch.nn as nn
+from .layers import get_activation, get_normalization
+
+class Attention(nn.Module):
+    """Multi-head attention module."""
+    def __init__(self, dim, n_heads=8, qkv_bias=True, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        assert dim % n_heads == 0
+        self.n_heads = n_heads
+        head_dim = dim // n_heads
+        self.scale = head_dim ** -0.5
+
+        self.layers = nn.ModuleDict({
+            'qkv': nn.Linear(dim, dim * 3, bias=qkv_bias),
+            'attn_drop': nn.Dropout(attn_drop),
+            'proj': nn.Linear(dim, dim),
+            'proj_drop': nn.Dropout(proj_drop)
+        })
+
+    def forward(self, x):
+        B, N, C = x.shape
+        qkv = self.layers['qkv'](x).reshape(B, N, 3, self.n_heads, C // self.n_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.layers['attn_drop'](attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.layers['proj'](x)
+        x = self.layers['proj_drop'](x)
+        return x
+
+
+class TransformerMLP(nn.Module):
+    """MLP module with activation."""
+    def __init__(self, in_features, hidden_features, out_features, 
+                 activation='gelu', drop=0.):
+        super().__init__()
+        
+        self.layers = nn.ModuleDict({
+            'fc1': nn.Linear(in_features, hidden_features),
+            'act': get_activation(activation),
+            'drop1': nn.Dropout(drop) if drop > 0 else nn.Identity(),
+            'fc2': nn.Linear(hidden_features, out_features),
+            'drop2': nn.Dropout(drop) if drop > 0 else nn.Identity()
+        })
+
+    def forward(self, x):
+        x = self.layers['fc1'](x)
+        x = self.layers['act'](x)
+        x = self.layers['drop1'](x)
+        x = self.layers['fc2'](x)
+        x = self.layers['drop2'](x)
+        return x
+
+
+class PatchEmbedding(nn.Module):
+    """Image to Patch Embedding for Vision Transformer."""
+    def __init__(self, img_size=32, patch_size=4, in_channels=3, embed_dim=192):
+        super().__init__()
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.n_patches = (img_size // patch_size) ** 2
+        
+        self.layers = nn.ModuleDict({
+            'proj': nn.Conv2d(
+                in_channels,
+                embed_dim,
+                kernel_size=patch_size,
+                stride=patch_size
+            )
+        })
+
+    def forward(self, x):
+        x = self.layers['proj'](x)
+        B, C, H, W = x.shape
+        x = x.flatten(2).transpose(1, 2)
+        return x
+
+
+class TransformerBlock(nn.Module):
+    """Transformer block with components."""
+    def __init__(self, dim, n_heads, mlp_ratio=4., qkv_bias=True, drop=0., 
+                 attn_drop=0., activation='gelu', normalization='layer',
+                 normalization_affine=True):
+        super().__init__()
+        
+        self.layers = nn.ModuleDict({
+            'norm1': get_normalization(normalization, dim, affine=normalization_affine),
+            'attn': Attention(dim, n_heads=n_heads, qkv_bias=qkv_bias, 
+                             attn_drop=attn_drop, proj_drop=drop),
+            'norm2': get_normalization(normalization, dim, affine=normalization_affine),
+            'mlp': TransformerMLP(dim, int(dim * mlp_ratio), dim, 
+                       activation=activation, drop=drop)
+        })
+
+    def forward(self, x):
+        norm_x = self.layers['norm1'](x)
+        attn_out = self.layers['attn'](norm_x)
+        x = x + attn_out
+        
+        norm_x = self.layers['norm2'](x)
+        mlp_out = self.layers['mlp'](norm_x)
+        x = x + mlp_out
+            
+        return x
+
+
+class VisionTransformer(nn.Module):
+    """Vision Transformer (ViT) model."""
+    def __init__(self, 
+                 img_size=32, 
+                 patch_size=4, 
+                 in_channels=3, 
+                 num_classes=10, 
+                 embed_dim=192,
+                 depth=12, 
+                 n_heads=8, 
+                 mlp_ratio=4., 
+                 qkv_bias=True, 
+                 drop_rate=0.1,
+                 attn_drop_rate=0.0,
+                 activation='gelu',
+                 normalization='layer',
+                 normalization_affine=True):
+        super().__init__()
+        
+        self.layers = nn.ModuleDict()
+        
+        self.layers['patch_embed'] = PatchEmbedding(img_size, patch_size, in_channels, embed_dim)
+        n_patches = self.layers['patch_embed'].n_patches
+
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, n_patches + 1, embed_dim))
+        
+        self.layers['pos_drop'] = nn.Dropout(drop_rate)
+
+        for i in range(depth):
+            self.layers[f'block_{i}'] = TransformerBlock(
+                embed_dim, n_heads, mlp_ratio, qkv_bias, 
+                drop_rate, attn_drop_rate, activation, normalization,
+                normalization_affine=normalization_affine
+            )
+
+        self.layers['norm'] = get_normalization(normalization, embed_dim, affine=normalization_affine)
+        self.layers['head'] = nn.Linear(embed_dim, num_classes)
+
+        self._init_weights()
+        self.depth = depth
+
+    def _init_weights(self):
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.weight, 1.0)
+
+    def forward(self, x):
+        x = self.layers['patch_embed'](x)
+        
+        B = x.shape[0]
+        cls_token = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_token, x), dim=1)
+        
+        x = x + self.pos_embed
+        x = self.layers['pos_drop'](x)
+
+        for i in range(self.depth):
+            x = self.layers[f'block_{i}'](x)
+        
+        x = self.layers['norm'](x)
+        x = x[:, 0]  # Use CLS token for classification
+        x = self.layers['head'](x)
+            
+        return x
+
+================================================================================
+
+--- Processing: ./src/models/layers.py ---
+import torch
+import torch.nn as nn
+import random
+import numpy as np
+
+def get_activation(activation_name):
+    """Returns the activation function based on name."""
+    activations = {
+        'relu': nn.ReLU(inplace=False),
+        'leaky_relu': nn.LeakyReLU(0.1, inplace=False),
+        'tanh': nn.Tanh(),
+        'sigmoid': nn.Sigmoid(),
+        'gelu': nn.GELU(),
+        'elu': nn.ELU(inplace=False),
+        'selu': nn.SELU(inplace=False),
+        'none': nn.Identity()
+    }
+    
+    if activation_name.lower() not in activations:
+        raise ValueError(f"Activation {activation_name} not supported. "
+                     f"Choose from: {list(activations.keys())}")
+    
+    return activations[activation_name.lower()]
+
+def get_normalization(norm_name, num_features, affine=True):
+    """Returns the normalization layer based on name."""
+    if norm_name is None:
+        return None
+        
+    normalizations = {
+        'batch': nn.BatchNorm1d(num_features, affine=affine),
+        'batch2d': nn.BatchNorm2d(num_features, affine=affine),
+        'layer': nn.LayerNorm(num_features, elementwise_affine=affine),
+        'instance': nn.InstanceNorm1d(num_features, affine=affine),
+        'instance2d': nn.InstanceNorm2d(num_features, affine=affine),
+        'group': nn.GroupNorm(min(32, num_features), num_features, affine=affine),
+        'none': nn.Identity()
+    }
+    
+    norm_key = str(norm_name).lower()
+    if norm_key not in normalizations:
+        raise ValueError(f"Normalization {norm_name} not supported. "
+                     f"Choose from: {list(normalizations.keys())}")
+    
+    return normalizations[norm_key]
+
+def set_seed(seed):
+    """Set random seed for reproducibility."""
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+================================================================================
+
+--- Processing: ./src/models/cnn.py ---
+import torch
+import torch.nn as nn
+from .layers import get_activation, get_normalization
+
+class CNN(nn.Module):
+    def __init__(self, 
+                 in_channels=3,
+                 conv_channels=[64, 128, 256], 
+                 kernel_sizes=[3, 3, 3],
+                 strides=[1, 1, 1],
+                 paddings=[1, 1, 1],
+                 fc_hidden_units=[512],
+                 num_classes=10, 
+                 input_size=32,
+                 activation='relu',
+                 dropout_p=0.0,
+                 pool_type='max',
+                 pool_size=2,
+                 use_batchnorm=True,
+                 norm_after_activation=False,
+                 normalization_affine=True):
+        """CNN with configurable layers, activations, and normalizations."""
+        super(CNN, self).__init__()
+        
+        assert len(conv_channels) == len(kernel_sizes) == len(strides) == len(paddings), \
+            "Convolutional parameters must have the same length"
+        
+        self.norm_after_activation = norm_after_activation
+        
+        self.layers = nn.ModuleDict()
+        
+        channels = in_channels
+        for i, (out_channels, kernel_size, stride, padding) in enumerate(
+                zip(conv_channels, kernel_sizes, strides, paddings)):
+            self.layers[f'conv_{i}'] = nn.Conv2d(channels, out_channels, kernel_size, stride, padding)
+            
+            if use_batchnorm:
+                self.layers[f'norm_{i}'] = get_normalization('batch2d', out_channels, affine=normalization_affine)
+            
+            self.layers[f'act_{i}'] = get_activation(activation)
+            
+            if pool_type == 'max':
+                self.layers[f'pool_{i}'] = nn.MaxPool2d(pool_size, pool_size)
+            elif pool_type == 'avg':
+                self.layers[f'pool_{i}'] = nn.AvgPool2d(pool_size, pool_size)
+            
+            channels = out_channels
+        
+        num_pools = len(conv_channels) if pool_type in ['max', 'avg'] else 0
+        final_size = input_size // (pool_size ** num_pools)
+        self.flattened_size = conv_channels[-1] * final_size * final_size
+        
+        self.layers['flatten'] = nn.Flatten()
+        
+        # Build fully connected layers
+        fc_input_size = self.flattened_size
+        for i, hidden_units in enumerate(fc_hidden_units):
+            self.layers[f'fc_{i}'] = nn.Linear(fc_input_size, hidden_units)
+            self.layers[f'fc_act_{i}'] = get_activation(activation)
+            
+            if dropout_p > 0:
+                self.layers[f'fc_drop_{i}'] = nn.Dropout(dropout_p)
+            
+            fc_input_size = hidden_units
+        
+        self.layers['fc_out'] = nn.Linear(fc_input_size, num_classes)
+    
+    def forward(self, x):
+        for k, l in self.layers.items():
+            x = l(x)
+        return x
+
+================================================================================
+
+--- Processing: ./src/models/__init__.py ---
+from .mlp import MLP
+from .cnn import CNN
+from .resnet import ResNet
+from .vit import VisionTransformer
+from .layers import get_activation, get_normalization
+
+================================================================================
+
+--- Processing: ./src/models/resnet.py ---
+import torch
+import torch.nn as nn
+from .layers import get_activation, get_normalization
+
+class BasicBlock(nn.Module):
+    """Basic ResNet block with activation and normalization."""
+    expansion = 1
+    
+    def __init__(self, in_planes, planes, stride=1, activation='relu', 
+                 use_batchnorm=True, norm_after_activation=False, downsample=None,
+                 normalization_affine=True):
+        super(BasicBlock, self).__init__()
+        
+        self.norm_after_activation = norm_after_activation
+        self.layers = nn.ModuleDict()
+        
+        self.layers['conv1'] = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, 
+                                        padding=1, bias=not use_batchnorm)
+        
+        if use_batchnorm:
+            self.layers['bn1'] = get_normalization('batch2d', planes, affine=normalization_affine)
+        
+        self.layers['activation'] = get_activation(activation)
+        
+        self.layers['conv2'] = nn.Conv2d(planes, planes, kernel_size=3, stride=1, 
+                                        padding=1, bias=not use_batchnorm)
+        
+        if use_batchnorm:
+            self.layers['bn2'] = get_normalization('batch2d', planes, affine=normalization_affine)
+        
+        if downsample is not None:
+            self.layers['downsample'] = downsample
+        
+    def forward(self, x):
+        identity = x
+        
+        out = self.layers['conv1'](x)
+        
+        if 'bn1' in self.layers and not self.norm_after_activation:
+            out = self.layers['bn1'](out)
+        
+        out = self.layers['activation'](out)
+        
+        if 'bn1' in self.layers and self.norm_after_activation:
+            out = self.layers['bn1'](out)
+            
+        out = self.layers['conv2'](out)
+        
+        if 'bn2' in self.layers and not self.norm_after_activation:
+            out = self.layers['bn2'](out)
+            
+        if 'downsample' in self.layers:
+            identity = self.layers['downsample'](x)
+            
+        out = out + identity
+        out = self.layers['activation'](out)
+        
+        if 'bn2' in self.layers and self.norm_after_activation:
+            out = self.layers['bn2'](out)
+            
+        return out
+
+
+class ResNet(nn.Module):
+    """ResNet architecture for continual learning experiments."""
+    def __init__(self, 
+                 block=BasicBlock,
+                 layers=[2, 2, 2, 2],
+                 num_classes=10,
+                 in_channels=3,
+                 base_channels=64,
+                 activation='relu',
+                 dropout_p=0.0,
+                 use_batchnorm=True,
+                 norm_after_activation=False,
+                 normalization_affine=True):
+        super(ResNet, self).__init__()
+        
+        self.use_batchnorm = use_batchnorm
+        self.norm_after_activation = norm_after_activation
+        self.in_planes = base_channels
+        
+        self.layers = nn.ModuleDict()
+        
+        self.layers['conv1'] = nn.Conv2d(in_channels, base_channels, kernel_size=3, 
+                                        stride=1, padding=1, bias=not use_batchnorm)
+        
+        if use_batchnorm:
+            self.layers['bn1'] = get_normalization('batch2d', base_channels, affine=normalization_affine)
+        
+        self.layers['activation'] = get_activation(activation)
+        
+        # Create ResNet blocks
+        self._make_layer(block, base_channels, layers[0], stride=1, 
+                        activation=activation, use_batchnorm=use_batchnorm, 
+                        norm_after_activation=norm_after_activation, 
+                        layer_name='layer1',
+                        normalization_affine=normalization_affine)
+        self._make_layer(block, base_channels*2, layers[1], stride=2, 
+                        activation=activation, use_batchnorm=use_batchnorm, 
+                        norm_after_activation=norm_after_activation, 
+                        layer_name='layer2',
+                        normalization_affine=normalization_affine)
+        self._make_layer(block, base_channels*4, layers[2], stride=2, 
+                        activation=activation, use_batchnorm=use_batchnorm,
+                        norm_after_activation=norm_after_activation, 
+                        layer_name='layer3',
+                        normalization_affine=normalization_affine)
+        self._make_layer(block, base_channels*8, layers[3], stride=2, 
+                        activation=activation, use_batchnorm=use_batchnorm,
+                        norm_after_activation=norm_after_activation, 
+                        layer_name='layer4',
+                        normalization_affine=normalization_affine)
+        
+        self.layers['avgpool'] = nn.AdaptiveAvgPool2d((1, 1))
+        self.layers['flatten'] = nn.Flatten()
+        
+        if dropout_p > 0:
+            self.layers['dropout'] = nn.Dropout(dropout_p)
+        
+        self.layers['fc'] = nn.Linear(base_channels*8*block.expansion, num_classes)
+        
+        # Initialize weights
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        
+        self.num_layers = len(layers)
+        self.blocks_per_layer = layers
+                
+    def _make_layer(self, block, planes, num_blocks, stride=1, activation='relu', 
+                    use_batchnorm=True, norm_after_activation=False, layer_name='layer',
+                    normalization_affine=True):
+        downsample = None
+        if stride != 1 or self.in_planes != planes * block.expansion:
+            downsample_layers = nn.Sequential(
+                nn.Conv2d(self.in_planes, planes * block.expansion, 
+                         kernel_size=1, stride=stride, bias=not use_batchnorm)
+            )
+            
+            if use_batchnorm:
+                downsample_layers.add_module('1', get_normalization('batch2d', planes * block.expansion, affine=normalization_affine))
+                
+            downsample = downsample_layers
+        
+        self.layers[f'{layer_name}_block0'] = block(
+            self.in_planes, planes, stride, activation, 
+            use_batchnorm, norm_after_activation, downsample,
+            normalization_affine=normalization_affine
+        )
+        
+        self.in_planes = planes * block.expansion
+        
+        for i in range(1, num_blocks):
+            self.layers[f'{layer_name}_block{i}'] = block(
+                self.in_planes, planes, 1, activation, 
+                use_batchnorm, norm_after_activation,
+                normalization_affine=normalization_affine
+            )
+        
+    def forward(self, x):
+        x = self.layers['conv1'](x)
+        
+        if self.use_batchnorm and not self.norm_after_activation:
+            if 'bn1' in self.layers:
+                x = self.layers['bn1'](x)
+                
+        x = self.layers['activation'](x)
+        
+        if self.use_batchnorm and self.norm_after_activation:
+            if 'bn1' in self.layers:
+                x = self.layers['bn1'](x)
+        
+        # Forward through ResNet blocks
+        for layer_idx in range(1, self.num_layers + 1):
+            for block_idx in range(self.blocks_per_layer[layer_idx - 1]):
+                block_name = f'layer{layer_idx}_block{block_idx}'
+                x = self.layers[block_name](x)
+        
+        x = self.layers['avgpool'](x)
+        x = self.layers['flatten'](x)
+        
+        if 'dropout' in self.layers:
+            x = self.layers['dropout'](x)
+            
+        x = self.layers['fc'](x)
+            
+        return x
+
+================================================================================
+
+--- Processing: ./src/training/train_continual.py ---
+import torch.nn as nn
+import time
+import wandb
+from collections import defaultdict
+from omegaconf import DictConfig
+from typing import Dict, Any, Optional
+
+from ..utils.monitor import NetworkMonitor
+from .eval import evaluate_model
+from ..utils.metrics import analyze_fixed_batch
+from ..config.utils import reinitialize_output_weights, create_optimizer
+
+def train_continual_learning(model, 
+                             task_dataloaders, 
+                             cfg: DictConfig, 
+                             device='cpu'):
+    """
+    Train a model using continual learning on a sequence of tasks.
+    
+    Args:
+        model: The neural network model
+        task_dataloaders: Dictionary mapping task_id -> task data loaders
+        cfg: Hydra configuration object
+        device: Device to train on
+    
+    Returns:
+        Dictionary with training history
+    """
+    criterion = nn.CrossEntropyLoss()
+    optimizer = create_optimizer(model, cfg)
+    
+    # Extract metrics parameters from config
+    dead_threshold = cfg.metrics.dead_threshold 
+    corr_threshold = cfg.metrics.corr_threshold 
+    saturation_threshold = cfg.metrics.saturation_threshold 
+    saturation_percentage = cfg.metrics.saturation_percentage
+
+    # Create module filter function
+    def module_filter(name):
+        return 'linear' in name or '.mlp' in name or 'fc' in name or name.endswith('.proj')
+    
+    # For monitoring metrics
+    train_monitor = NetworkMonitor(model, module_filter)
+    val_monitor = NetworkMonitor(model, module_filter)
+    
+    # History tracking
+    history = {
+        'tasks': {},
+        'global_metrics': {
+            'epochs': [],
+            'steps': [],
+            'train_loss': [],
+            'train_acc': [],
+            'val_loss': [],
+            'val_acc': []
+        }
+    }
+    
+    print(f"Starting continual learning with {len(task_dataloaders)} tasks...")
+
+    # Track global counters
+    global_epoch = 0
+    global_step = 0
+    
+    def analyze_callback(monitor, fixed_batch, fixed_targets):
+        return analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, device=device, 
+                                  dead_threshold=dead_threshold, corr_threshold=corr_threshold, 
+                                  saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage)
+                                
+    def analyze_train_callback():
+        return analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
+
+    def analyze_val_callback():
+        return analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
+    
+    for task_id, task_data in task_dataloaders.items():
+        print(f"\n{'='*50}")
+        print(f"Starting Task {task_id}: Classes {task_data['classes']}")
+        print(f"{'='*50}")
+        
+        train_loader = task_data['train']
+        val_loader = task_data['val']
+        fixed_train_loader = task_data['fixed_train']
+        fixed_val_loader = task_data['fixed_val']
+        
+        # Reset entire model if configured
+        if cfg.training.reset and task_id > 0:
+            # Create a new model with the same configuration
+            from ..models.model_factory import create_model
+            new_model = create_model(cfg).to(device)
+            model.load_state_dict(new_model.state_dict())
+            del new_model
+            print("Reinitialized all model weights for new task")
+            # When we reset the model, we should also reset the optimizer
+            optimizer = create_optimizer(model, cfg)
+        # Reinitialize only output weights if configured
+        elif cfg.training.reinit_output:
+            reinitialize_output_weights(
+                model, 
+                task_data['classes'], 
+                cfg.model.name.lower()
+            )
+
+        # Reinitialize optimizer state if configured (and we haven't already reset it)
+        if cfg.optimizer.reinit_adam and task_id > 0 and not cfg.training.reset:
+            optimizer = create_optimizer(model, cfg)
+            print("Reinitialized optimizer state for new task")
+        
+        task_history = {
+            'epochs': [],
+            'steps': [],
+            'train_loss': [],
+            'train_acc': [],
+            'val_loss': [],
+            'val_acc': [],
+            'training_metrics_history': defaultdict(lambda: defaultdict(list)),
+            'validation_metrics_history': defaultdict(lambda: defaultdict(list))
+        }
+        
+        # Track local step counter
+        local_step = 0
+        
+        # Get a fixed batch for metrics
+        try:
+            fixed_train_batch, fixed_train_targets = next(iter(fixed_train_loader))
+            fixed_val_batch, fixed_val_targets = next(iter(fixed_val_loader))
+            
+            fixed_train_batch = fixed_train_batch.to(device)
+            fixed_train_targets = fixed_train_targets.to(device)
+            fixed_val_batch = fixed_val_batch.to(device)
+            fixed_val_targets = fixed_val_targets.to(device)
+            
+            # Initial metrics
+            print("Measuring initial metrics...")
+            
+            train_metrics = analyze_train_callback()
+            val_metrics = analyze_val_callback()
+            
+            for layer_name, metrics in train_metrics.items():
+                for metric_name, value in metrics.items():
+                    task_history['training_metrics_history'][layer_name][metric_name].append(value)
+            
+            for layer_name, metrics in val_metrics.items():
+                for metric_name, value in metrics.items():
+                    task_history['validation_metrics_history'][layer_name][metric_name].append(value)
+        except StopIteration:
+            print("Warning: Not enough samples for fixed batch metrics")
+        
+        # Evaluate on task before training
+        train_loss, train_acc = evaluate_model(model, train_loader, criterion, device)
+        val_loss, val_acc = evaluate_model(model, val_loader, criterion, device)
+        
+        print(f"Initial performance:")
+        print(f"  Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
+        print(f"  Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+        
+        # Record initial metrics
+        task_history['epochs'].append(0)
+        task_history['steps'].append(local_step)
+        task_history['train_loss'].append(train_loss)
+        task_history['train_acc'].append(train_acc)
+        task_history['val_loss'].append(val_loss)
+        task_history['val_acc'].append(val_acc)
+        
+        # Record in global metrics
+        history['global_metrics']['epochs'].append(global_epoch)
+        history['global_metrics']['steps'].append(global_step)
+        history['global_metrics']['train_loss'].append(train_loss)
+        history['global_metrics']['train_acc'].append(train_acc)
+        history['global_metrics']['val_loss'].append(val_loss)
+        history['global_metrics']['val_acc'].append(val_acc)
+        
+        # Training loop for this task
+        start_time = time.time()
+        for local_epoch in range(1, cfg.training.epochs_per_task + 1):
+            global_epoch += 1
+            model.train()
+            running_loss = 0.0
+            correct = 0
+            total = 0
+            batch_count = 0
+            
+            for inputs, targets in train_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+                
+                running_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+                
+                batch_count += 1
+                local_step += 1
+                global_step += 1
+            
+            epoch_train_loss = running_loss / batch_count
+            epoch_train_acc = 100. * correct / total
+            
+            # Evaluate on task
+            val_loss, val_acc = evaluate_model(model, val_loader, criterion, device)
+            
+            # Record task metrics
+            task_history['epochs'].append(local_epoch)
+            task_history['steps'].append(local_step)
+            task_history['train_loss'].append(epoch_train_loss)
+            task_history['train_acc'].append(epoch_train_acc)
+            task_history['val_loss'].append(val_loss)
+            task_history['val_acc'].append(val_acc)
+            
+            # Record in global metrics
+            history['global_metrics']['epochs'].append(global_epoch)
+            history['global_metrics']['steps'].append(global_step)
+            history['global_metrics']['train_loss'].append(epoch_train_loss)
+            history['global_metrics']['train_acc'].append(epoch_train_acc)
+            history['global_metrics']['val_loss'].append(val_loss)
+            history['global_metrics']['val_acc'].append(val_acc)
+            
+            # Periodically collect network metrics
+            if local_epoch % cfg.metrics.metrics_frequency == 0 or local_epoch == cfg.training.epochs_per_task:
+                try:
+                    train_monitor.clear_data()
+                    val_monitor.clear_data()
+                    
+                    train_metrics = analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
+                    val_metrics = analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
+                    
+                    # Log metrics to wandb
+                    fixed_metrics_log = {
+                        "task_id": task_id, 
+                        "local_epoch": local_epoch, 
+                        "global_epoch": global_epoch,
+                        "local_step": local_step,
+                        "global_step": global_step
+                    }
+                    
+                    for layer_name, metrics in train_metrics.items():
+                        for metric_name, value in metrics.items():
+                            fixed_metrics_log[f"train/{layer_name}/{metric_name}"] = value
+                    
+                    for layer_name, metrics in val_metrics.items():
+                        for metric_name, value in metrics.items():
+                            fixed_metrics_log[f"val/{layer_name}/{metric_name}"] = value
+                    
+                    # Log all metrics to wandb if enabled
+                    if cfg.logging.use_wandb:
+                        wandb.log(fixed_metrics_log)
+                    
+                    # Store metrics in history for later analysis
+                    for layer_name, metrics in train_metrics.items():
+                        for metric_name, value in metrics.items():
+                            task_history['training_metrics_history'][layer_name][metric_name].append(value)
+                    
+                    for layer_name, metrics in val_metrics.items():
+                        for metric_name, value in metrics.items():
+                            task_history['validation_metrics_history'][layer_name][metric_name].append(value)
+                except Exception as e:
+                    print(f"Error collecting metrics: {e}")
+            
+            # Log to wandb if enabled
+            log_data = {
+                "task_id": task_id,
+                "local_epoch": local_epoch,
+                "global_epoch": global_epoch,
+                "local_step": local_step,
+                "global_step": global_step,
+                "train_loss": epoch_train_loss,
+                "train_acc": epoch_train_acc,
+                "val_loss": val_loss,
+                "val_acc": val_acc
+            }
+            
+            if cfg.logging.use_wandb:
+                wandb.log(log_data)
+            
+            # Print progress
+            elapsed = time.time() - start_time
+            print(f'Task {task_id}, Epoch {local_epoch}/{cfg.training.epochs_per_task} (Global: {global_epoch}):')
+            print(f'  Train Loss: {epoch_train_loss:.4f}, Train Acc: {epoch_train_acc:.2f}%, '
+                  f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+            print(f'  Steps: {local_step} (Global: {global_step}), Time: {elapsed:.2f}s')
+        
+        # Store task history
+        history['tasks'][task_id] = {
+            'classes': task_data['classes'],
+            'history': task_history
+        }
+    
+    return history
+
+================================================================================
+
+--- Processing: ./src/training/eval.py ---
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+def evaluate_model(model, dataloader, criterion, device='cpu'):
+    """
+    Evaluate model on a dataset.
+    
+    Returns:
+        loss, accuracy
+    """
+    model.eval()
+    running_loss = 0.0
+    correct = 0
+    total = 0
+    
+    with torch.no_grad():
+        for inputs, targets in dataloader:
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            
+            running_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+    
+    return running_loss / len(dataloader), 100. * correct / total
+
+================================================================================
+
+--- Processing: ./src/training/__init__.py ---
+from .train_continual import train_continual_learning
+from .eval import evaluate_model
+
+================================================================================
+
+--- Processing: ./scripts/check_imports.py ---
+#!/usr/bin/env python3
+"""
+Script to check for missing imports and other potential issues in the project.
+This is intended to help maintain code quality and identify potential problems.
+"""
+
+import os
+import sys
+import importlib
+import ast
+import argparse
+from pathlib import Path
+
+def get_imports_from_file(file_path):
+    """
+    Extract all import statements from a Python file.
+    
+    Returns:
+        list: List of imported module names
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        tree = ast.parse(content)
+        imports = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for name in node.names:
+                    imports.append(name.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module is not None:
+                    imports.append(node.module)
+        
+        return imports
+    except Exception as e:
+        print(f"Error parsing {file_path}: {e}")
+        return []
+
+def check_module_availability(module_name):
+    """
+    Check if a module can be imported.
+    
+    Returns:
+        tuple: (bool, str) - (is_available, error_message)
+    """
+    try:
+        # Handle relative imports
+        if module_name.startswith('.'):
+            return True, ""
+        
+        # Split module path to check just the top-level package
+        top_level = module_name.split('.')[0]
+        importlib.import_module(top_level)
+        return True, ""
+    except ImportError as e:
+        return False, str(e)
+
+def scan_directory_for_python_files(directory):
+    """
+    Recursively scan directory for Python files.
+    
+    Returns:
+        list: List of Python file paths
+    """
+    python_files = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.py'):
+                python_files.append(os.path.join(root, file))
+    return python_files
+
+def check_source_directory(directory, skip_system_modules=True):
+    """
+    Check all Python files in a directory for import issues.
+    
+    Args:
+        directory: Directory to scan
+        skip_system_modules: Whether to skip checking system modules
+        
+    Returns:
+        dict: Dictionary of issues by file
+    """
+    python_files = scan_directory_for_python_files(directory)
+    issues = {}
+    
+    for file_path in python_files:
+        file_issues = []
+        imports = get_imports_from_file(file_path)
+        
+        for module_name in imports:
+            # Skip relative imports and system modules if requested
+            if skip_system_modules and not module_name.startswith('.') and module_name in sys.builtin_module_names:
+                continue
+                
+            is_available, error = check_module_availability(module_name)
+            if not is_available:
+                file_issues.append(f"Missing import: {module_name} - {error}")
+        
+        if file_issues:
+            issues[file_path] = file_issues
+    
+    return issues
+
+def main():
+    parser = argparse.ArgumentParser(description="Check Python files for import issues")
+    parser.add_argument("directory", 
+                      help="Directory to scan for Python files", 
+                      default="src",
+                      nargs='?')
+    parser.add_argument("--check-system-modules", 
+                      action="store_true",
+                      help="Also check system modules")
+    
+    args = parser.parse_args()
+    directory = args.directory
+    
+    if not os.path.exists(directory):
+        print(f"Error: Directory '{directory}' does not exist.")
+        return 1
+    
+    print(f"Scanning {directory} for Python import issues...")
+    issues = check_source_directory(
+        directory,
+        skip_system_modules=not args.check_system_modules
+    )
+    
+    if not issues:
+        print("No import issues found.")
+        return 0
+    
+    print("\nImport issues found:")
+    for file_path, file_issues in issues.items():
+        rel_path = os.path.relpath(file_path, directory)
+        print(f"\n{rel_path}:")
+        for issue in file_issues:
+            print(f"  - {issue}")
+    
+    return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+================================================================================
+
+--- Processing: ./scripts/extract_notebook.py ---

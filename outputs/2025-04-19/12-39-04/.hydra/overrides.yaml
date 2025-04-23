@@ -1,3 +1,0 @@
-- training.epochs_per_task=5
-- training.batch_size=64
-- dryrun=true
