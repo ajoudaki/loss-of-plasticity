@@ -172,6 +172,8 @@ class MetricsConfig:
     corr_threshold: float = 0.95
     saturation_threshold: float = 1e-4
     saturation_percentage: float = 0.99
+    gaussianity_method: str = "shapiro"  # Options: "shapiro", "ks", "anderson", "kurtosis"
+    log_activation_histograms: bool = True
 
 
 @dataclass
