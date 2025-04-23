@@ -34,6 +34,8 @@ def train_continual_learning(model,
     corr_threshold = cfg.metrics.corr_threshold 
     saturation_threshold = cfg.metrics.saturation_threshold 
     saturation_percentage = cfg.metrics.saturation_percentage
+    gaussianity_method = cfg.metrics.gaussianity_method
+    log_activation_histograms = cfg.metrics.log_activation_histograms
 
     # Create module filter function
     # def module_filter(name):
@@ -62,17 +64,23 @@ def train_continual_learning(model,
     global_epoch = 0
     global_step = 0
     
-    def analyze_callback(monitor, fixed_batch, fixed_targets):
+    def analyze_callback(monitor, fixed_batch, fixed_targets, prefix="", metrics_log=None):
+        use_wandb = cfg.logging.use_wandb
         return analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, device=device, 
                                   dead_threshold=dead_threshold, corr_threshold=corr_threshold, 
                                   saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage,
+                                  gaussianity_method=gaussianity_method,
+                                  use_wandb=use_wandb,
+                                  log_histograms=log_activation_histograms,
+                                  prefix=prefix,
+                                  metrics_log=metrics_log,
                                   seed=cfg.training.seed)
                                 
-    def analyze_train_callback():
-        return analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
+    def analyze_train_callback(metrics_log=None):
+        return analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets, "train/", metrics_log)
 
-    def analyze_val_callback():
-        return analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
+    def analyze_val_callback(metrics_log=None):
+        return analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets, "val/", metrics_log)
     
     for task_id, task_data in task_dataloaders.items():
         print(f"\n{'='*50}")
@@ -134,9 +142,20 @@ def train_continual_learning(model,
             # Initial metrics
             print("Measuring initial metrics...")
             
-            train_metrics = analyze_train_callback()
-            val_metrics = analyze_val_callback()
+            # Create initial metrics log dictionary for wandb
+            initial_metrics_log = {
+                "task_id": task_id,
+                "local_epoch": 0,
+                "global_epoch": global_epoch,
+                "local_step": 0,
+                "global_step": global_step
+            }
             
+            # Get metrics - the function will populate metrics_log with all metrics
+            train_metrics, train_act_stats, initial_metrics_log = analyze_train_callback(initial_metrics_log)
+            val_metrics, val_act_stats, initial_metrics_log = analyze_val_callback(initial_metrics_log)
+            
+            # Store metrics in history
             for layer_name, metrics in train_metrics.items():
                 for metric_name, value in metrics.items():
                     task_history['training_metrics_history'][layer_name][metric_name].append(value)
@@ -144,6 +163,10 @@ def train_continual_learning(model,
             for layer_name, metrics in val_metrics.items():
                 for metric_name, value in metrics.items():
                     task_history['validation_metrics_history'][layer_name][metric_name].append(value)
+                    
+            # Log to wandb if enabled
+            if cfg.logging.use_wandb:
+                wandb.log(initial_metrics_log)
         except StopIteration:
             print("Warning: Not enough samples for fixed batch metrics")
         
@@ -227,10 +250,7 @@ def train_continual_learning(model,
                     train_monitor.clear_data()
                     val_monitor.clear_data()
                     
-                    train_metrics = analyze_callback(train_monitor, fixed_train_batch, fixed_train_targets)
-                    val_metrics = analyze_callback(val_monitor, fixed_val_batch, fixed_val_targets)
-                    
-                    # Log metrics to wandb
+                    # Create metrics log dictionary for wandb
                     fixed_metrics_log = {
                         "task_id": task_id, 
                         "local_epoch": local_epoch, 
@@ -239,13 +259,9 @@ def train_continual_learning(model,
                         "global_step": global_step
                     }
                     
-                    for layer_name, metrics in train_metrics.items():
-                        for metric_name, value in metrics.items():
-                            fixed_metrics_log[f"train/{layer_name}/{metric_name}"] = value
-                    
-                    for layer_name, metrics in val_metrics.items():
-                        for metric_name, value in metrics.items():
-                            fixed_metrics_log[f"val/{layer_name}/{metric_name}"] = value
+                    # Get metrics - analyze_fixed_batch will populate the metrics_log
+                    train_metrics, train_act_stats, fixed_metrics_log = analyze_train_callback(fixed_metrics_log)
+                    val_metrics, val_act_stats, fixed_metrics_log = analyze_val_callback(fixed_metrics_log)
                     
                     # Log all metrics to wandb if enabled
                     if cfg.logging.use_wandb:
