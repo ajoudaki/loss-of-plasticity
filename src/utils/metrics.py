@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from scipy import stats
 
 def flatten_activations(layer_act):
     """Reshape layer activations to 2D matrix (samples × features)."""
@@ -9,6 +11,22 @@ def flatten_activations(layer_act):
         return layer_act.contiguous().view(-1, shape[2])
     else:  # Linear layer
         return layer_act.view(-1, shape[1])
+
+def compute_activation_statistics(layer_act):
+    """
+    Compute mean and standard deviation of activations for each unit.
+    
+    Args:
+        layer_act: Layer activations of shape [batch_size, n_units]
+        
+    Returns:
+        means: Mean activation of each unit
+        stds: Standard deviation of each unit's activation
+    """
+    flattened_act = flatten_activations(layer_act)
+    means = flattened_act.mean(dim=0)
+    stds = flattened_act.std(dim=0)
+    return means, stds
 
 def measure_dead_neurons(layer_act, dead_threshold=0.95):
     """Measure fraction of neurons that are inactive (dead)."""
@@ -133,12 +151,120 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
     
     return saturated_fraction
 
+def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"):
+    """
+    Measure the distance to Gaussianity for each neuron's activations.
+    
+    Args:
+        layer_act: Layer activations
+        sample_size: Maximum number of samples to use for the test
+        seed: Optional random seed for sampling
+        method: Method to use for Gaussianity testing:
+                - "shapiro": Shapiro-Wilk test (more accurate for smaller samples)
+                - "ks": Kolmogorov-Smirnov test
+                - "anderson": Anderson-Darling test
+                - "kurtosis": Use excess kurtosis as a measure of non-Gaussianity
+    
+    Returns:
+        A measure of non-Gaussianity (averaged across neurons).
+        Higher values indicate greater deviation from Gaussian distribution.
+    """
+    flattened_act = flatten_activations(layer_act)
+    N, D = flattened_act.shape
+    
+    # If we have more than sample_size samples, subsample to save computation
+    if N > sample_size:
+        # Use seed if provided, otherwise use the current random state
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+            idx = torch.randperm(N, generator=generator)[:sample_size]
+        else:
+            idx = torch.randperm(N)[:sample_size]
+        flattened_act = flattened_act[idx]
+        N = sample_size
+    
+    # Convert to numpy for statistical tests
+    act_np = flattened_act.detach().cpu().numpy()
+    
+    if method == "shapiro":
+        # Shapiro-Wilk test - returns W statistic and p-value
+        # Lower W values indicate deviation from normality
+        # We convert to a non-Gaussianity score (1-W) so higher means less Gaussian
+        non_gaussianity = []
+        for j in range(D):
+            # Normalize to zero mean and unit variance
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            try:
+                # Maximum sample size is 5000 for Shapiro-Wilk
+                if len(x) > 5000:
+                    x = x[:5000]
+                w, _ = stats.shapiro(x)
+                # Convert W to a non-Gaussianity score (1-W ranges from 0 to 1)
+                non_gaussianity.append(1.0 - w)
+            except Exception:
+                # Return a high value if test fails (maximum non-Gaussianity)
+                non_gaussianity.append(1.0)
+    
+    elif method == "ks":
+        # Kolmogorov-Smirnov test against a normal distribution
+        non_gaussianity = []
+        for j in range(D):
+            # Normalize to zero mean and unit variance
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            try:
+                # Test against normal distribution - returns KS statistic and p-value
+                # Higher KS indicates greater deviation from normality
+                ks, _ = stats.kstest(x, 'norm')
+                non_gaussianity.append(ks)
+            except Exception:
+                non_gaussianity.append(1.0)
+    
+    elif method == "anderson":
+        # Anderson-Darling test - more sensitive to tails
+        non_gaussianity = []
+        for j in range(D):
+            # Normalize to zero mean and unit variance
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            try:
+                result = stats.anderson(x, 'norm')
+                # Higher statistic means greater deviation from normality
+                # Normalize by critical value for significance level 5%
+                stat = result.statistic / result.critical_values[2]
+                non_gaussianity.append(min(stat, 10.0))  # Cap at 10 to avoid extreme values
+            except Exception:
+                non_gaussianity.append(10.0)
+    
+    elif method == "kurtosis":
+        # Use excess kurtosis as a measure of non-Gaussianity
+        # Gaussian distribution has excess kurtosis of 0
+        # We take absolute value so both super- and sub-Gaussian show as deviation
+        non_gaussianity = []
+        for j in range(D):
+            # Normalize to zero mean and unit variance
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            kurtosis = stats.kurtosis(x)
+            non_gaussianity.append(min(abs(kurtosis), 10.0))  # Cap at 10
+    
+    else:
+        raise ValueError(f"Unknown method: {method}")
+    
+    # Average non-Gaussianity across all neurons
+    mean_non_gaussianity = float(np.mean(non_gaussianity))
+    
+    return mean_non_gaussianity
+
 
 def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
                       dead_threshold, 
                       corr_threshold, 
                       saturation_threshold, 
                       saturation_percentage,
+                      gaussianity_method="shapiro",
+                      use_wandb=False,
+                      log_histograms=False,
+                      prefix="",
+                      metrics_log=None,
                       device='cpu',
                       seed=None):
     """
@@ -154,11 +280,19 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         corr_threshold: Threshold for duplicate neuron detection
         saturation_threshold: Threshold for saturated neuron detection
         saturation_percentage: Percentage of samples required for a neuron to be considered saturated
+        gaussianity_method: Method to use for Gaussianity measurement
+        use_wandb: Whether wandb is being used for logging
+        log_histograms: Whether to prepare histograms for logging
+        prefix: Prefix for metrics (e.g., "train/" or "val/")
+        metrics_log: Dictionary to add metrics to (if None, a new one is created)
         device: Device to run computations on
         seed: Optional random seed for sampling operations
         
     Returns:
-        Dictionary of metrics for each layer
+        Tuple containing:
+        - Dictionary of metrics for each layer
+        - Dictionary of activation statistics for each layer
+        - Dictionary of metrics formatted for wandb logging (if use_wandb is True)
     """
     if fixed_batch.device != device:
         fixed_batch = fixed_batch.to(device)
@@ -173,8 +307,13 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         loss.backward()
     
     metrics = {}
+    activation_stats = {}
     latest_acts = monitor.get_latest_activations()
     latest_grads = monitor.get_latest_gradients()
+    
+    # Create or use provided metrics log dict
+    if metrics_log is None:
+        metrics_log = {}
 
     for layer_name, act in latest_acts.items():
         # Skip layers without gradients when computing metrics
@@ -183,6 +322,13 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             
         grad = latest_grads[layer_name]
         
+        # Compute neuron activation statistics (mean and std)
+        means, stds = compute_activation_statistics(act)
+        activation_stats[layer_name] = {
+            'means': means.detach().cpu(),
+            'stds': stds.detach().cpu()
+        }
+        
         # Compute all metrics for this layer
         metrics[layer_name] = {
             'dead_fraction': measure_dead_neurons(act, dead_threshold),
@@ -190,9 +336,37 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             'eff_rank': measure_effective_rank(act, seed=seed),
             'stable_rank': measure_stable_rank(act, seed=seed),
             'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
+            'non_gaussianity': measure_gaussianity(act, seed=seed, method=gaussianity_method),
         }
+        
+        # Add metrics to the metrics_log for wandb if enabled
+        if use_wandb:
+            for metric_name, value in metrics[layer_name].items():
+                metrics_log[f"{prefix}{layer_name}/{metric_name}"] = value
+            
+            # Add histograms and statistics if requested
+            if log_histograms:
+                # Convert to numpy for histogram creation
+                means_np = means.numpy()
+                stds_np = stds.numpy()
+                
+                try:
+                    # Only import wandb if we need it (makes the function still usable without wandb)
+                    import wandb
+                    
+                    # Add histograms
+                    metrics_log[f"{prefix}{layer_name}/act_means_hist"] = wandb.Histogram(means_np)
+                    metrics_log[f"{prefix}{layer_name}/act_stds_hist"] = wandb.Histogram(stds_np)
+                    
+                    # Also log summary statistics about the means and stds
+                    metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
+                    metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+                except (ImportError, Exception) as e:
+                    print(f"Warning: Could not create wandb histograms: {e}")
     
     if not hooks_were_active:
         monitor.remove_hooks()
     
-    return metrics
+    return metrics, activation_stats, metrics_log
