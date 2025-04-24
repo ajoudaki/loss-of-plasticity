@@ -1,0 +1,123 @@
+
+\begin{tikzpicture}[
+    node/.style={circle, draw, minimum size=0.8cm, thick},
+    xnode/.style={node, fill=blue!60},
+    ynode/.style={node, fill=blue!20!black!70},
+    rnode/.style={node, fill=red!70!orange!80},
+    gnode/.style={node, fill=green!60},
+    onode/.style={node, fill=orange!70!yellow},
+    pnode/.style={node, fill=purple!60},
+    % Edge styles
+    faintedge/.style={black, opacity=0.15, thin},
+    redge/.style={red!70!orange!80, opacity=0.9, line width=1.8pt, -{Stealth[length=2.5mm, width=2mm]}},
+    gedge/.style={green!60, opacity=0.9, line width=1.8pt, -{Stealth[length=2.5mm, width=2mm]}},
+    oedge/.style={orange!70!yellow, opacity=0.9, line width=1.8pt, -{Stealth[length=2.5mm, width=2mm]}},
+    pedge/.style={purple!60, opacity=0.9, line width=1.8pt, -{Stealth[length=2.5mm, width=2mm]}},
+    blueedge/.style={blue!60, opacity=0.9, line width=1.8pt, -{Stealth[length=2.5mm, width=2mm]}},
+    arrow/.style={-{Latex[length=3mm]}, line width=3pt, gray!80},
+    ]
+    
+    % Left network (simplified) with updated labels
+    \node[xnode] (x1) at (0,0) {$x$};
+    \node[rnode] (hr1) at (2,1.5) {$R$};
+    \node[gnode] (hg1) at (2,-1.5) {$G$};
+    \node[onode] (ho1) at (4,1.5) {$O$};
+    \node[pnode] (hp1) at (4,-1.5) {$P$};
+    \node[ynode] (y1) at (6,0) {$y$};
+    
+    % Connections for left network - all faint except those to/from hr1
+    % x to hr1 (highlighted with arrow)
+    \draw[blueedge] (x1) to[out=45, in=180] (hr1);
+    % x to hg1 (faint)
+    \draw[faintedge] (x1) to[out=-45, in=180] (hg1);
+    % hr1 to ho1 (highlighted with arrow)
+    \draw[oedge] (hr1) to[out=0, in=180] (ho1);
+    % hr1 to hp1 (highlighted with arrow)
+    \draw[pedge] (hr1) to[out=-30, in=135] (hp1);
+    % hg1 to ho1 (faint)
+    \draw[faintedge] (hg1) to[out=30, in=-135] (ho1);
+    % hg1 to hp1 (faint)
+    \draw[faintedge] (hg1) to[out=0, in=180] (hp1);
+    % ho1 to y1 (faint)
+    \draw[faintedge] (ho1) to[out=0, in=135] (y1);
+    % hp1 to y1 (faint)
+    \draw[faintedge] (hp1) to[out=0, in=-135] (y1);
+    
+    % Right network (expanded) - shifted horizontally with updated labels
+    \node[xnode] (x2) at (12,0) {$x$};
+    
+    % Create multiple nodes for each color in the expanded network
+    \node[rnode] (hr2_1) at (14,2) {$r_1$};
+    \node[rnode] (hr2_2) at (14,1) {$r_2$};
+    
+    \node[gnode] (hg2_1) at (14,-1) {$g_1$};
+    \node[gnode] (hg2_2) at (14,-2) {$g_2$};
+    \node[gnode] (hg2_3) at (14,-3) {$g_3$};
+    
+    \node[onode, draw=orange, thick] (ho2) at (16,1.5) {$o$};
+    
+    \node[pnode] (hp2_1) at (16,-1) {$p_1$};
+    \node[pnode] (hp2_2) at (16,-2) {$p_2$};
+    \node[pnode] (hp2_3) at (16,-3) {$p_3$};
+    
+    \node[ynode] (y2) at (18,0) {$y$};
+    
+    % Connections from x to all red and green nodes
+    \draw[faintedge] (x2) to[out=60, in=180] (hr2_1);
+    \draw[blueedge] (x2) to[out=45, in=180] (hr2_2); % Highlighted with arrow
+    \draw[faintedge] (x2) to[out=-45, in=180] (hg2_1);
+    \draw[faintedge] (x2) to[out=-60, in=180] (hg2_2);
+    \draw[faintedge] (x2) to[out=-75, in=180] (hg2_3);
+    
+    % Connections from all red nodes to orange node
+    \draw[faintedge] (hr2_1) to[out=0, in=180] (ho2);
+    \draw[oedge] (hr2_2) to[out=20, in=200] (ho2); % Highlighted with arrow
+    
+    % Connections from all red nodes to all purple nodes
+    \draw[faintedge] (hr2_1) to[out=-30, in=135] (hp2_1);
+    \draw[faintedge] (hr2_1) to[out=-45, in=120] (hp2_2);
+    \draw[faintedge] (hr2_1) to[out=-60, in=110] (hp2_3);
+    
+    \draw[pedge] (hr2_2) to[out=-20, in=160] (hp2_1); % Highlighted with arrow
+    \draw[pedge] (hr2_2) to[out=-30, in=150] (hp2_2); % Highlighted with arrow
+    \draw[pedge] (hr2_2) to[out=-45, in=135] (hp2_3); % Highlighted with arrow
+    
+    % Connections from all green nodes to orange node
+    \draw[faintedge] (hg2_1) to[out=60, in=-120] (ho2);
+    \draw[faintedge] (hg2_2) to[out=70, in=-135] (ho2);
+    \draw[faintedge] (hg2_3) to[out=80, in=-150] (ho2);
+    
+    % Connections from all green nodes to all purple nodes
+    % All faint as they don't connect to hr2_2
+    \draw[faintedge] (hg2_1) to[out=0, in=180] (hp2_1);
+    \draw[faintedge] (hg2_1) to[out=-10, in=170] (hp2_2);
+    \draw[faintedge] (hg2_1) to[out=-20, in=160] (hp2_3);
+    
+    \draw[faintedge] (hg2_2) to[out=10, in=190] (hp2_1);
+    \draw[faintedge] (hg2_2) to[out=0, in=180] (hp2_2);
+    \draw[faintedge] (hg2_2) to[out=-10, in=170] (hp2_3);
+    
+    \draw[faintedge] (hg2_3) to[out=20, in=200] (hp2_1);
+    \draw[faintedge] (hg2_3) to[out=10, in=190] (hp2_2);
+    \draw[faintedge] (hg2_3) to[out=0, in=180] (hp2_3);
+    
+    % Connections from orange to y (faint since not directly from hr2_2)
+    \draw[faintedge] (ho2) to[out=0, in=135] (y2);
+    
+    % Connections from all purple nodes to y (faint since not directly from hr2_2)
+    \draw[faintedge] (hp2_1) to[out=0, in=180] (y2);
+    \draw[faintedge] (hp2_2) to[out=20, in=-160] (y2);
+    \draw[faintedge] (hp2_3) to[out=45, in=-135] (y2);
+    
+    % Add dashed outlines around groups
+    \begin{pgfonlayer}{background}
+        \node[draw=red, dashed, thick, rounded corners, fit=(hr2_1) (hr2_2), inner sep=8pt] {};
+        \node[draw=green!60!black, dashed, thick, rounded corners, fit=(hg2_1) (hg2_2) (hg2_3), inner sep=8pt] {};
+        \node[draw=purple, dashed, thick, rounded corners, fit=(hp2_1) (hp2_2) (hp2_3), inner sep=8pt] {};
+    \end{pgfonlayer}
+    
+    % Add horizontal arrows for reduction and expansion
+    \node at (8.5,1) {\Large expansion $\longrightarrow$};
+    \node at (8.5,-1) {\Large $\longleftarrow$ reduction};
+    
+\end{tikzpicture}
