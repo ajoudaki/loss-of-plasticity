@@ -282,15 +282,35 @@ def get_dataset(dataset_name, transform_train=None, transform_test=None, downloa
             print(f"Please run: python {script_path}")
             raise FileNotFoundError(f"Tiny ImageNet dataset not found at {tiny_imagenet_path}")
         
-        # Use ImageFolder to load Tiny ImageNet
+        # Check if validation set is properly restructured
+        val_images_dir = os.path.join(tiny_imagenet_path, 'val', 'images')
+        if os.path.exists(val_images_dir):
+            print(f"Tiny ImageNet validation set needs restructuring.")
+            # Import the restructure function directly to avoid module import issues
+            import sys
+            sys.path.append(os.path.join(script_dir, 'scripts'))
+            from download_tiny_imagenet import restructure_val_set
+            restructure_val_set(tiny_imagenet_path)
+        
+        # Get class to idx mapping from train folder to ensure consistency
+        train_folder = os.path.join(tiny_imagenet_path, 'train')
+        train_classes = sorted([d.name for d in os.scandir(train_folder) if d.is_dir()])
+        class_to_idx = {cls: i for i, cls in enumerate(train_classes)}
+        
+        # Use ImageFolder to load Tiny ImageNet with consistent class mapping
         train_dataset = torchvision.datasets.ImageFolder(
-            root=os.path.join(tiny_imagenet_path, 'train'),
-            transform=transform_train
+            root=train_folder,
+            transform=transform_train,
+            target_transform=None
         )
+        
+        # Ensure validation set uses the same class mapping as training set
         test_dataset = torchvision.datasets.ImageFolder(
             root=os.path.join(tiny_imagenet_path, 'val'),
-            transform=transform_test
+            transform=transform_test,
+            target_transform=None
         )
+        
         num_classes = 200
         print(f"Loaded Tiny ImageNet with {len(train_dataset)} training samples and {len(test_dataset)} validation samples")
     
