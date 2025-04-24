@@ -46,8 +46,7 @@ def setup_wandb(cfg: DictConfig) -> bool:
         # Create a descriptive run name with the requested parameters
         model_name = cfg.model.name
         
-        # Get normalization type based on model
-        normalization = cfg.model.normalization
+        
         dropout = cfg.model.dropout_p if model_name != 'vit' else cfg.model.drop_rate
         
         # Get depth based on model type
@@ -61,10 +60,13 @@ def setup_wandb(cfg: DictConfig) -> bool:
             depth = cfg.model.depth
         else:
             depth = 0
-            
+        
         # Override normalization for CNN and ResNet (they use use_batchnorm flag)
         if model_name in ['cnn', 'resnet']:
             normalization = "batchnorm" if cfg.model.use_batchnorm else "none"
+        else:
+            # Get normalization type based on model
+            normalization = cfg.model.normalization
         
         # Determine if we're resetting all weights or just output weights
         reset_type = "all_reset" if cfg.training.reset else ("output_reset" if cfg.training.reinit_output else "no_reset")
