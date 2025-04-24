@@ -60,8 +60,8 @@ project/
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/username/NN-dynamic-scaling.git
-   cd NN-dynamic-scaling
+   git clone https://github.com/ajoudaki/loss-of-plasticity
+   cd loss-of-plasticity
    ```
 
 2. Install dependencies:
