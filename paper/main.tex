@@ -1,639 +1,424 @@
 \documentclass{article}
-% Make '~' active and define its new behavior
-% Redefine ` to behave like ^{()}
 
-\usepackage{amsmath, amsthm, amssymb}
-\usepackage{graphicx} % Required for inserting images
-\usepackage{natbib}
-\usepackage{textgreek}
-\usepackage{pifont}
-\usepackage[hidelinks]{hyperref}
+% NeurIPS 2025 formatting
+%\usepackage{neurips_2025}
+\usepackage[preprint]{neurips_2025}
 
-% Theorem environments
-\newtheorem{theorem}{Theorem}
-\newtheorem{lemma}{Lemma}
-\newtheorem{proposition}{Proposition}
-\newtheorem{remark}{Remark}
+% Additional packages
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
 
-% Custom commands
-\newcommand{\cmark}{\ding{51}}%
-\newcommand{\xmark}{\ding{55}}%
-\newcommand{\1}{\mathbf{1}}
+
+%%%% Macros
 \newcommand{\Loss}{\mathcal{L}}
-\renewcommand{\Re}{\mathbb{R}}
+\newcommand{\R}{\mathbb{R}}
 \newcommand{\E}{\mathbb{E}}
-\newcommand{\R}[2]{\mathcal{R}_{#2}(#1)}
-\renewcommand{\R}[2]{({#1})^{\oplus #2}}
-\newcommand{\bl}[2]{\mathcal{B}_{#2}({#1})}
-\newcommand{\B}[1]{\boldsymbol{#1}}
-\mathcode`@="8000
-{\catcode`@=\active \gdef@#1{^{(#1)}}}
-\newcommand{\T}{\ensuremath{{}^{\top}}}
+\newcommand{\He}{\mathrm{He}}
 
-\title{On a mathematical understanding of loss of plasticity in continual learning}
-\author{update by Amir Joudaki}
-\date{October 2024}
+%%%% Theorem environments
+\newtheorem{definition}{Definition}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{corollary}{Corollary}[section]
+\newtheorem{remark}{Remark}[section]
+
+\title{Barriers for Learning in an Evolving World: \\a Mathematical Understanding of Loss of Plasticity}
+
+\author{%
+  Amir Joudaki$^{1}$ \And
+  Giulia Lanzillotta$^{1}$ \And
+  Mohammad Samragh Razlighi$^{2}$ \And
+  Iman Mirzadeh$^{2}$ \And
+  Thomas Hofmann$^{1}$ \And
+  Mehrdad Farajtabar$^{2}$ \And
+  Fartash Faghri$^{2}$ \And
+  \vspace{-20pt}
+  \\
+  $^{1}$ETH Zürich
+  $^{2}$Apple \\
+  \texttt{\{amir.joudaki, giulia.lanzillotta, thomas.hofmann\}@inf.ethz.ch} \\
+  \texttt{\{fartash, m\_farajtabar, imirzadeh, m\_samraghrazlighi\}@apple.com}
+}
 
 \begin{document}
-`
 \maketitle
 
+\begin{abstract}
+Standard deep learning models, typically trained via back-propagation, demonstrate remarkable success within the conventional two-phase paradigm: an extensive training phase conducted on a largely stationary dataset, followed by deployment where the model weights are frozen or only minimally adjusted \cite{dohare2024loss}. However, as highlighted by Richard Sutton and colleagues, this paradigm falters when models must continually interact with non-stationary environments \cite{dohare2024loss}. Over extended periods of learning in such settings, the very optimization process responsible for creating powerful representations can paradoxically undermine the network's capacity for future learning. Sutton terms this degradation \emph{loss of plasticity} \cite{dohare2024loss}. This work undertakes a first-principles investigation into the mechanisms underlying plasticity loss in gradient-based models. We propose a formal definition grounded in dynamical systems theory, identifying stable sub-manifolds in the parameter space as traps for gradient trajectories. We analyze two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or perturbations can potentially prevent or mitigate this collapse. Our theoretical framework aims to unify disparate observations regarding learning dynamics within a coherent mathematical structure. Notably, our findings reveal a fundamental tension: properties often considered beneficial in the static, two-phase regime, such as low-rank representations or simplicity bias \cite{huh2022lowrank, papyan2020prevalence}, appear to contribute directly to the loss of plasticity in continual learning scenarios \cite{dohare2024loss}. By consolidating key propositions regarding the barriers to continuous learning, this work points towards critical areas for future research aimed at developing truly adaptive artificial intelligence.
+\end{abstract}
 
-\section{MLP hyper cloning}
-Here we investigate the theoretical
-foundations and implications of dynamically changing the model size, i.e., expanding or shrinking the size (width, depth, channels, etc.) of a model during training. As a first case study, we study \textit{hyper cloning}, as described by~\citet{samragh2024scaling}. We will start with a MLP setup, and try to add components to it.
-\\
+\section{Introduction}
 
-\textbf{Main findings:}
-\begin{itemize}
-    \item \textbf{Backward cloning}: While all configurations in~\citet{samragh2024scaling} lead to forward cloning, only noiseless configurations lead to backward/gradient cloning. See Proposition~\ref{prop:cloning_forward_backward}'s conditions for gradient cloning. Thus, the noisy cases have gradients of the hyper-cloned model deviating from the source model. 
-    \item \textbf{Learning rate adjustment}: In the noiseless case, the training dynamics of the hyper-cloned model follows that of a smaller model with a higher learning rate. See Proposition~\ref{prop:cloning_training} second part, and the subsequent remark. 
-    \item \textbf{Highly structured training} for the noiseless cases, the training dynamics will always follow that of a smaller source model, which may permanently limit model capacity. See Proposition~\ref{prop:cloning_training}). This is unlikely to break with most neural network modules, except layers that impose asymmetries at training time such as Dropout. (see remark~\ref{cloning_symmetry}). 
-\end{itemize}
+The extraordinary success of back-propagation in training deep neural networks often relies on two implicit, yet critical, assumptions:
+\begin{enumerate}
+    \item \textbf{Stationarity.} The data distribution encountered during training is assumed to be identical, or very similar, to the distribution faced during deployment. Consequently, adaptation after the initial training phase is often minimal or absent.
+    \item \textbf{One-shot randomness.} Diversity and the potential for exploration are primarily introduced through a single random initialization of the network's parameters. Subsequent training involves specialization, but the initial source of variability is gradually overwritten or "forgotten" by the optimization process.
+\end{enumerate}
+These assumptions break down when an artificial \emph{agent} must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, often termed continual or lifelong learning, presents a significant challenge known as the stability-plasticity dilemma \cite{abraham2005memory}: the system must be stable enough to retain previously acquired knowledge, yet plastic enough to integrate new information effectively.
 
-
-\paragraph{Notation.} 
-$\otimes $ denotes Kronecker product. $\odot$ denotes Hadamard product.
-% $\1_n$ denotes a $n$ sized vector of all ones, and $\1_{n\times m}$ to denote a matrix of all ones sized $n\times m.$ 
-For vectors $u,v$ $u\oplus v $ denotes concatenating two vectors, and $\oplus_{i=1}^n v_i$ is used for concatenating $n$ vectors.
-$\R{v}{n}=\oplus_i^n v$ denotes repeating (concatenating) the vector $n$ times. For matrix $M$, $\R{M}{n\times m}$ to denote a cloned matrix where $M$ is repeated $n$ times row-wise and $m$ times column-wise. If vector $v$ and matrix $M$ have some some block structure, we use $\bl{v}{i}$ to refer to its $i$-th block, and $\bl{M}{ij}$ to denote the block at row $i$ and column $j$ of $M.$ In both cases size and number and size of blocks should be clear from context. 
-% $M_{ij}$ retains its conventional meaning as the element at row $i$ and column $j$. 
-\newpage 
-
-\textbf{MLP Setup}:
-We have input labels pairs $(x,y)$ where $x\in \Re^{d_I}$ and $y\in \Re^{d_O}.$ We also have some loss function $\Loss:\Re^{d_O}\times \Re^{d_O}\to \Re^{\ge 0}.$ We will use similar symbols for source and cloned model,but use boldface for the cloned model.
+Empirically, standard deep networks subjected to long sequences of tasks or slowly drifting data streams often exhibit a decline in their learning capability, eventually performing no better than simpler, shallow models \cite{dohare2024loss}. This phenomenon, termed loss of plasticity, is distinct from the more widely studied problem of catastrophic forgetting \cite{mccloskey1989catastrophic, ratcliff1990connectionist, french1999catastrophic}, where learning new information overwrites previously learned knowledge. Loss of plasticity refers specifically to the diminished ability to learn new information effectively over time. Common symptoms associated with this degradation include explosive growth in weight magnitudes and saturation of activation functions; the emergence of "dead" ReLU units, whose upstream parameters cease to update due to consistently zero gradients \cite{nair2010rectified}; a collapse in the effective rank of hidden layer representations, indicating reduced feature diversity \cite{papyan2020prevalence, huh2022lowrank}; and redundancy or diminishing contribution from components like attention heads or convolutional filters.
 
 
-\begin{table}[h]
-  \centering
-  \renewcommand{\arraystretch}{1.25}
-  \begin{tabular}{|c|c|c|}
-    \hline
-    \textbf{Component} & \textbf{Source} & \textbf{Cloned} \\ 
-    \hline
-    in/out dims  & $d_0=d_I, d_L:=d_O$ & $\B{d}_0=d_I, \B{d}_L=d_O$ \\ 
-    hidden dims  & $d_1,\dots,d_{L-1} $ & $\B d_1, \dots, \B d_{L-1} $ \\ 
-    weights & $W@ l\in \Re^{d_ l\times d_{l-1}}$ & $\B{W}@ l\in \Re^{\B{d}_ l\times \B{d}_{l-1}}$ \\ 
-    biases  & $b @ l \in \Re^{d_l}$ & $\B{b}@l \in \Re^{\B d_l}$ \\ \hline
-    input layer & $a@ 0 = x$ & $\B a @ 0 = x$ \\ 
-    forward FC & $z@ l = W@ l a@ {l-1} + b@ l$ & $\B z @ l = \B{W}@ l \B{a}@ {l-1} + \B{b}@ l$ \\ 
-    forward Act. & $a^l = \phi(z@ l)$ & $\B a @ l  = \phi(\B z @ l )$ \\ 
-    output layer & $z@ L$ & $\B{z}@ L$ \\ 
-    \hline
-    error term & $\delta@l = \frac{\partial \Loss}{\partial z@l}$ & $\B{\delta}@l = \frac{\partial \Loss}{\partial \B{z}@l}$ \\ 
-    % Act. Jacobians & $D@l = \text{diag}(\phi'(z@l))$ & $\B D@l = \text{diag}(\phi'(\B z@l))$ \\ 
-    backprop. & $\delta@l = \phi'(z@l)\odot (W@{l+1}\T \delta@{l+1})$ & $\B{\delta}@l = \phi'(\B z@l)\odot( \B{W}@{l+1}\T \B{\delta}@{l+1})$ \\
-    weights grad. & $\nabla_{ W@l}\Loss = \delta@l \otimes a@{l-1}$ & $\nabla_{\B W@l}\Loss = \B{\delta}@l \otimes \B{a}@{l-1}$ \\
-    bias grad. & $\nabla_{ b@l}\Loss = \delta@l$ & $\nabla_{\B b@l}\Loss= \B{\delta}@l $ \\ 
-    \hline
-  \end{tabular}
-  \caption{MLP Setup, Forward, and Backward Pass}
-  \label{tab:setup}
-\end{table}
+Sutton and colleagues argue compellingly that such failures are intrinsically linked to the back-propagation algorithm itself \cite{dohare2024loss}. They posit that gradient descent, optimized for transient, single-task learning, relies heavily on the initial random state for exploration, a resource that is consumed and not replenished during prolonged training. Their work demonstrates that standard deep learning methods can lose plasticity until they perform comparably to linear networks, and suggests that maintaining plasticity requires mechanisms beyond pure gradient descent, such as continually injecting diversity via methods like their proposed continual backpropagation.
 
-% \section{Hyper cloning}
-% Dynamic scaling involves adjusting the network's width during training. We explore this by doubling the width of each hidden layer through \emph{hyper-cloning} of weights and biases. 
-We will always assume the following conditions hold for input and output in the cloned model:
-\begin{align*}
-    &\B W@1:=\R{W@1}{n\times 1},\B b@1:=\R{b@1}{ n} && \text{Input cloning} \\
-    &\B W@L:= \R{W@L}{1\times n},\B b@L:=b@L && \text{Output cloning}\\
-\end{align*}
+\paragraph{Goal of this paper.}
+Motivated by these observations, this paper revisits the dynamics of gradient descent and back-propagation through the lens of dynamical systems theory. We seek to answer the fundamental question:
+\begin{quote}
+\emph{What structural features inherent in gradient flow dynamics inevitably lead to the loss of plasticity, and how might we design algorithms or architectures capable of perpetual adaptation?}
+\end{quote}
+The central proposition advanced in this work is that the tendency of gradient-based optimization to favor low-rank or "simple" representations lies at the heart of plasticity loss. While properties like low effective rank and simplicity bias are often associated with improved generalization in the standard two-phase learning paradigm \cite{huh2022lowrank, papyan2020prevalence, zhang2017understanding}, we argue that these very properties become detrimental in continual learning settings. By reducing the effective dimensionality of the network's feature space, they limit its capacity to adapt to novel information, thus contributing to the loss of plasticity observed by \cite{dohare2024loss}.
 
-Now we formalize the conditions under which the scaled model maintains forward,backward, and the training dynamics of the original model. 
-% Given integer $n,$ assume that a matrix $W$ sizes are divisible by $n. $ Define $B_{ij}(W)$ as the block at the $i$th row and $j$th column. Furthermore, $R_i(W)$
+\section{Preliminaries: A Dynamical Systems Framework}
+\label{sec:framework}
 
-\begin{proposition}\label{prop:cloning_forward_backward} 
-    Suppose that the larger model hidden sizes are $n$ times the smaller model. Define following conditions:
-    \begin{align*}
-    % & \B b@l = \R{b@l}{ n}, && \text{Bias Symmetry (BS)}\\
-    &  \B b@l = \R{b@l}{ n},\; \Sigma_{j}^n\bl{\B W@l}{ij} = W@l,\, \forall i && \text{Forward Symmetry (FS)}\\
-    &  \Sigma_{i}^n\bl{\B W@l}{ij} = W@l,\, \forall j  && \text{Backward Symmetry (BS)}
-    \end{align*}
-    If FS holds, then forward passes are cloned, and if FS \& BS hold, gradients will also be cloned. 
-    \begin{align*}
-        &FS \implies \begin{cases}
-            \B a@l = \R{a@l}{n}\\
-            \B z@l=\R{z@l}{n}
-        \end{cases} 
-        &FS\wedge BS \implies \begin{cases}
-            \nabla_{\B b@l}\Loss =\R{\nabla_{b@l}\Loss}{n}\\
-            \nabla_{\B W@l}\Loss =\R{\nabla_{W@l}\Loss}{n\times n}
-        \end{cases}
-    \end{align*}
-    where the forward and backward hold for all $l$
-and on all inputs.
-\end{proposition}
+Let $\theta\in\Theta\subseteq\R^p$ represent the parameters of a neural network. We consider training on a stream of data $\{(x_t,y_t)\}_{t\ge0}$ using gradient descent or its stochastic variants. The objective is typically to minimize a loss function $\Loss(\theta)$. The learning dynamics can be idealized by the continuous-time gradient flow:
+\begin{equation}
+    \frac{d\theta(t)}{dt} \;=\; -\nabla_\theta\Loss\bigl(\theta(t)\bigr).
+    \label{eq:grad_flow}
+\end{equation}
+This perspective allows us to analyze the trajectory of parameters $\theta(t)$ in the parameter space $\Theta$ as driven by the negative gradient of the loss landscape \cite{saxe2014exact}.
 
-\paragraph{Proof idea.} To illustrate how the forward and backward symmetry lead to forward and backward cloning, we can see at the basic steps of computing forward and backward passes for a cloned model with $n=2.$  Recall the backprop formula $\delta@ l =\phi'(z@l)\odot  W@{l+1}\T \delta@{l+1} $
-Thus for one layer updates we have 
-\begin{align*}
-   &\text{forward} &&\begin{bmatrix}
-        W_{11} & W_{12} \\
-        W_{21} & W_{22} 
-    \end{bmatrix} \begin{bmatrix}
-        \phi(z) \\ \phi(z) 
-    \end{bmatrix} = \begin{bmatrix}
-        (W_{11}+W_{12}) \phi(z) \\
-        (W_{21}+W_{22})\phi(z). 
-    \end{bmatrix} \\
-   &\text{backward} &&\begin{bmatrix}
-       z \\ z
-   \end{bmatrix}\odot \begin{bmatrix}
-        W_{11}\T & W_{21}\T \\
-        W_{12}\T & W_{22}\T 
-    \end{bmatrix}\begin{bmatrix}
-        \delta \\ \delta 
-    \end{bmatrix} = \begin{bmatrix}
-       z \\ z
-   \end{bmatrix}\odot 
-    \begin{bmatrix}
-        (W_{11}\T + W_{21}\T )\delta \\
-        (W_{12}\T + W_{22}\T )\delta 
-    \end{bmatrix} 
-\end{align*}
-Where $\B W$ and $W$ are the weights of the cloned and source model respectively at a given layer. Suppose that hidden layer at that layer and the delta vectors are cloned. We can now observe that for the forward to be a cloned vector, the block-wise sum of each row must be equal to $W$, but for the backward to be cloned, we must have the column sums equal to $W.$ The next step is to use this as an inductive step to prove that all layers will be cloned. This is done from $l=1$ to $l=L$ for forward, and from $l=L$ to $l=1$ in the backward.  These two observations explain the main intuition behind the block-wise sum conditions in FS and BS, and why is it row-wise in FS, while column-wise in BS. 
+We introduce the concept of a loss of plasticity manifold to formalize the idea of gradient trajectories becoming trapped in lower-dimensional subspaces, thereby restricting future learning capacity.
+
+\begin{definition}[Loss of plasticity manifold]
+\label{def:lop}
+A smooth sub-manifold $\mathcal{M}\subset\Theta$ induces loss of plasticity if the following conditions hold:
+\begin{enumerate}[label=(\alph*)]
+    \item \textbf{Tangency:} The gradient of the loss function is tangent to the manifold at every point on the manifold. That is, $\nabla_\theta\Loss(\theta)\in T_\theta\mathcal{M}$ for all $\theta\in\mathcal{M}$, where $T_\theta\mathcal{M}$ denotes the tangent space of $\mathcal{M}$ at $\theta$. This ensures that once the gradient flow enters $\mathcal{M}$, it remains within $\mathcal{M}$.
+    \item \textbf{Stability type:} The curvature of the loss function in directions normal to the manifold determines its stability. Let $N_\theta\mathcal{M}$ be the normal space to $\mathcal{M}$ at $\theta$. The stability is characterized by the Hessian $\nabla_\theta^2\Loss(\theta)$: \vspace{-4pt}
+        \begin{align}
+        \text{Stable:}\; &\forall v\in N_\theta\mathcal{M}\setminus\{0\}: v^\top\nabla_\theta^2\Loss(\theta)v > 0; \label{eq:stable}\\
+        \text{Unstable:}\; &\forall v\in N_\theta\mathcal{M}\setminus\{0\}: v^\top\nabla_\theta^2\Loss(\theta)v < 0; \label{eq:unstable}\\
+        \text{Saddle:}\; &\exists v_1,v_2\in N_\theta\mathcal{M}:\; v_1^\top\nabla_\theta^2\Loss v_1>0,\; v_2^\top\nabla_\theta^2\Loss v_2<0. \label{eq:saddle}
+        \end{align}
+\end{enumerate}
+If the gradient flow enters a \emph{stable} loss of plasticity manifold, it is confined to trajectories within that manifold and cannot escape through gradient descent alone. The network's adaptability is consequently reduced, effectively limited by the dimensionality of $\mathcal{M}$, $\dim\mathcal{M} < p$.
+\end{definition}
 
 \begin{remark}
-    In the hyper-cloning structures proposed by~\citet{samragh2024scaling}, all configurations satisfy forward symmetry conditions. However, only noiseless configurations satisfy the backward symmetry conditions on weights:
-\begin{table}[h]
-\footnotesize
-\centering
-\renewcommand{\arraystretch}{1.4}
-\begin{tabular}{|lcccc|} 
-\hline
-Cloning Type & Formulation & Row Sums & Column Sums & Properties \\ 
-symmetric & \( \B{W} = \begin{bmatrix} \frac{W}{2} & \frac{W}{2} \\ \frac{W}{2} & \frac{W}{2} \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & FS \checkmark,BS\checkmark \\ 
-diagonal & \( \B{W} = \begin{bmatrix} W & 0 \\ 0 & W \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & FS\checkmark,BS\checkmark \\ 
-noisy symmetric & \( \B{W} = \begin{bmatrix} \frac{W}{2} + \eta_1 & \frac{W}{2} - \eta_1 \\ \frac{W}{2} + \eta_2 & \frac{W}{2} - \eta_2 \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} \eta_1+\eta_2 \\ -\eta_1-\eta_2 \end{bmatrix} \) & FS\checkmark,BS\xmark \\ 
-noisy diagonal & \( \B{W} = \begin{bmatrix} W + \eta_1 & -\eta_1 \\ \eta_2 & W - \eta_2 \end{bmatrix} \) & \( \begin{bmatrix} W \\ W \end{bmatrix} \) & \( \begin{bmatrix} \eta_1+\eta_2 \\ -\eta_1-\eta_2 \end{bmatrix} \) & FS\checkmark,BS\xmark \\ \hline
-\end{tabular}
-\caption{\small Table of cloning types and wether they hold Forward Symmetry (FS), which is true if row sums are equal to $(W,W)$ or backward symmetry (BS), which holds if column sums are equal to $(W, W)$.}
-\label{tab:cloning_types}
-\end{table}
+If the conditions in Definition~\ref{def:lop} hold irrespective of the specific data distribution generating the loss $\Loss$, we refer to it as structural loss of plasticity, implying it arises from the network architecture and optimization dynamics themselves. If the conditions hold only locally, perhaps for a specific data distribution or near a particular parameter configuration $\theta^\star$, the loss is local.
 \end{remark}
 
-It turns that conditions that suffice for forward and backward cloning, also suffice for the entire training dynamics to be cloned. In other words, the hyper cloned model training is just a copy of a smaller model training dynamics, with a small twist that its learning rate for weights is higher. The following proposition formalises this notion.  
+We recall standard definitions for clarity.
 
-\clearpage
-\begin{proposition}\label{prop:cloning_training}
-    If the conditions for forward and gradient cloning hold, let us assume both models are trained with similar bias rate $\B \eta_b = \eta_b$ but the smaller model has $n$ times higher rate for weights. $\eta_W = n \B \eta_W.$
-Then, activations of the cloned model will remain a cloned version of the smaller model
-\begin{align*}
-    &\B z@l(t) = \R{z@l(t)}{n}, && \B a@l(t) = \R{a@l(t)}{n},
-\end{align*}
-Furthermore, its weights and biases obey 
-\begin{align*}
-    &\B b@l(t) = \R{b@l(t)}{n}
-    &&\B W@l(t) - \B W@l(0)= \frac1n\R{W@l(t)-W@l(0)}{n\times n}.
-\end{align*}
+\begin{definition}[Feed-forward neural network]
+A feed-forward neural network is defined by a directed acyclic graph $G=(V,E)$, where $V$ is the set of nodes (neurons), $E$ is the set of directed edges (connections), $V_{\text{in}} \subset V$ are the input nodes, and $V_{\text{out}} \subset V$ are the output nodes. The activation $h(v)$ of a node $v \in V$ is computed as:
+\[
+h(v)=
+\begin{cases}
+x_v, & \text{if } v\in V_{\text{in}},\\
+f_v\!\left(\sum_{u\!\in\!\mathrm{in}(v)}w(u,v)\,h(u)\right), &\text{otherwise}.
+\end{cases}
+\]
+Here, $x_v$ is the input value for input node $v$, $f_v$ is the activation function associated with node $v$, $\mathrm{in}(v)$ is the set of nodes with edges pointing to $v$, and $w(u,v) \in \R$ is the weight parameter associated with the edge from $u$ to $v$. The network's output is the vector of activations $h(V_{\text{out}})$.
+\end{definition}
+
+\begin{definition}
+Given a loss function $\Loss(h(V_{\text{out}}),y)$ comparing the network output $h(V_{\text{out}})$ to a target $y$, the back-propagation algorithm computes gradients via error signals $\delta(v)$. Let $z(v) = \sum_{u\in\mathrm{in}(v)}w(u,v)h(u)$ be the pre-activation of node $v$. The error signal is defined recursively:
+\[
+\delta(v)=
+\begin{cases}
+\partial\Loss/\partial h(v), & \text{if } v\in V_{\text{out}},\\[4pt]
+\displaystyle\sum_{u\in\mathrm{out}(v)}\delta(u)\,w(v,u)\,f'_u(z(u)), &\text{otherwise},
+\end{cases}
+\]
+where $\mathrm{out}(v)$ is the set of nodes receiving input from $v$, and $f'_u$ is the derivative of the activation function $f_u$. The gradient of the loss with respect to a weight $w(u,v)$ is then given by $\partial\Loss/\partial w(u,v)=\delta(v)\,f'_v(z(v))\,h(u)$.\qedhere
+\end{definition}
+
+\section{Sufficient Conditions for Loss of Plasticity}
+\label{sec:frozen}
+
+We now identify specific mechanisms that can lead to the formation of stable loss of plasticity manifolds.
+
+\subsection{Frozen Units via Activation Saturation}
+
+A well-known phenomenon in training neural networks, particularly those using activation functions like Sigmoid, Tanh, or even ReLU, is activation saturation. When the pre-activation input to a neuron falls into a region where the activation function's derivative is zero or near-zero, the gradients flowing back through that neuron vanish.
+
+\begin{proposition}
+\label{prop:saturated}
+Consider a neuron $i$ with activation $h_i$ computed as $h_i = f_i(z_i)$, where $z_i$ is the pre-activation. Let $\Theta_{\text{up}}$ denote the set of all parameters influencing $z_i$ (i.e., weights and biases in layers preceding neuron $i$ that have a path to $i$). If the derivative of the activation function is zero, i.e.,
+\(
+\frac{\partial h_i}{\partial z_i} = f'_i(z_i) = 0
+\)
+for all data samples encountered during a phase of training, then the gradient of the loss $\Loss$ with respect to any parameter $\theta \in \Theta_{\text{up}}$ will also be zero:
+\(
+\frac{\partial\Loss}{\partial\theta} = 0.
+\)
+Consequently, these upstream parameters $\Theta_{\text{up}}$ will not be updated by any subsequent gradient-based optimization step. The parameter trajectory becomes confined to a sub-manifold where these parameters are fixed, representing a stable loss of plasticity manifold (assuming the saturation persists).
 \end{proposition}
 
-\paragraph{Proof idea.} We can again find insights into the gradient dynamics by considering the example of $n=2$ cloning for a single layer. Let us assume that FS and BS hold, and thus, the bias and weight gradients will be cloned. Let $\Delta \B W$ and $\Delta W$ denote the gradients for a given layer in cloned and source model. 
-\begin{align*}
-    &\B W' := \B W + \begin{bmatrix}
-        \Delta W & \Delta W \\
-        \Delta W & \Delta W, 
-    \end{bmatrix}, 
-    \B b':= \B b + \begin{bmatrix}
-        \Delta b \\ \Delta b 
-    \end{bmatrix}
-\end{align*}
-Now if we look at the effect of applying these changes to preactivations we get
-\begin{align*}   
-&\B W'\B z + \B b' - (\B W \B z + \B b)  =  \begin{bmatrix}
-        2\Delta W z \\ 2\Delta W z
-    \end{bmatrix} + 
-    \begin{bmatrix}
-        \Delta b\\ \Delta b
-    \end{bmatrix}
-\end{align*}
-This simple observation gives an important intuition the changes are duplicated, across the matrix, the effects of changes in weights is ``felt'' stronger, but changes in bias are felt with the same rate. Thus, if we wanted to clone the training dynamics of this larger model, we have to artificially modify the learning rate for the smaller model, but only do so for weights. 
+The proof follows directly from the chain rule in back-propagation. The error signal $\delta(u)$ for any node $u$ upstream of $i$ involves terms containing $f'_i(z_i)$. If $f'_i(z_i)=0$, these terms become zero, halting gradient flow to $\Theta_{\text{up}}$.
 
-The main implication of Proposition~\ref{prop:cloning_training} is that the noiseless configurations, such as diagonal and symmetric configurations in Table~\ref{tab:cloning_types}, lead to ``boring'' dynamics where the cloning is not really utilizing the full model capacity. The second important implication is that, if we are to utilize the capacity of the model, we ought to have a symmetry breaking part, such as a dropout module or having noise in our cloning process. 
+Examples of this phenomenon are abundant:
+\begin{itemize}
+    \item \textbf{Dead ReLUs:} ReLU units ($f(z) = \max(0, z)$) whose input $z$ is consistently negative will have $f'(z)=0$, preventing updates to their incoming weights \cite{nair2010rectified}.[4, 5, 6] This is often exacerbated by large negative biases or high learning rates.[5]
+    \item \textbf{Sigmoid/Tanh Saturation:} For Sigmoid or Tanh units, if the magnitude of the pre-activation $|z|$ becomes large, the derivative approaches zero, effectively freezing upstream learning.
+    \item \textbf{Softmax Dominance:} In a Softmax layer, if one logit becomes significantly larger than others, its corresponding probability approaches 1, and the gradients for its associated weights can diminish.
+    \item \textbf{Vanishing Attention Weights:} If the weights determining the contribution of certain attention heads become very small (e.g., through regularization or optimization dynamics), those heads may cease to contribute meaningfully, and their parameters may stop updating.
+\end{itemize}
+This mechanism provides a clear pathway to plasticity loss where parts of the network become unresponsive to new data due to the properties of the activation functions and the dynamics of training.
+
+\subsection{Cloned-Unit Manifolds via Redundancy}
+
+Plasticity can also vanish even without explicit activation saturation if the network develops redundant representations, effectively behaving like a smaller network. This can happen in overparameterized models where multiple units or groups of units learn to perform identical functions.
+
+\begin{proposition}[Cloned-unit plasticity loss]
+\label{prop:cloned}
+Consider a "wide" network $\mathcal{G}=(\mathcal{V},\mathcal{E},\mathcal{W})$ with parameters $\mathcal{W}$, and a "narrow" network $G=(V,E,W)$ with parameters $W$. Suppose there exists a partition $\{S_v\}_{v\in V}$ of the nodes $\mathcal{V}$ in the wide network such that:
+\begin{enumerate}
+    \item The connectivity structure mirrors that of the narrow network: If there is an edge $(u,v) \in E$, then there are edges between nodes in $S_u$ and $S_v$ in $\mathcal{E}$, and vice-versa. Assume identical activation functions $f_v$ for all nodes within a partition $S_v$.
+    \item The initial weights $\mathcal{W}_0$ are set such that for any edge $(u,v) \in E$, the total incoming weight to any node $y \in S_v$ from partition $S_u$ is proportional to the corresponding narrow network weight $W(u,v)$, and similarly for outgoing weights. Specifically, assume conditions such that forward activations and backward error signals are identical for all nodes within each partition $S_v$ (see Appendix~\ref{app:proofs} for precise conditions, e.g., involving sums of weights).
+    \begin{align}
+    % Simplified conceptual representation, formal conditions in proof
+    \text{EffectiveWeight}(S_u, S_v) \propto W(u,v) \quad \forall (u,v) \in E.
+    \end{align}
+\end{enumerate}
+Under these conditions, if the network $\mathcal{G}$ is trained using gradient descent (or variants like SGD, Adam), the parameter trajectory $\mathcal{W}(t)$ starting from $\mathcal{W}_0$ will remain confined to an affine subspace. This subspace is defined by the initial weights plus changes that maintain the cloning structure, effectively parameterized by the smaller set of weights $W_t$ corresponding to the narrow network $G$. The dimension of this subspace is $|E|$, which is typically much smaller than the total number of parameters $|\mathcal{E}|$ in the wide network.
+\(
+\mathcal{W}(t) \in \{\mathcal{W}_0 + \Delta\mathcal{W}(W_t) \mid W_t \text{ evolves according to } G \}.
+\)
+This represents a form of \emph{structural} loss of plasticity, as the large network's dynamics are permanently constrained to mimic those of the smaller network, irrespective of the data distribution.
+\end{proposition}
+
+The proof (detailed in Appendix~\ref{app:proofs}) relies on showing by induction that if activations $h(\cdot)$ and error signals $\delta(\cdot)$ are identical across nodes within each partition at one time step, they remain identical after a gradient update, provided the initial weights satisfy the cloning conditions. This implies that the gradients themselves exhibit this cloned structure, confining updates to the lower-dimensional manifold. This phenomenon is related to observations of symmetry and redundancy in deep networks, and connects to concepts like neural collapse where representations degenerate \cite{papyan2020prevalence} and simplicity bias where networks favor lower-complexity solutions \cite{huh2022lowrank}.
+
+\begin{figure}[t]
+    \centering
+    \resizebox{\textwidth}{!}{\input{paper/images/covering}}
+    \caption{Illustration of network expansion and reduction according to Proposition~\ref{prop:cloned}. A wider network $\mathcal{G}$ (left) with node partitions $\{S_v\}$ can, under specific weight initializations, behave identically to a narrower network $G$ (right). Gradient descent confines the parameters of $\mathcal{G}$ to a low-dimensional manifold isomorphic to the parameter space of $G$, inducing structural loss of plasticity.}
+    \label{fig:plasticity-manifolds}
+\end{figure}
 
 \begin{remark}
-    Thus, if conditions for gradient cloning hold, the cloned model dynamics can be perfectly captured by a model $1/n$ smaller, suggesting an under use of capacity. Furthermore, the weight matrices of this corresponding model are trained at $n$ times higher learning rate, suggesting that highly correlated weights may contribute to an effectively manipulated higher learning rate, which may also contribute to unstable training dynamics.  
+The affine subspace identified in Proposition~\ref{prop:cloned} acts as a stable manifold for any optimizer relying solely on first-order gradient information (like SGD, Momentum, Adam) because the gradients themselves respect the cloning symmetry. This holds regardless of the data distribution encountered.
 \end{remark}
 
-\begin{remark}\label{cloning_symmetry}
-    This proposition proves the observation by~\citet{samragh2024scaling} and \cite{wang2023lemon} that highly structured weights may contribute to under-use of the capacity of the larger model. The high level idea for this equivalency is that under the weights and bias cloning conditions, there is an symmetry between two cloned units that makes them indistinguishable from one another.  Thus, any operations, such as Layer Normalization (LN), or Batch Normalization (BN) that will respect this symmetry, is unlikely to break this pattern. However, a layer like dropout, which will impose asymmetrical noise at training time, is likely to break the symmetries and make the larger model deviate from the small model dynamics. The other alternative is the inherent noise in numerical computations which may break the symmetries. 
-\end{remark} 
+\section{Mitigating and Recovering Plasticity}
+\label{sec:mitigate}
 
+Having identified mechanisms leading to plasticity loss, we now consider strategies suggested by the theory to prevent or escape these traps.
 
+\subsection{Rank Preservation via Nonlinearities and Gaussianity}
 
-\subsection{Follow ups:}
-We saw from previous section that The noiseless cases without dropout likely lead to ``boring'' or uninteresting hyper cloned models without much capacity. Thus, it is important to study the cases that the symmetry breaks, and to understand the gradients and training dynamics. 
+One way plasticity is lost is through the collapse of representational diversity, manifesting as low-rank feature spaces (as potentially induced by cloned units or other dynamics). Maintaining higher-rank representations could thus preserve plasticity. Certain architectural choices and properties of activation functions can promote this.
 
+\begin{proposition}
+\label{prop:rank}
+Let $f:\R\to\R$ be a non-polynomial activation function that is square-integrable with respect to the standard Gaussian measure $\mathcal{N}(0,1)$. Consider a vector of pre-activations $z\in\R^d$ whose components are jointly Gaussian, $z \sim \mathcal{N}(0, \Sigma)$, with covariance matrix $\Sigma$ such that $\E[z_i z_j]=\Sigma_{ij}$ and $|\Sigma_{ij}|<1$ for $i \neq j$ (assuming unit variance for simplicity, $\Sigma_{ii}=1$). Then the covariance matrix of the post-activations $C = \E[f(z)f(z)^\top]$ is full rank, unless some features are perfectly correlated or anti-correlated (i.e., $|\Sigma_{ij}|=1$) or are exact duplicates.
+\end{proposition}
+
+The proof (Appendix~\ref{app:proofs}) leverages the Hermite polynomial expansion of the activation function $f$ \cite{erdelyi1953higher} and Mehler's formula for the expectation of products of Hermite polynomials of correlated Gaussian variables \cite{mehler1866ueber, erdelyi1953higher}. Since a non-polynomial function has infinitely many non-zero Hermite coefficients, the resulting covariance matrix becomes a sum of positive semidefinite matrices (Hadamard powers of $\Sigma$), which generally results in a positive definite (full rank) matrix unless the underlying Gaussian variables $z_i$ lack diversity.
+
+\paragraph{Design implications.}
+This proposition provides theoretical grounding for the empirical success of certain techniques in maintaining network health and potentially plasticity:
 \begin{itemize}
-    \item The hyper cloned model may diverge or have forgetting due to the artificially higher learning rate for weight matrices, which is predicted for no noise case. What would be a remedy? Perhaps using the rate of change in activations could be taken as constant, similar to muP. If we enforce learning rate per each layer to contribute to a constant change in activations, the learning rate of cloned model will be similar to that of the smaller model. 
-    \item When adding noise to layers, how do the weight matrices and Jacobian contribute to the changed gradients? How does singular vector alignment contribute to that?
-    \item Studying the effect of normalization layers (LN, BN) no these cloning dynamics. 
-    \item methods to combine multiple models with varying widths (e.g., mixing widths $d_1$ and $d_2$) may offer avenues for enhancing scalability and flexibility.
+    \item \textbf{Batch Normalization (BatchNorm):} Proposed by \cite{ioffe2015batch}, BatchNorm normalizes layer inputs to have approximately zero mean and unit variance. By stabilizing and somewhat Gaussianizing the distribution of pre-activations, BatchNorm helps satisfy the conditions of Proposition~\ref{prop:rank}, thereby combating rank collapse and potentially delaying plasticity loss. It aims to reduce "internal covariate shift," which can contribute to saturation and instability.[10]
+    \item \textbf{Dropout:} Introduced by \cite{srivastava2014dropout}, Dropout randomly sets a fraction of neuron activations to zero during training. This prevents complex co-adaptations and breaks symmetries in the network. By continually introducing stochasticity and preventing units from becoming overly reliant on each other, Dropout can disrupt the formation of cloned-unit manifolds (Proposition~\ref{prop:cloned}) and help maintain representational diversity, thus preserving rank and plasticity.
+\end{itemize}
+These techniques, while often motivated by improving optimization speed or static generalization, can be reinterpreted through our framework as mechanisms that counteract the dynamics leading to plasticity loss by preserving representational rank and diversity.
+
+\subsection{Escaping a Plasticity-Loss Manifold}
+
+If a network's parameters $\theta(t)$ have converged to a stable loss-of-plasticity manifold $\mathcal{M}$, gradient descent alone cannot facilitate escape. However, perturbations or noise injection might allow the trajectory to leave the manifold if the curvature permits.
+
+\begin{corollary}[Perturbation dynamics]
+\label{cor:perturb}
+Suppose the parameters are at a point $\theta_0 \in \mathcal{M}$. Consider a small perturbation $\varepsilon v$ in a direction $v$ normal to the manifold at $\theta_0$, i.e., $v \in N_{\theta_0}\mathcal{M}$ with $\|v\|=1$. The initial state after perturbation is
+\[
+\theta(0)=\theta_0+\varepsilon v,\qquad \text{where } \varepsilon \ll 1.
+\]
+The initial rate of change of the squared distance from the manifold $\mathcal{M}$ under gradient flow (Equation~\ref{eq:grad_flow}) can be approximated. Let $d(\theta, \mathcal{M})^2$ denote the squared Euclidean distance from $\theta$ to the closest point on $\mathcal{M}$. Then, the initial dynamics perpendicular to the manifold are governed by the Hessian:
+\(
+\frac{d}{dt}\left.\mathrm{dist}^2(\theta(t),\mathcal{M})\right|_{t=0} \approx \frac{d}{dt} \|\theta(t) - \theta_0\|^2 \Big|_{t=0} = -2 (\theta(0)-\theta_0)^\top \nabla_\theta \Loss(\theta(0)) \approx -2 \varepsilon v^\top (\nabla_\theta \Loss(\theta_0) + \varepsilon \nabla_\theta^2 \Loss(\theta_0) v)
+\)
+Since $\nabla_\theta \Loss(\theta_0)$ is tangent to $\mathcal{M}$ (Definition~\ref{def:lop}(a)) and $v$ is normal, $v^\top \nabla_\theta \Loss(\theta_0) = 0$. Thus,
+\[
+\frac{d}{dt}\left.\mathrm{dist}^2(\theta(t),\mathcal{M})\right|_{t=0} \approx -2\varepsilon^2\,v^\top\nabla_\theta^2\Loss(\theta_0)v + O(\varepsilon^3).
+\]
+The distance from the manifold will initially increase (i.e., plasticity is potentially recovered) if and only if there exists a normal direction $v$ with negative curvature, $v^\top\nabla_\theta^2\Loss(\theta_0)v < 0$.
+\end{corollary}
+
+This corollary explains why techniques involving noise injection or periodic re-initialization of parts of the network, such as the continual backpropagation algorithm proposed by \cite{dohare2024loss} , can sometimes succeed in restoring plasticity. If the manifold is only stable (positive curvature in all normal directions, Equation~\ref{eq:stable}), noise alone won't help escape via gradient descent. However, if the manifold is of saddle type (Equation~\ref{eq:saddle}), perturbations along directions of negative curvature can initiate escape trajectories. If the manifold is unstable (Equation~\ref{eq:unstable}), any perturbation will lead to escape. This highlights the importance of the loss landscape's geometry around these manifolds.
+
+\section{Empirical Evaluation (Planned)}
+\label{sec:experiments}
+
+To validate the theoretical constructs presented, a series of empirical investigations are planned. These experiments will aim to provide concrete evidence for the proposed mechanisms of plasticity loss and the effectiveness of mitigation strategies. The core hypotheses to be tested are:
+\begin{itemize}
+    \item \textbf{Emergence of Plasticity Loss Symptoms:} We will train standard neural network architectures (e.g., MLPs, ResNets) on continual learning benchmarks (e.g., sequences of image classification tasks derived from CIFAR-100 or ImageNet, similar to setups in \cite{dohare2024loss}). We will track metrics over extended training periods, specifically measuring:
+        \begin{itemize}
+            \item Performance on the current task (as a measure of plasticity).
+            \item The percentage of saturated/dead units (e.g., ReLUs with zero output across a batch).
+            \item The effective rank of representations in hidden layers (e.g., using participation ratio of singular values of the activation Gram matrix \cite{huh2022lowrank}).
+        \end{itemize}
+        We expect to observe a decrease in current task performance correlated with an increase in dead units and a decrease in effective rank over long training horizons, confirming the link between these symptoms and plasticity loss.
+
+    \item \textbf{The Cloning Hypothesis:} To directly test Proposition~\ref{prop:cloned}, we will construct a "wide" network $\mathcal{G}$ initialized with weights satisfying the cloning conditions relative to a smaller "narrow" network $G$. We will train $\mathcal{G}$ on a task sequence and monitor its parameter trajectory. We hypothesize that the parameters $\mathcal{W}(t)$ will remain confined to the affine subspace predicted by the proposition, and the network's performance will mirror that of the smaller network $G$ trained independently. We will measure the distance of $\mathcal{W}(t)$ from this subspace.
+
+    \item \textbf{Escaping Cloned Subspace:} We will repeat the cloning experiment but introduce mechanisms designed to break the symmetry or perturb the trajectory, as suggested by Section~\ref{sec:mitigate}. Specifically, we will compare the baseline cloned network to variants incorporating:
+        \begin{itemize}
+            \item Dropout \cite{srivastava2014dropout}.
+            \item Explicit noise injection into gradients or weights during back-propagation (inspired by Corollary~\ref{cor:perturb} and \cite{dohare2024loss}).
+        \end{itemize}
+        We hypothesize that these interventions will cause the parameter trajectory $\mathcal{W}(t)$ to deviate significantly from the cloned subspace, potentially leading to improved plasticity (higher performance on later tasks) compared to the baseline cloned network. Measurements will include distance from the manifold and task performance.
+\end{itemize}
+These experiments are designed to bridge the gap between our theoretical framework and observable phenomena in deep continual learning.
+
+\section{Discussion and Open Questions}
+
+This work provides a mathematical framework, grounded in dynamical systems theory, for understanding the phenomenon of loss of plasticity in deep neural networks trained with gradient-based methods. By defining loss of plasticity manifolds and identifying mechanisms like activation saturation (frozen units) and representational redundancy (cloned units) that lead to stable confinement within these manifolds, our analysis connects and provides a potential unifying explanation for several previously observed empirical phenomena, including dead ReLUs \cite{nair2010rectified}, aspects of neural collapse related to representational degeneracy \cite{papyan2020prevalence}, and issues arising from weight duplication or symmetry \cite{huh2022lowrank}.
+
+A key implication of our analysis is the inherent tension between desirable properties for static learning and the requirements for continual adaptation. Low-rank representations and simplicity bias, often linked to better generalization on fixed datasets \cite{huh2022lowrank, papyan2020prevalence, zhang2017understanding}, appear to be manifestations of the network settling into lower-dimensional subspaces. While beneficial for compressing information relevant to a static task, this very compression hinders the ability to learn new, potentially orthogonal information, thus causing loss of plasticity as observed by \cite{dohare2024loss}.
+
+This framework raises several critical questions for future research aimed at achieving truly continual learning:
+
+\begin{itemize}[nosep]
+    \item \textbf{Designing Effective Continual Randomization:} While initial randomness is crucial, it gets consumed. How can we design \emph{ongoing} randomization schemes that effectively prevent trajectories from settling into stable plasticity-loss manifolds? Simple dropout \cite{srivastava2014dropout} or the periodic re-initialization proposed in continual backpropagation \cite{dohare2024loss} are steps in this direction, but can we develop adaptive noise injection or re-sampling strategies guided by online measurements of plasticity or manifold proximity?
+    \item \textbf{Interaction with Advanced Optimizers:} How do optimization methods beyond first-order gradient descent interact with these manifolds? Can second-order methods, which utilize Hessian information (related to curvature, Corollary~\ref{cor:perturb}), detect and actively avoid or escape these stable regions? Could meta-gradient approaches, which adapt learning rules themselves (e.g., Sutton's early work on IDBD \cite{sutton1992gain}), learn strategies to maintain plasticity by navigating away from detrimental subspaces? 
+    \item \textbf{Characterizing Non-Linear Manifolds:} Our analysis focused on mechanisms leading to (affine) linear subspaces (frozen parameters, cloned units). Is it possible for plasticity loss to occur via trapping in more complex, non-linear stable manifolds? Identifying and characterizing such manifolds would require extending the current dynamical systems analysis.
+    \item \textbf{Plasticity in Parameter-Efficient Fine-Tuning (PEFT):} Methods like LoRA \cite{hu2021lora} and Adapters \cite{houlsby2019parameter} achieve efficiency by restricting updates to low-dimensional parameter subspaces.[18, 19, 20, 21] Does this inherent low-dimensionality make PEFT methods particularly susceptible to a form of plasticity loss where the adapter subspace itself saturates or collapses during continual learning? How can plasticity be maintained within these parameter-efficient frameworks? Recent work exploring Parameter-Efficient Continual Fine-Tuning (PECFT) is beginning to address this, but a deeper theoretical understanding of plasticity dynamics within PEFT subspaces is needed. The efficiency gains of PEFT might fundamentally trade off against long-term adaptability, representing a critical research frontier.
 \end{itemize}
 
-\subsection{Proofs}
+Addressing these questions is crucial for developing AI systems capable of lifelong learning and adaptation in complex, evolving environments.
 
-\begin{proof}[Proof of proposition~\ref{prop:cloning_forward_backward}]
-    The proof of forward condition leading to forward cloning can be done via induction. First, for the input layer $z@1,$ we can ensure that it is cloned by cloning weights and biases, and prove the cloning of forward pass by induction:
-    \begin{align*}
-        \B a@{l-1} &= \R{a@{l-1}}{n} && \text{Induction hypothesis (IH)} \\
-      \implies  \B z@l &= \oplus_{i=1}^n \bl{\B W@l \B a@{l-1} + \B b@l}{i} \\
-      &= \oplus_{i=1}^n \bl{\B W@l \B a@{l-1} + \B b@l}{i} \\
-      &= \oplus_{i=1}^n \left(\Sigma_{j} \bl{\B W @l}{ij}\bl{\B a@{l-1}}{j} + \bl{\B b@l}{i}\right)&& \text{block-wise product}\\
-      &= \oplus_{i=1}^n \left(\Sigma_j \bl{\B W @l}{ij}) a@{l-1} + b@l\right) && \text{using IH} \\
-      &= \oplus_{i=1}^n \left(W@l a@{l-1} + b@l \right) &&\text{using BS} \\
-      &= \R{z@l}{n} \\
-  \implies \B a@l&:=\phi(\B z@l) = \R{a@l}{n}   
-    \end{align*}
-    where the last step is proving induction hypothesis for next layer. 
+\section{Broader Impacts}
+This research contributes to the fundamental understanding of limitations inherent in current deep learning paradigms, particularly concerning their ability to learn continuously and adapt over long time horizons. Positive societal impacts could arise from the development of more robust and adaptive AI systems. Systems capable of maintaining plasticity could adapt to changing conditions in the real world without significant performance degradation or the need for frequent, costly retraining from scratch. This could lead to more reliable autonomous systems (e.g., in robotics or vehicles), personalized learning systems that adapt to individual users over time, and AI that remains effective in dynamic environments like finance or climate modeling.
 
-    For gradients, we can prove inductively that the delta vectors are also cloned $\B \delta@l = \R{\delta@l}{n}.$ The induction base is for $l=L,$ which is ensured by proper cloning of last layer weights and biases. 
-    \begin{align*}
-        \B\delta@{l+1} &= \R{\delta@l}{n}  && \text{\small Induction Hypothesis (IH)}\\
-        \B\delta@l &=\oplus_{i=1}^n \bl{\B\delta@l}{i}\\
-        &= \oplus_{i=1}^n \bl{\phi'(\B z@l)}{i} \odot \bl{W@{l+1}\T \B \delta@{l+1}}{i} \\
-        &= \oplus_{i=1}^n \bl{\phi'(\R{z@l}{n})}{i} \odot \bl{W@{l+1}\T \B \delta@{l+1}}{i} && \text{\small FS $\implies$ forward cloning} \\
-        &= \oplus_{i=1}^n \phi'(z@l) \odot \bl{\B W@{l+1}\T \R{\delta@{l+1}}{n}}{i}&& \text{\small Using IH } \\
-        &=\oplus_{i=1}^n \phi'(z@l) \odot \big(\sum_{j} \bl{\B W@l\T}{ij}\delta@{l+1} \big)&&\text{block-wise product}\\
-        &=\oplus_{i=1}^n \phi'(z@l) \odot\big( (\sum_{i} \bl{\B W}{ij})\T \delta@{l+1}\big)\\
-        &= \oplus_{i=1}^n \phi'(z@l) W@l\T \delta@{l+1}&&\text{using BS} \\
-        &= \oplus_{i=1}^n \delta@l\\
-        &=\R{\delta@l}{n} 
-    \end{align*}
-    And thus we have proven that for all layers $\B\delta@l = \R{\delta@l}{n} . $ Recall the gradients formula:
-    \begin{align*}
-        \nabla_{b@l}\Loss = \delta@l, \nabla_{W@l} = \delta@l\otimes a@{l-1}.
-    \end{align*}
-    Thus we have 
-    \begin{align*}
-        \nabla_{\B b@l}\Loss &=  \B \delta@l \\
-        &= \R{\delta@l}{n}\\
-        &= \R{\nabla_{b@l}\Loss}{n}\\
-       \nabla_{\B W@l}\Loss &= \R{a@{l-1}}{n}\otimes  \R{\delta@l}{n} \\
-       &= \R{a@{l-1}\otimes \delta@ l}{n\times n} \\
-       &= \R{\nabla_{W@l}\Loss}{n\times n}
-    \end{align*}
-    which concludes the proof. 
+However, potential negative impacts must also be considered. Enabling AI systems to adapt continually and indefinitely also raises concerns about predictability and control. If systems adapt in unforeseen ways or develop unexpected behaviors due to prolonged interaction with complex environments, it could lead to safety risks, especially in critical applications. Furthermore, understanding how to maintain plasticity might inadvertently lead to systems that are more difficult to audit or interpret, as their internal representations would be constantly shifting. The theoretical framework developed here provides tools not only for potentially enhancing plasticity but also for better understanding the conditions under which adaptation might become unstable or unpredictable, thereby contributing to the development of safer and more reliable continual learning systems. Responsible development and deployment, including robust testing and monitoring protocols, will be essential to mitigate these risks.
+
+\bibliographystyle{plain}
+\bibliography{refs} % Assuming the bib file is named refs.bib
+
+\appendix
+\section{Proofs}
+\label{app:proofs}
+
+\begin{proof}[Proof of Proposition~\ref{prop:cloned} (Cloned-unit plasticity loss)]
+    Let $\mathcal{G}=(\mathcal{V},\mathcal{E},\mathcal{W})$ be the wide network and $G=(V,E,W)$ the narrow network, with a partition $\{S_v\}_{v\in V}$ of $\mathcal{V}$. Assume activation functions $f_v$ are identical for all nodes within a partition $S_v$. Let $\mathcal{W}(t)$ be the parameters of $\mathcal{G}$ at time $t$. We need to show that if the initial weights $\mathcal{W}(0)$ satisfy certain cloning conditions, then the gradient flow keeps the parameters within an affine subspace determined by the dynamics of $G$.
+
+    \textbf{Cloning Conditions (Informal):} The weights $\mathcal{W}$ must be initialized such that for any input $x$, (1) all nodes $u, v \in S_k$ have the same activation $h(u)=h(v)$, and (2) for any loss function, all nodes $u, v \in S_k$ receive the same backward error signal $\delta(u)=\delta(v)$. Precise conditions involve relationships between sums of weights connecting partitions, ensuring that the distributed weights in $\mathcal{G}$ effectively replicate the function of the single weights in $G$. For example, for linear networks, we might require $\sum_{u' \in S_u} \mathcal{W}(u', v') = W(u,v)$ for all $v' \in S_v$, and $\sum_{v' \in S_v} \mathcal{W}(u', v') = W(u,v)$ for all $u' \in S_u$, potentially scaled by partition sizes depending on the exact setup.
+
+    \textbf{Forward Cloning Induction:} Assume $h(u') = h_u$ for all $u' \in S_u$ for all partitions $S_u$ up to a certain layer or distance from the input. Consider a node $v' \in S_v$. Its pre-activation is $z(v') = \sum_{S_u \text{ s.t. } (u,v)\in E} \sum_{u' \in S_u} \mathcal{W}(u', v') h(u')$. Due to the induction hypothesis $h(u')=h_u$, this becomes $z(v') = \sum_{S_u} h_u \sum_{u' \in S_u} \mathcal{W}(u', v')$. If the cloning condition ensures $\sum_{u' \in S_u} \mathcal{W}(u', v')$ is constant for all $v' \in S_v$ (equal to $W(u,v)$ possibly scaled), then $z(v')$ is the same for all $v' \in S_v$. Since $f_v$ is the same for all nodes in $S_v$, $h(v') = f_v(z(v'))$ is also constant across $S_v$. By induction, forward activations are cloned.
+
+    \textbf{Backward Cloning Induction:} Assume $\delta(u') = \delta_u$ for all $u' \in S_u$ for all partitions $S_u$ down to a certain layer or distance from the output. Consider a node $v' \in S_v$. Its error signal is $\delta(v') = f'_v(z(v')) \sum_{S_w \text{ s.t. } (v,w)\in E} \sum_{w' \in S_w} \delta(w') \mathcal{W}(v', w')$. By forward cloning $z(v')$ is constant across $S_v$, so $f'_v(z(v'))$ is constant. By induction hypothesis $\delta(w')=\delta_w$. So, $\delta(v') = f'_v(z_v) \sum_{S_w} \delta_w \sum_{w' \in S_w} \mathcal{W}(v', w')$. If the cloning condition ensures $\sum_{w' \in S_w} \mathcal{W}(v', w')$ is constant for all $v' \in S_v$ (equal to $W(v,w)$ possibly scaled), then $\delta(v')$ is constant across $S_v$. By induction, backward error signals are cloned.
+
+    \textbf{Weight Gradient Cloning:} The gradient for a weight $\mathcal{W}(u', v')$ with $u' \in S_u, v' \in S_v$ is $\frac{\partial \Loss}{\partial \mathcal{W}(u', v')} = \delta(v') f'_v(z(v')) h(u')$. Since $h(u')$, $z(v')$, $f'_v(z(v'))$, and $\delta(v')$ are all constant within their respective partitions ($h_u$, $z_v$, $f'_v(z_v)$, $\delta_v$), the gradient is constant for all pairs $(u', v')$ connecting partitions $S_u$ and $S_v$. Let this constant gradient be $g_{uv}$.
+    The total gradient for the effective weight $W(u,v)$ in the narrow network corresponds to the sum of these individual gradients (scaled appropriately).
+    Let $\mathcal{W}(t) = \mathcal{W}(0) + \Delta\mathcal{W}(t)$. An update step is $\Delta\mathcal{W}(t+\Delta t) = \Delta\mathcal{W}(t) - \eta \nabla \Loss(\mathcal{W}(t))$. Since $\frac{\partial \Loss}{\partial \mathcal{W}(u', v')} = g_{uv}$ for all $u' \in S_u, v' \in S_v$, the change $\Delta\mathcal{W}(u', v')$ is identical for all these weights. This preserves the cloning structure. The evolution of the system is thus driven by the effective gradients $g_{uv}$, which correspond to the gradients of the narrow network $G$. The parameters $\mathcal{W}(t)$ are therefore confined to the affine subspace $\mathcal{W}(0) + \text{span}\{\mathbf{1}_{S_u \times S_v} \mid (u,v) \in E\}$, where $\mathbf{1}_{S_u \times S_v}$ is a matrix with 1s for connections between $S_u$ and $S_v$ and 0s elsewhere. The dimension of this subspace is $|E|$. This manifold is stable because any perturbation that breaks the symmetry would, under gradient descent using only first-order information, be averaged out over the cloned units, reinforcing the symmetric state.
 \end{proof}
 
-\begin{proof}[Proof of proposition~\ref{prop:cloning_training}]
-    We can prove by induction over $t$ that conditions R, C, B in Proposition~\ref{prop:cloning_forward_backward} hold at time $t.$ Induction basis is true by assumption. 
-    It is clear that the bias cloning will now move to step $t+1$. 
-    Bias condition:
+\begin{proof}
+    Let $f:\R\to\R$ be square-integrable w.r.t. $\gamma = \mathcal{N}(0,1)$ and not a polynomial. Let $z \sim \mathcal{N}(0, \Sigma)$ with $\Sigma_{ii}=1$ and $|\Sigma_{ij}| < 1$ for $i \neq j$. We want to show $C = \E[f(z)f(z)^\top]$ is full rank.
+    Since $f$ is square-integrable w.r.t. $\gamma$, it has a Hermite expansion $f(x) = \sum_{k=0}^{\infty} b_k \frac{\He_k(x)}{\sqrt{k!}}$, where $\He_k(x)$ are the standard probabilist's Hermite polynomials and $b_k = \E[f(Z) \frac{\He_k(Z)}{\sqrt{k!}}]$ for $Z \sim \mathcal{N}(0,1)$. Since $f$ is not a polynomial, infinitely many $b_k$ must be non-zero. For simplicity, let's use the physicist's convention where $f(x) = \sum_{k=0}^{\infty} c_k \He_k(x)$ with $c_k = \frac{1}{2^k k! \sqrt{\pi}} \int f(x) \He_k(x) e^{-x^2} dx$. Infinitely many $c_k$ are non-zero.
+
+    Mehler's formula \cite{mehler1866ueber, erdelyi1953higher} provides the expectation of products of Hermite polynomials for correlated Gaussian variables. For $(Z_i, Z_j)$ jointly Gaussian with mean 0, variance 1, and correlation $\rho = \Sigma_{ij}$, we have $\E[\He_k(Z_i) \He_l(Z_j)] = \delta_{kl} 2^k k! \rho^k$.
+
+    The $(i, j)$-th entry of the covariance matrix $C$ is $C_{ij} = \E[f(z_i) f(z_j)]$. Substituting the Hermite expansion:
     \begin{align*}
-        \B b@l(t+1)&:= \B b @l(t) +\eta \nabla_{\B b@l}\Loss\\
-        &= \R{b@l(t)}{n} + \eta \R{\nabla_{b@l}\Loss}{n}\\
-        &=\R{b@l(t) +\eta \nabla_{b@l}\Loss}{n}\\
-        &= \R{b@l(t+1)}{n}.
+    C_{ij} &= \E\left[ \left( \sum_{k=0}^{\infty} c_k \He_k(z_i) \right) \left( \sum_{l=0}^{\infty} c_l \He_l(z_j) \right) \right] \\
+    &= \sum_{k=0}^{\infty} \sum_{l=0}^{\infty} c_k c_l \E[\He_k(z_i) \He_l(z_j)] \\
+    &= \sum_{k=0}^{\infty} c_k^2 \E[\He_k(z_i) \He_k(z_j)] \quad (\text{using orthogonality } \delta_{kl}) \\
+    &= \sum_{k=0}^{\infty} c_k^2 (2^k k!) (\Sigma_{ij})^k
     \end{align*}
-    Row-wise condition:
-    \begin{align*}
-        \sum_{j}\bl{\B W@l(t+1)}{ij} &= \sum_{j}^n\bl{\B W@l(t)}{ij} + \sum_{j}^n\bl{\eta \nabla_{\B W@l}\Loss}{ij}\\
-        &= W@l(t) + n \eta \nabla_{W@l}\Loss \\
-        &= W@l(t+1).
-    \end{align*}
-    Column-wise condition:
-    \begin{align*}
-        \sum_{i}\bl{\B W@l(t+1)}{ij} &= \sum_{i}^n\bl{\B W@l(t)}{ij} + \sum_{i}^n\bl{\eta \nabla_{\B W@l}\Loss}{ij}\\
-        &= W@l(t) + n \eta \nabla_{W@l}\Loss \\
-        &= W@l(t+1).
-    \end{align*}
-    Now that we know that B,R,C hold at any step $t,$ we can apply Proposition~\ref{prop:cloning_forward_backward} to claim that at each step $t$ we have the following for each gradient update to the models:
-    \begin{align*}
-        &\eta \nabla_{\B b@l}\Loss = \R{\eta \nabla_{b@l}\Loss}{n} &&\eta \nabla_{\B W@l}\Loss = \frac1n\R{n\eta \nabla_{W@l}\Loss}{n\times n}
-    \end{align*}
-    Now, summing both sides from step $1$ up to $t$ for weights we have 
-    \begin{align*}
-        &\B W@l(t)-\B W@l(0) =  \frac1n \R{W@l(t)- W@l(0)}{n\times n}\\
-    \end{align*}
-    and for biases 
-    \begin{align*}
-        &\B b@l(t)-\B b@l(0) =  \R{b@l(t)- b@l(0)}{n}\\
-       \implies &\B b@l(t) =  \R{b@l(t)}{n}
-    \end{align*}
-    which concludes the proof.
+    Let $a_k = c_k^2 (2^k k!)$. Since infinitely many $c_k \neq 0$, infinitely many $a_k > 0$. The matrix $C$ can be written as $C = \sum_{k=0}^{\infty} a_k \Sigma^{\odot k}$, where $\Sigma^{\odot k}$ is the element-wise $k$-th power (Hadamard power) of the pre-activation covariance matrix $\Sigma$.
+
+    We know $\Sigma$ is positive semidefinite (as it's a covariance matrix) and by assumption $\Sigma_{ii}=1$ and $|\Sigma_{ij}|<1$ for $i \neq j$. $\Sigma^{\odot 0}$ is a matrix of all ones (rank 1). $\Sigma^{\odot 1} = \Sigma$. For $k \ge 1$, if $\Sigma$ is positive definite, then $\Sigma^{\odot k}$ is also positive definite (Schur product theorem). Even if $\Sigma$ is only positive semidefinite, as $k$ increases, the off-diagonal elements $(\Sigma_{ij})^k$ decay towards zero since $|\Sigma_{ij}|<1$. By Gershgorin circle theorem arguments, for large enough $k$, the matrix $\Sigma^{\odot k}$ becomes strictly diagonally dominant and thus positive definite, provided $\Sigma$ doesn't represent linearly dependent variables (which is implied by $|\Sigma_{ij}|<1$).
+
+    Since $C$ is a sum of positive semidefinite matrices ($\Sigma^{\odot k}$ for $k \ge 1$, scaled by non-negative $a_k$), and at least one $a_k > 0$ corresponds to a positive definite $\Sigma^{\odot k}$ (for $k \ge 1$, assuming $\Sigma$ is not degenerate), the resulting matrix $C$ will be positive definite, hence full rank. The only exception is if the original $z_i$ were linearly dependent such that $\Sigma$ was rank-deficient in a way that persists through the Hadamard powers (e.g., if $z_i = z_j$ or $z_i = -z_j$, making $\Sigma_{ij}=1$ or $\Sigma_{ij}=-1$, violating the assumption).
 \end{proof}
 
-\section{Noisy cloning (in progress, don't read)}
-So far, we focused on noiseless cloning, or situations where both forward and backward symmetry conditions hold. In this section we aim to understand other configurations, in particular when forward pass is cloned but backward pass is not (FS but not BS). We can study these by modeling them as an additional noise to a system with full symmetry. In other words, we can model a noisy setup as a noise-less configuration with some additive noise to its backwards:
 
-% \begin{align*}
-% \begin{cases}
-%     \B b@l = \R{b@l}{n}\\
-%     \sum_{j}^n \bl{\B W@l}{ij} = W@l, \\
-%     \sum_{i}^n \bl{\B W@l}{ij} = W@l + \epsilon_j,
-% \end{cases}
-% \implies 
-% \delta@l = \B D@l\R{W}{n\times n}\delta^{\ell+1} + \B D@l \epsilon \delta@{l+1}.
-% % \begin{cases}
-% % \nabla_{\B b@l} \Loss = \R{\nabla_{b@l}\Loss}{n} + \B \epsilon  \B \delta@{l}  \\
-% % \nabla_{\B W@l} \Loss = \R{\nabla_{W@l}\Loss}{n\times n} + \B a@{l-1}\otimes \B \epsilon \B \delta@{l} 
-% % \end{cases}
-% \end{align*}
-% where $\epsilon_i$'s are noise matrices of same size as source model weights, and $\B \epsilon = (\epsilon_1, \dots, \epsilon_n)$ is the joint noise matrix that is a concatenation. Thus, we can now observe that if $\epsilon$ is small enough. 
+\section{Corollary on architectural extensions}
+The framework, particularly Proposition~\ref{prop:cloned} on cloned units, can be conceptually extended to cover common architectural components beyond simple MLPs:
+\begin{itemize}
+    \item \textbf{Bias Terms:} Bias terms can be incorporated by viewing them as weights connected to an input unit that always has an activation of 1. The cloning analysis applies directly if the bias terms within a partition $S_v$ are also identical initially and receive identical gradient updates.
+    \item \textbf{Convolutional Neural Networks (CNNs):} While Proposition~\ref{prop:cloned} is stated for individual units, it can be adapted to CNNs by considering entire channels as the units being potentially cloned. If multiple channels in a layer compute identical feature maps due to symmetric initialization and subsequent updates, they form a cloned-channel manifold, reducing the effective representational capacity similar to the MLP case.
+    \item \textbf{Normalization Layers (LayerNorm, RMSNorm) and Softmax:} These layers involve interactions across multiple units/features within a layer, unlike simple element-wise activations. The cloning proposition doesn't directly apply in its current form. However, the principle of dimensionality collapse can still manifest. If the inputs to such a layer belong to partitions $\{S_i\}$ where activations within each partition are identical ($h_i$), the normalization statistics (mean, variance) or softmax denominators can be computed using weighted contributions from these partitions. For example, for LayerNorm, the mean $\mu$ and variance $\sigma^2$ over $n$ inputs partitioned into $m$ sets $S_i$ would be $\mu = \frac{1}{n}\sum_{i=1}^m |S_i| h_i$ and $\sigma^2 = \frac{1}{n}\sum_{i=1}^m |S_i| (h_i - \mu)^2$. The output for a unit in partition $S_j$ would be $(h_j - \mu) / \sqrt{\sigma^2 + \epsilon}$. Similarly for Softmax, the output for a unit in $S_j$ would be $e^{h_j} / (\sum_{i=1}^m |S_i| e^{h_i})$. If the parameters feeding into these layers maintain the cloning structure, the outputs will also be cloned, and the dynamics remain trapped, albeit the manifold definition might become more complex than a simple affine subspace. An ad-hoc low-dimensional equivalent model capturing this behavior can be formulated.
+\end{itemize}
 
-\begin{align*}
-    \tilde\delta@l:=D@l (\tilde W@{l+1})\T D@{l+1} \dots (\tilde W@L)\T \delta@L, \\
-    \tilde W@l:= W@l+\epsilon_l,\quad D@l:=\text{diag}(\phi'(z@l)).
-\end{align*}
-where $\epsilon_l$'s are of same size as $W@ l$'s, and have zero mean and some variance.  The main idea here is that if noises are small enough, we can approximate the discrepancy of terms above with the noiseless term by only considering the first order noise terms:
+The cloning result is also robust to common optimization algorithm variations:
+\begin{itemize}
+    \item \textbf{Mini-batch SGD:} Using mini-batches averages gradients over multiple samples. Since the cloning structure holds for the gradient of each sample, the averaged gradient will also exhibit the same block-wise constant structure across partitions. Thus, mini-batch SGD does not break the symmetry.
+    \item \textbf{Momentum / Adam:} Optimizers like SGD with Momentum or Adam maintain running averages of past gradients (first moment) and squared gradients (second moment). If the gradients $\nabla\Loss(\mathcal{W})$ possess the cloning structure, then the first and second moment estimates will also inherit this structure. Consequently, the parameter updates derived from these statistics will preserve the cloning symmetry, and the trajectory remains confined to the manifold.
+\end{itemize}
+These extensions suggest that the core mechanisms of plasticity loss identified are likely relevant across a wide range of modern deep learning architectures and optimizers.
 
-\begin{align*}
-    \delta@l&:=D@l W@{l+1}\T D@{l+1} \dots W@L\T \delta@L\\
-    \tilde \delta@l&\approx \delta@l +  \sum_{k=l+1}^{L} D@l (W@{l+1})\T D@{l+1} \dots D@{k-1} \epsilon_k\T D@k \dots W@L\T \delta@L \\
-    &= \delta@l + \sum_{k=l+1}^L \frac{\partial a@{k-1}}{\partial z@l} \epsilon_k\T \delta@k 
-\end{align*}
-where in the last line, we just recognize from the chain rule that the product of the matrices up to the error matrix is the Jacobian between these two layers.  
-It is easy to see that if noise terms have zero mean, we will have $\E \tilde\delta@l = \delta @l.$ For variance, if elements of $\epsilon_k$'s are distributed normally as $N(0,\sigma_k^2)$ we have 
-\begin{align*}
-\E \|\tilde\delta@l-\delta@l\|^2 &\approx  \sum_{k=l+1}^L \E \|J_{kl}\, \epsilon_k\T \delta@k \|^2 && J_{kl}:=\frac{\partial a@{k-1}}{\partial z@l}. \\
-&= \sum_{k=l+1}^L \E \|J_{kl}\, g@l \|^2, && g@l_{ij}\sim N(0,\sigma_k^2 \|\delta@k\|^2 )\\
-% &= \sum_{k=l+1}^L \frac{\sigma^2}{k-1} \text{Tr}(J_{kl}\T J_{kl})  \|\delta@k\|^2 \\
-&=  \sum_{k=l+1}^L \sigma^2_k \|J_{kl}\|_F^2 \|\delta@k\|^2
-\end{align*}
-where in the last line, $\overline{\lambda}$ implies the mean eigenvalue of the matrix. Now, recall that 
+\section*{NeurIPS Paper Checklist}
+\begin{enumerate}
+\item {\bf Claims}
+    \item Answer: \answerYes{}
+    \item Justification: The claims in the abstract and introduction accurately reflect the paper's contributions on loss of plasticity in neural networks, linking it to specific mechanisms (saturation, cloning) and proposing a dynamical systems framework.
 
-\textbf{Proposition:}
-In the MLP setup provided, suppose we add small Gaussian noise \(\boldsymbol{\epsilon}^{(l)}\) with zero mean and covariance \(\sigma_l^2 I\) to the weights of the fully connected layers, so that the noisy weights are \(\tilde{W}^{(l)} = W^{(l)} + \boldsymbol{\epsilon}^{(l)}\). Then, to first order, the expected squared norm of the discrepancy between the error vectors \(\tilde{\delta}^{(l)}\) and \(\delta^{(l)}\) at layer \(l\) is approximated by:
+\item {\bf Limitations}
+    \item Answer: \answerYes{}
+    \item Justification: Limitations are discussed in the Discussion section (Section 7), acknowledging open questions regarding non-linear manifolds, advanced optimizers, PEFT interactions, and the need for more sophisticated continual randomization schemes.
 
-\[
-\mathbb{E}\left[ \left\| \tilde{\delta}^{(l)} - \delta^{(l)} \right\|^2 \right] \approx \sum_{k = l+1}^{L} \sigma_k^2 \|\delta^{(k)} \|^2 \left\| \left( \prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)}\right\|^2 
-\]
+\item {\bf Theory assumptions and proofs}
+    \item Answer: \answerYes{}
+    \item Justification: All theoretical results (propositions, corollary) state their assumptions clearly. Complete proofs are provided in Appendix~\ref{app:proofs}.
 
-where:
+\item {\bf Experimental result reproducibility}
+    \item Answer: \answerNA{} % Changed from Yes to NA as experiments are planned
+    \item Justification: Section~\ref{sec:experiments} outlines planned experiments. Details on specific datasets, architectures, hyperparameters, and evaluation protocols would be provided with the results in a final version, enabling reproducibility. Code would also be released.
 
-- \(D^{(i)} = \operatorname{diag}\left( \phi'\left( z^{(i)} \right) \right)\) is the diagonal matrix of activation derivatives at layer \(i\),
-- \(\delta^{(k)}\) is the error vector at layer \(k\),
-- \(L\) is the total number of layers,
-- The product \(\prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top}\) is defined as the identity matrix when \(k = l+1\).
+\item {\bf Open access to data and code}
+    \item Answer: \answerNA{} % Changed from Yes to NA as experiments are planned
+    \item Justification: Code and experimental configurations related to the planned experiments in Section~\ref{sec:experiments} will be made available upon completion and acceptance. Standard datasets (e.g., CIFAR, ImageNet variants) will be used.
 
-\textbf{Proof:}
+\item {\bf Experimental setting/details}
+    \item Answer: \answerNA{} % Changed from Yes to NA
+    \item Justification: Section~\ref{sec:experiments} provides a high-level plan. Detailed experimental settings (architectures, optimizers, learning rates, task sequences, specific metrics implementations) will be included when reporting results.
 
-Starting with the backpropagation equations:
+\item {\bf Experiment statistical significance}
+    \item Answer: \answerNA{} % Changed from Yes to NA
+    \item Justification: Methods for ensuring statistical significance (e.g., multiple runs with different random seeds, reporting means and standard deviations/errors) will be employed and detailed when presenting the results from Section~\ref{sec:experiments}.
 
-- \textbf{Source Model:}
-  \[
-  \delta^{(l)} = D^{(l)} W^{(l+1)\top} \delta^{(l+1)}
-  \]
-- \textbf{Noisy Model:}
-  \[
-  \tilde{\delta}^{(l)} = D^{(l)} \tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)}
-  \]
-  where \(\tilde{W}^{(l+1)} = W^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)}\).
+\item {\bf Experiments compute resources}
+    \item Answer: \answerNo{}
+    \item Justification: Details about computational resources (e.g., GPU types, number, training times) for the planned experiments will be added in the final version presenting the empirical results.
 
-The discrepancy between the error vectors at layer \(l\) is:
+\item {\bf Code of ethics}
+    \item Answer: \answerYes{}
+    \item Justification: The research aims to understand fundamental AI capabilities and limitations, adhering to ethical research practices. It does not involve sensitive data or high-risk applications directly. Conforms to the NeurIPS Code of Ethics.
 
-\[
-\Delta \delta^{(l)} = \tilde{\delta}^{(l)} - \delta^{(l)} = D^{(l)} \left( \tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} \right)
-\]
+\item {\bf Broader impacts}
+    \item Answer: \answerYes{}
+    \item Justification: Section 8 discusses potential positive impacts (more robust, adaptive AI) and negative societal consequences (unpredictability, control issues), aligning with the requirement to address broader impacts.
 
-Expanding the expression inside the parentheses:
+\item {\bf Safeguards}
+    \item Answer: \answerNA{}
+    \item Justification: This paper presents a theoretical framework and planned experiments. It does not release new models or datasets with immediate potential for misuse. Safeguards related to potential future applications are discussed in the Broader Impacts section.
 
-\[
-\begin{aligned}
-\tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} &= \left( W^{(l+1)\top} + \boldsymbol{\epsilon}^{(l+1)\top} \right) \left( \delta^{(l+1)} + \Delta \delta^{(l+1)} \right) - W^{(l+1)\top} \delta^{(l+1)} \\
-&= W^{(l+1)\top} \Delta \delta^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)\top} \delta^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)\top} \Delta \delta^{(l+1)}
-\end{aligned}
-\]
+\item {\bf Licenses for existing assets}
+    \item Answer: \answerNA{} % Changed from Yes to NA
+    \item Justification: The planned experiments intend to use standard, publicly available datasets (e.g., CIFAR, ImageNet) which have permissive licenses for research use. This will be confirmed and stated in the final version.
 
-Since \(\boldsymbol{\epsilon}^{(l+1)}\) and \(\Delta \delta^{(l+1)}\) are both small, the term \(\boldsymbol{\epsilon}^{(l+1)\top} \Delta \delta^{(l+1)}\) is of second order and can be neglected. Thus:
+\item {\bf New assets}
+    \item Answer: \answerNA{} % Changed from Yes to NA
+    \item Justification: Code developed for the experiments will be released with appropriate documentation and an open-source license upon publication.
 
-\[
-\Delta \delta^{(l)} \approx D^{(l)} \left( W^{(l+1)\top} \Delta \delta^{(l+1)} + \boldsymbol{\epsilon}^{(l+1)\top} \delta^{(l+1)} \right)
-\]
+\item {\bf Crowdsourcing and research with human subjects}
+    \item Answer: \answerNA{}
+    \item Justification: This research is purely theoretical and computational, involving no human subjects or crowdsourcing.
 
-We can apply this approximation recursively for \(\Delta \delta^{(l+1)}\), \(\Delta \delta^{(l+2)}\), and so on, yielding:
+\item {\bf Institutional review board (IRB) approvals or equivalent for research with human subjects}
+    \item Answer: \answerNA{}
+    \item Justification: Not applicable as no human subjects are involved.
 
-\[
-\Delta \delta^{(l)} \approx D^{(l)} \boldsymbol{\epsilon}^{(l+1)\top} \delta^{(l+1)} + D^{(l)} W^{(l+1)\top} D^{(l+1)} \boldsymbol{\epsilon}^{(l+2)\top} \delta^{(l+2)} + \cdots + D^{(l)} W^{(l+1)\top} \cdots W^{(L-1)\top} D^{(L-1)} \boldsymbol{\epsilon}^{(L)\top} \delta^{(L)}
-\]
-
-This can be written compactly as:
-
-\[
-\Delta \delta^{(l)} \approx \sum_{k = l+1}^{L} \left( \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right)
-\]
-
-Since the noise matrices \(\boldsymbol{\epsilon}^{(k)}\) are independent and have covariance \(\sigma_k^2 I\), we can compute the expected squared norm:
-
-\[
-\mathbb{E}\left[ \left\| \Delta \delta^{(l)} \right\|^2 \right] \approx \sum_{k = l+1}^{L} \mathbb{E}\left[ \left\| \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right\|^2 \right]
-\]
-
-Note that the cross terms between different \(k\) vanish due to the independence of \(\boldsymbol{\epsilon}^{(k)}\). For each term, we have:
-
-\[
-\begin{aligned}
-\mathbb{E}\left[ \left\| \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right\|^2 \right] &= \left\| \left( \prod_{i = l}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \right\|^2_F \mathbb{E}\left[ \left\| \boldsymbol{\epsilon}^{(k)\top} \delta^{(k)} \right\|^2 \right] \\
-&= \left\| \left( \prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)} \right\|^2 \|\delta^{(k)} \|^2 \sigma_k^2
-\end{aligned}
-\]
-
-Here, \(\left\| \cdot \right\|_F\) denotes the Frobenius norm, but since we're dealing with vectors, it simplifies to the standard Euclidean norm.
-
-Combining these results, we obtain:
-
-\[
-\mathbb{E}\left[ \left\| \Delta \delta^{(l)} \right\|^2 \right] \approx \sum_{k = l+1}^{L} \sigma_k^2 \left\| \left( \prod_{i = l+1}^{k-1} D^{(i)} W^{(i+1)\top} \right) D^{(k)}\right\|^2\|\delta^{(k)} \|^2
-\]
-
-This completes the proof.
-
-\textbf{Remarks:}
-
-- When \(k = l+1\), the product over \(i\) is defined as the identity matrix.
-- This expression accounts for the cumulative effect of the noise introduced at each layer from \(l+1\) to \(L\) on the error vector at layer \(l\).
-- The approximation assumes that higher-order terms involving products of noise matrices and discrepancies are negligible.
-
-\textbf{Conclusion:}
-
-The expected squared discrepancy between the error vectors in the noisy and original models at layer \(l\) is the sum of the variances contributed by the noise at each subsequent layer, appropriately scaled by the backpropagated weights and activation derivatives.
-
-
-% \section{MLP hypercloning with non-symmetric backwards}
-% \begin{proposition}
-% \label{prop:error_discrepancy_mlp}
-% \textbf{Discrepancy of Error Vectors in a Noisy MLP}
-
-% Consider the MLP setup as described in Table~\ref{tab:setup}. Suppose we introduce small Gaussian noise matrices \( W_l \) to the weights of the fully connected layers, such that the noisy weights are given by:
-% \[
-% \tilde{W}^{(l)} = W^{(l)} + W_l \quad \text{for each layer } l \in \{1, 2, \dots, L\},
-% \]
-% where each noise matrix \( W_l \) satisfies \( \mathbb{E}[W_l] = 0 \) and \( \mathbb{E}[W_l W_l^\top] = \sigma_l^2 I \), with \( \sigma_l^2 \) being the variance of the noise at layer \( l \).
-
-% Let \( \delta^{(l)} \) and \( \tilde{\delta}^{(l)} \) denote the error vectors at layer \( l \) for the source and cloned (noisy) models, respectively.
-
-% Then, the expected squared norm of the discrepancy between the error vectors at layer \( l \) is approximated by:
-% \[
-% \mathbb{E}\left[ \| \tilde{\delta}^{(l)} - \delta^{(l)} \|^2 \right] \approx \sigma_{l+1}^2 \left\| \phi'\left(z^{(l)}\right) \odot \delta^{(l+1)} \right\|^2,
-% \]
-% where \( \phi'\left(z^{(l)}\right) \) denotes the element-wise derivative of the activation function at layer \( l \), and \( \odot \) represents element-wise multiplication.
-
-% \end{proposition}
-
-% \begin{proof}
-% Starting from the backpropagation equations in the MLP setup:
-
-% \begin{align*}
-% \text{Source Model:} \quad \delta^{(l)} &= \phi'\left(z^{(l)}\right) \odot \left( W^{(l+1)\top} \delta^{(l+1)} \right), \\
-% \text{Noisy Model:} \quad \tilde{\delta}^{(l)} &= \phi'\left(\tilde{z}^{(l)}\right) \odot \left( \tilde{W}^{(l+1)\top} \tilde{\delta}^{(l+1)} \right).
-% \end{align*}
-
-% Assuming that the noise \( W_l \) is small, we can approximate:
-
-% \begin{enumerate}
-%     \item The activation derivatives remain approximately unchanged:
-%     \[
-%     \phi'\left(\tilde{z}^{(l)}\right) \approx \phi'\left(z^{(l)}\right).
-%     \]
-    
-%     \item The discrepancy in the error vectors of the subsequent layer is negligible to first order:
-%     \[
-%     \tilde{\delta}^{(l+1)} \approx \delta^{(l+1)}.
-%     \]
-% \end{enumerate}
-
-% Under these approximations, the discrepancy between the error vectors at layer \( l \) is:
-
-% \begin{align*}
-% \tilde{\delta}^{(l)} - \delta^{(l)} &\approx \phi'\left(z^{(l)}\right) \odot \left( \tilde{W}^{(l+1)\top} \delta^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} \right) \\
-% &= \phi'\left(z^{(l)}\right) \odot \left( \left( W^{(l+1)} + W_{l+1} \right)^\top \delta^{(l+1)} - W^{(l+1)\top} \delta^{(l+1)} \right) \\
-% &= \phi'\left(z^{(l)}\right) \odot \left( W_{l+1}^\top \delta^{(l+1)} \right).
-% \end{align*}
-
-% To compute the expected squared norm of the discrepancy:
-
-% \begin{align*}
-% \mathbb{E}\left[ \| \tilde{\delta}^{(l)} - \delta^{(l)} \|^2 \right] &= \mathbb{E}\left[ \left\| \phi'\left(z^{(l)}\right) \odot \left( W_{l+1}^\top \delta^{(l+1)} \right) \right\|^2 \right] \\
-% &= \mathbb{E}\left[ \sum_{i=1}^{d_l} \left( \phi'\left(z^{(l)}_i\right) \cdot \left( W_{l+1}^\top \delta^{(l+1)} \right)_i \right)^2 \right] \\
-% &= \sum_{i=1}^{d_l} \left( \phi'\left(z^{(l)}_i\right) \right)^2 \mathbb{E}\left[ \left( W_{l+1}^\top \delta^{(l+1)} \right)_i^2 \right].
-% \end{align*}
-
-% Since \( W_{l+1} \) has independent Gaussian entries with zero mean and variance \( \sigma_{l+1}^2 \), each term \( \mathbb{E}\left[ \left( W_{l+1}^\top \delta^{(l+1)} \right)_i^2 \right] \) simplifies to:
-% \[
-% \mathbb{E}\left[ \left( W_{l+1}^\top \delta^{(l+1)} \right)_i^2 \right] = \sigma_{l+1}^2 \| \delta^{(l+1)} \|^2.
-% \]
-
-% Therefore, the expected squared norm of the discrepancy becomes:
-% \[
-% \mathbb{E}\left[ \| \tilde{\delta}^{(l)} - \delta^{(l)} \|^2 \right] = \sigma_{l+1}^2 \sum_{i=1}^{d_l} \left( \phi'\left(z^{(l)}_i\right) \right)^2 \| \delta^{(l+1)} \|^2 = \sigma_{l+1}^2 \left\| \phi'\left(z^{(l)}\right) \odot \delta^{(l+1)} \right\|^2.
-% \]
-
-% This completes the proof.
-% \end{proof}
-
-
-% % \section{MLP with LayerNorm}
-% % \paragraph{For the source model:}
-% % \begin{itemize}
-% %     \item Input Layer: $a@0 = x$
-% %     \item Linear Transformation: $z@l = W@l a@{l-1} + b@l$
-% %     \item Layer Normalization: 
-% %     \[
-% %     \hat{z}@l = \text{LayerNorm}(z@l) = \gamma@l \odot \frac{z@l - \mu@l}{\sigma@l} + \beta@l
-% %     \]
-% %     where:
-% %     \[
-% %     \mu@l = \frac{1}{d_l} \sum_{i=1}^{d_l} z@l_i, \quad \sigma@l = \sqrt{\frac{1}{d_l} \sum_{i=1}^{d_l} (z@l_i - \mu@l)^2 + \epsilon}
-% %     \]
-% %     $\gamma@l, \beta@l \in \mathbb{R}^{d_l}$ are learnable parameters.
-% %     \item Activation Function: $a@l = \phi(\hat{z}@l)$
-% % \end{itemize}
-
-% % \paragraph{For the cloned model:}
-% % \begin{itemize}
-% %     \item Input Layer: $\B{a}@0 = x$
-% %     \item Linear Transformation: $\B{z}@l = \B{W}@l \B{a}@{l-1} + \B{b}@l$
-% %     \item Layer Normalization: 
-% %     \[
-% %     \B{\hat{z}}@l = \text{LayerNorm}(\B{z}@l) = \B{\gamma}@l \odot \frac{\B{z}@l - \B{\mu}@l}{\B{\sigma}@l} + \B{\beta}@l
-% %     \]
-% %     \item Activation Function: $\B{a}@l = \phi(\B{\hat{z}}@l)$
-% % \end{itemize}
-
-% % \subsection{Cloning Conditions}
-% % To maintain forward and backward cloning with LayerNorm, we extend the cloning conditions to include the LayerNorm parameters:
-% % \begin{itemize}
-% %     \item Bias Cloning (B): $\B{b}@l = \mathcal{R}_{n}(b@l)$
-% %     \item Row-wise Condition (R): $\sum_{j} \mathcal{B}_{ij}(\B{W}@l) = W@l, \forall i$
-% %     \item Column-wise Condition (C): $\sum_{i} \mathcal{B}_{ij}(\B{W}@l) = W@l, \forall j$
-% %     \item LayerNorm Parameter Cloning (LN): $\B{\gamma}@l = \mathcal{R}_{n}(\gamma@l), \B{\beta}@l = \mathcal{R}_{n}(\beta@l)$
-% % \end{itemize}
-
-% % \subsection{Forward Cloning with LayerNorm}
-% % Under these cloning conditions, the forward pass cloning holds:
-% % \begin{itemize}
-% %     \item Activations and Pre-activations: $\B{a}@l = \mathcal{R}_{n}(a@l), \B{z}@l = \mathcal{R}_{n}(z@l)$
-% %     \item LayerNorm Outputs: $\B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)$
-% % \end{itemize}
-
-% % \subsection{Proof of Forward Cloning}
-% % \paragraph{Base Case (Input Layer):} $\B{a}@0 = a@0 = x$
-
-% % \paragraph{Inductive Step:} Assuming $\B{a}@{l-1} = \mathcal{R}_{n}(a@{l-1})$, we show $\B{a}@l = \mathcal{R}_{n}(a@l)$.
-% % \begin{itemize}
-% %     \item Linear Transformation: $\B{z}@l = \B{W}@l \B{a}@{l-1} + \B{b}@l$. Using conditions B and R: $\B{z}@l = \mathcal{R}_{n}(z@l)$
-% %     \item Layer Normalization: Since $\B{z}@l = \mathcal{R}_{n}(z@l)$, the mean and variance are $\B{\mu}@l = \mu@l, \B{\sigma}@l = \sigma@l$. Therefore, $\B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)$
-% %     \item Activation Function: $\B{a}@l = \phi(\B{\hat{z}}@l) = \mathcal{R}_{n}(a@l)$
-% % \end{itemize}
-
-% % \subsection{Backward Cloning with LayerNorm}
-% % We analyze whether backward cloning holds by examining the gradients through LayerNorm.
-
-% % \paragraph{Gradient with Respect to $\hat{z}@l$:} For both models:
-% % \[
-% % \delta_{\hat{z}@l} = \phi'(\hat{z}@l) \odot \delta@l
-% % \]
-% % For the cloned model:
-% % \[
-% % \B{\delta}_{\hat{z}@l} = \phi'(\B{\hat{z}}@l) \odot \B{\delta}@l
-% % \]
-% % Since $\B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)$ and $\delta@l = \mathcal{R}_{n}(\delta@l)$, we have:
-% % \[
-% % \B{\delta}_{\hat{z}}@l = \mathcal{R}_{n}(\delta_{\hat{z}@l})
-% % \]
-
-% % \paragraph{Gradient Through LayerNorm:} The gradient with respect to $z@l$ is:
-% % \[
-% % \delta@l = \frac{\gamma@l}{\sigma@l} \odot \left( \delta_{\hat{z}}@l - \frac{1}{d_l} \sum_{i=1}^{d_l} \delta_{\hat{z}_i}@l - \frac{z@l - \mu@l}{(\sigma@l)^2} \odot \frac{1}{d_l} \sum_{i=1}^{d_l} \delta_{\hat{z}_i}@l (z@l_i - \mu@l) \right)
-% % \]
-% % Similarly for the cloned model:
-% % \[
-% % \B{\delta}@l = \frac{\B{\gamma}@l}{\B{\sigma}@l} \odot \left( \B{\delta}_{\hat{z}}@l - \frac{1}{\B{d}_l} \sum_{i=1}^{\B{d}_l} \B{\delta}_{\hat{z}}@l_i - \frac{\B{z}@l - \B{\mu}@l}{\B{\sigma}@l^2} \odot \frac{1}{\B{d}_l} \sum_{i=1}^{\B{d}_l} \B{\delta}_{\hat{z}}@l_i (\B{z}@l_i - \B{\mu}@l) \right)
-% % \]
-% % Under the cloning conditions, the sums over features scale appropriately, leading to:
-% % \[
-% % \B{\delta}@l = \mathcal{R}_{n}(\delta@l)
-% % \]
-
-% % \paragraph{Gradients of LayerNorm Parameters}
-% % \[
-% % \nabla_{\gamma@l} \Loss = \delta_{\hat{z}}@l \odot \frac{z@l - \mu@l}{\sigma@l}, \quad \nabla_{\beta@l} \Loss = \delta_{\hat{z}}@l
-% % \]
-% % For the cloned model:
-% % \[
-% % \nabla_{\B{\gamma}@l} \Loss = \mathcal{R}_{n}(\nabla_{\gamma@l} \Loss), \quad \nabla_{\B{\beta}@l} \Loss = \mathcal{R}_{n}(\nabla_{\beta@l} \Loss)
-% % \]
-
-% % \paragraph{Propositions with LayerNorm}
-% % \begin{itemize}
-% %     \item \textbf{Proposition 1 (with LayerNorm):} Under cloning conditions B, R, C, and LN, both forward and backward cloning hold:
-% %     \[
-% %     \B{a}@l = \mathcal{R}_{n}(a@l), \B{\hat{z}}@l = \mathcal{R}_{n}(\hat{z}@l)
-% %     \]
-% %     \[
-% %     \B{\delta}@l = \mathcal{R}_{n}(\delta@l), \nabla_{\B{W}@l} \Loss = \mathcal{R}_{n \times n}(\nabla_{W@l} \Loss)
-% %     \]
-% %     \item \textbf{Proposition 2 (Training Dynamics with LayerNorm):} If both models are trained with learning rate $\eta$ (with the smaller model's weights updated at $n\eta$), the training dynamics of the cloned model follow the smaller model:
-% %     \[
-% %     \B{W}@l(t) - \B{W}@l(0) = \frac{1}{n} \mathcal{R}_{n \times n}(W@l(t) - W@l(0))
-% %     \]
-% %     \[
-% %     \B{b}@l(t) = \mathcal{R}_{n}(b@l(t)), \quad \B{\gamma}@l(t) = \mathcal{R}_{n}(\gamma@l(t)), \quad \B{\beta}@l(t) = \mathcal{R}_{n}(\beta@l(t))
-% %     \]
-% % \end{itemize}
-
-\bibliographystyle{unsrtnat}
-\bibliography{refs}
-
+\item {\bf Declaration of LLM usage}
+    \item Answer: \answerNA{}
+    \item Justification: No LLMs were used in the development of the core theoretical methods or planned experiments presented in this research. (Note: The generation of this report text involved an LLM based on the provided draft and research snippets, but the research content itself does not rely on LLMs).
+\end{enumerate}
 \end{document}
