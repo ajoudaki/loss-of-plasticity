@@ -384,6 +384,17 @@ def generate_class_sequence(cfg: DictConfig, num_classes: int) -> List[List[int]
         tasks = cfg.task.tasks
         classes_per_task = cfg.task.classes_per_task
         
+        # if tasks and classes_per_task are not provided, assume we have one task and all classes in it 
+        if tasks is None and classes_per_task is None:
+            tasks = 1
+            classes_per_task = num_classes
+        elif tasks is None:
+            # set tasks to the ceiling of num_classes / classes_per_task
+            tasks = (num_classes + classes_per_task - 1) // classes_per_task
+        elif classes_per_task is None:
+            # set classes_per_task to the ceiling of num_classes / tasks
+            classes_per_task = (num_classes + tasks - 1) // tasks
+        
         # Ensure we have enough tasks for all classes
         if tasks is None:
             tasks = num_classes // classes_per_task
@@ -391,13 +402,10 @@ def generate_class_sequence(cfg: DictConfig, num_classes: int) -> List[List[int]
         # Get all class IDs
         all_class_ids = list(range(num_classes))
         
-        # Shuffle class IDs if random seed is provided and not zero
-        seed = getattr(cfg.training, 'seed', 0)
-        if seed != 0:
-            # Set random seed for reproducibility
-            random.seed(seed)
-            random.shuffle(all_class_ids)
-            print(f"Shuffled class IDs with seed {seed}: {all_class_ids}")
+        # Shuffle class IDs 
+        random.seed(cfg.training)
+        random.shuffle(all_class_ids)
+        print(f"Shuffled class IDs with seed {cfg.training}: {all_class_ids}")
         
         # Create class sequence
         return [
