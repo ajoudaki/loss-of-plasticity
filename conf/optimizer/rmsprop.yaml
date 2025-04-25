@@ -6,4 +6,4 @@ alpha: 0.99  # Default RMSprop alpha (smoothing constant)
 eps: 1e-8  # Default RMSprop epsilon
 momentum: 0.0  # Default RMSprop momentum
 centered: false  # Default RMSprop centered
-reinit_optimizer: false  # Flag for reinitializing optimizer
+reinit_optimizer: true  # Flag for reinitializing optimizer
