@@ -122,12 +122,21 @@ python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.c
 - `optimizer=sgd`: Stochastic Gradient Descent
 - `optimizer=rmsprop`: RMSProp optimizer
 
+#### Training Types
+- `training=standard`: Standard training (default)
+- `training=continual`: Continual learning with multiple tasks
+- `training=cloning`: Neural network cloning experiments
+
 #### Training Settings
-- `training.epochs_per_task`: Number of epochs per task
+- `training.epochs_per_task`: Number of epochs per task (continual learning)
+- `training.initial_epochs`: Number of epochs to train the base model (cloning)
+- `training.epochs_per_expansion`: Number of epochs to train each expanded model (cloning)
+- `training.expansion_factor`: Factor to expand model size by (cloning)
+- `training.num_expansions`: Number of expansion cycles to perform (cloning)
 - `training.batch_size`: Batch size for training
 - `training.seed`: Random seed for reproducibility
 
-#### Task Settings
+#### Task Settings (Continual Learning)
 - `task.tasks`: Number of tasks in the continual learning sequence
 - `task.classes_per_task`: Number of classes per task
 
@@ -135,11 +144,92 @@ python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.c
 - `logging.use_wandb=true`: Enable Weights & Biases logging
 - `logging.wandb_project="your-project"`: Set the W&B project name
 
+## Neural Network Cloning Experiments
+
+This project includes support for neural network cloning experiments, where neurons/channels in a network are duplicated to study the effects of feature duplication on network plasticity and learning dynamics.
+
+### Conceptual Overview
+
+Neural network cloning experiments investigate the hypothesis that as networks grow through parameter duplication, they may experience a loss of plasticity and struggle to learn new features effectively. This phenomenon occurs because duplicated neurons/channels create redundant features that constrain weight evolution, leading to:
+
+1. **Representation Collapse**: Duplicated features create a lower-dimensional manifold in parameter space that the network has difficulty escaping
+2. **Reduced Effective Rank**: Despite having more parameters, the effective dimensionality of network representations may remain constrained
+3. **Alignment Dynamics**: Over time, duplicated neurons may either specialize (diverge) or remain aligned (converge)
+
+### Running Cloning Experiments
+
+Cloning experiments proceed in two phases:
+1. Train a base model for a configurable number of epochs
+2. Create an expanded model by duplicating neurons/channels
+3. Continue training both models to compare learning trajectories
+
+#### Using the Helper Script
+
+The repository includes a helper script for running cloning experiments with predefined configurations:
+
+```bash
+# Make the script executable (if needed)
+chmod +x scripts/run_cloning_experiment.sh
+
+# Basic MLP experiment on MNIST (default)
+./scripts/run_cloning_experiment.sh mlp-mnist
+
+# CNN experiment on CIFAR-10
+./scripts/run_cloning_experiment.sh cnn-cifar10
+
+# ResNet experiment on CIFAR-10
+./scripts/run_cloning_experiment.sh resnet-cifar10
+
+# Vision Transformer experiment
+./scripts/run_cloning_experiment.sh vit-cifar10
+
+# Multiple expansion cycles (2x expansion three times = 8x total)
+./scripts/run_cloning_experiment.sh multi-expansion
+
+# View all available options
+./scripts/run_cloning_experiment.sh --help
+```
+
+You can also edit the script's `custom` option to create your own experiment configuration.
+
+#### Using Direct Commands
+
+Here are example commands for running various cloning experiments directly:
+
+```bash
+# Basic MLP cloning experiment with MNIST
+python scripts/run_experiment.py training=cloning model=mlp dataset=mnist
+
+# CNN cloning experiment with CIFAR-10, double size
+python scripts/run_experiment.py training=cloning model=cnn dataset=cifar10 training.expansion_factor=2
+
+# Multiple expansion cycles with ResNet (2x expansion twice = 4x total)
+python scripts/run_experiment.py training=cloning model=resnet dataset=cifar10 \
+  training.initial_epochs=30 training.epochs_per_expansion=30 training.num_expansions=2
+
+# Vision Transformer (ViT) with custom expansion parameters
+python scripts/run_experiment.py training=cloning model=vit dataset=cifar100 \
+  training.initial_epochs=50 training.epochs_per_expansion=50 training.expansion_factor=3
+  
+# Track activation similarity and alignment metrics
+python scripts/run_experiment.py training=cloning model=mlp dataset=mnist \
+  metrics.metrics_frequency=1 logging.use_wandb=true
+```
+
+### Key Metrics for Cloning Experiments
+
+In addition to standard training metrics (loss, accuracy), cloning experiments track specialized metrics to analyze the behavior of duplicated features:
+
+- **Activation Similarity**: Cosine similarity between original and duplicated features (higher values indicate more redundancy)
+- **Feature Alignment**: Measures the consistency of duplicated features (high alignment suggests they remain functionally similar)
+- **Effective Rank**: Tracks how many independent dimensions the network effectively uses, despite having more parameters
+
 ## Key Features
 
 - **Modular Architecture**: Easily swap between different neural network models
 - **Dynamic Analysis**: Track metrics like weight norms, gradient magnitudes, and activation patterns
 - **Continual Learning Framework**: Evaluate how networks adapt to sequences of tasks
+- **Neural Network Cloning**: Study the effects of parameter duplication on plasticity and learning
 - **Visualization Tools**: Plot learning trajectories, forgetting curves, and network dynamics
 - **Configuration System**: Hydra-based configuration for reproducible experiments
 - **Type Safety**: Structured configs with dataclasses providing validation and type checking

@@ -8,5 +8,5 @@ gaussianity_method: "shapiro"  # Options: "shapiro", "ks", "anderson", "kurtosis
 log_activation_histograms: true
 # List of string patterns to filter which layers to monitor
 # If empty, all layers will be monitored
-# Example: ["linear", ".mlp", "fc"] would only monitor linear, mlp, and fully connected layers
-monitor_filters: []
+# For cloning experiments, we need to monitor hidden layers
+monitor_filters: ["hidden_layers", "linear", "fc", "conv"]
