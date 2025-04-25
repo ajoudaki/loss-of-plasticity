@@ -15,3 +15,5 @@ pool_size: 2
 use_batchnorm: true
 norm_after_activation: false
 normalization_affine: true
+
+# Default configuration uses empty filters (all layers monitored)

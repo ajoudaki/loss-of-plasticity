@@ -10,3 +10,5 @@ normalization: batch
 norm_after_activation: false
 bias: true
 normalization_affine: true
+
+# Default configuration uses empty filters (all layers monitored)

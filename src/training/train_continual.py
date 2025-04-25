@@ -4,6 +4,7 @@ import wandb
 from collections import defaultdict
 from omegaconf import DictConfig
 from typing import Dict, Any, Optional
+import re
 
 from ..utils.monitor import NetworkMonitor
 from .eval import evaluate_model
@@ -38,12 +39,44 @@ def train_continual_learning(model,
     log_activation_histograms = cfg.metrics.log_activation_histograms
 
     # Create module filter function
-    # def module_filter(name):
-    #     return 'linear' in name or '.mlp' in name or 'fc' in name or name.endswith('.proj')
+    def create_module_filter(filters, model_name):
+        if not filters:
+            # If no filters, monitor all layers
+            return lambda name: True
+        
+        if 'block_outputs' in filters:
+            if model_name.lower() == 'resnet':
+                # For ResNet: monitor main layers and direct block outputs, but not their internals
+                def resnet_filter(name):
+                    # Match direct block layers (layer1_block0) but not internals with layers.
+                    if re.search(r'layer\d+_block\d+$', name):
+                        return True
+                    # Also include other main model components
+                    if name in ['conv1', 'bn1', 'activation', 'avgpool', 'flatten', 'dropout', 'fc']:
+                        return True
+                    return False
+                return resnet_filter
+            
+            elif model_name.lower() == 'vit':
+                # For ViT: monitor main layers and direct block outputs, but not their internals
+                def vit_filter(name):
+                    # Match direct block references (block_0) but not internals
+                    if re.search(r'block_\d+$', name):
+                        return True
+                    # Also include other main model components
+                    if name in ['patch_embed', 'pos_drop', 'norm', 'head']:
+                        return True
+                    return False
+                return vit_filter
+        
+        # Default case: match any of the provided filters
+        return lambda name: any(f in name for f in filters)
+    
+    module_filter = create_module_filter(cfg.metrics.monitor_filters, cfg.model.name)
     
     # For monitoring metrics
-    train_monitor = NetworkMonitor(model, )
-    val_monitor = NetworkMonitor(model, )
+    train_monitor = NetworkMonitor(model, module_filter)
+    val_monitor = NetworkMonitor(model, module_filter)
     
     # History tracking
     history = {

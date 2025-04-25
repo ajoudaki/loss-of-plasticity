@@ -14,3 +14,5 @@ attn_drop_rate: 0.1
 activation: gelu
 normalization: layer
 normalization_affine: true
+
+# Will use vit_metrics configuration from metrics/vit.yaml

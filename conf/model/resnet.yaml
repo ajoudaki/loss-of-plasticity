@@ -10,3 +10,5 @@ dropout_p: 0.1
 use_batchnorm: true
 norm_after_activation: false
 normalization_affine: true
+
+# Will use resnet_metrics configuration from metrics/resnet.yaml
