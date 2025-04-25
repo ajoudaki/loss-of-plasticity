@@ -126,7 +126,6 @@ python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.c
 - `training.epochs_per_task`: Number of epochs per task
 - `training.batch_size`: Batch size for training
 - `training.seed`: Random seed for reproducibility
-- `training.reinit_output`: Whether to reinitialize output weights for new tasks
 
 #### Task Settings
 - `task.tasks`: Number of tasks in the continual learning sequence

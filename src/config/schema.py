@@ -184,7 +184,6 @@ class TrainingConfig:
     batch_size: int = 128
     no_augment: bool = False
     early_stopping_steps: int = 0
-    reinit_output: bool = False  # Reinitialize output weights for task classes
     reset: bool = False  # Reset model weights before training on each new task
     seed: int = 42
     device: Optional[str] = None  # 'cuda', 'cpu', or 'mps'
