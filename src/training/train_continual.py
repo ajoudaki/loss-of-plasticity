@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from ..utils.monitor import NetworkMonitor
 from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch, create_module_filter
-from ..config.utils import reinitialize_output_weights, create_optimizer
+from ..config.utils import create_optimizer
 from ..utils.masked_loss import MaskedCrossEntropy
 
 def train_continual_learning(model, 
@@ -116,13 +116,6 @@ def train_continual_learning(model,
             print("Reinitialized all model weights for new task")
             # When we reset the model, we should also reset the optimizer
             optimizer = create_optimizer(model, cfg)
-        # Reinitialize only output weights if configured
-        elif cfg.training.reinit_output:
-            reinitialize_output_weights(
-                model, 
-                task_data['classes'], 
-                cfg.model.name.lower()
-            )
 
         # Reinitialize optimizer state if configured (and we haven't already reset it)
         if cfg.optimizer.reinit_optimizer and task_id > 0 and not cfg.training.reset:
