@@ -69,7 +69,7 @@ def setup_wandb(cfg: DictConfig) -> bool:
             normalization = cfg.model.normalization
         
         # Determine if we're resetting all weights or just output weights
-        reset_type = "all_reset" if cfg.training.reset else ("output_reset" if cfg.training.reinit_output else "no_reset")
+        reset_type = "all_reset" if cfg.training.reset else "no_reset"
         
         # Add timestamp to ensure unique run names
         import time
