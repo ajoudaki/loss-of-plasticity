@@ -9,6 +9,7 @@ from ..utils.monitor import NetworkMonitor
 from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch, create_module_filter
 from ..config.utils import reinitialize_output_weights, create_optimizer
+from ..utils.masked_loss import MaskedCrossEntropy
 
 def train_continual_learning(model, 
                              task_dataloaders, 
@@ -16,6 +17,8 @@ def train_continual_learning(model,
                              device='cpu'):
     """
     Train a model using continual learning on a sequence of tasks.
+    Uses MaskedCrossEntropy to only optimize for active task classes
+    when in continual learning setup.
     
     Args:
         model: The neural network model
@@ -26,6 +29,7 @@ def train_continual_learning(model,
     Returns:
         Dictionary with training history
     """
+    # Use standard cross entropy for setup (will be replaced per task)
     criterion = nn.CrossEntropyLoss()
     optimizer = create_optimizer(model, cfg)
     
@@ -85,6 +89,17 @@ def train_continual_learning(model,
         print(f"\n{'='*50}")
         print(f"Starting Task {task_id}: Classes {task_data['classes']}")
         print(f"{'='*50}")
+        
+        # Create task-specific criterion with the active classes for this task
+        task_classes = task_data['classes']
+        # If we only have one task (not a continual setup), don't use masking
+        is_continual = len(task_dataloaders) > 1
+        if is_continual:
+            print(f"Using MaskedCrossEntropy with active classes: {task_classes}")
+            criterion = MaskedCrossEntropy(active_classes=task_classes)
+        else:
+            print("Using standard CrossEntropyLoss (single task)")
+            criterion = nn.CrossEntropyLoss()
         
         train_loader = task_data['train']
         val_loader = task_data['val']
