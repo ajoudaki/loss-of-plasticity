@@ -91,26 +91,12 @@ class ResNet(nn.Module):
         self.layers['activation'] = get_activation(activation)
         
         # Create ResNet blocks
-        self._make_layer(block, base_channels, layers[0], stride=1, 
-                        activation=activation, use_batchnorm=use_batchnorm, 
-                        norm_after_activation=norm_after_activation, 
-                        layer_name='layer1',
-                        normalization_affine=normalization_affine)
-        self._make_layer(block, base_channels*2, layers[1], stride=2, 
-                        activation=activation, use_batchnorm=use_batchnorm, 
-                        norm_after_activation=norm_after_activation, 
-                        layer_name='layer2',
-                        normalization_affine=normalization_affine)
-        self._make_layer(block, base_channels*4, layers[2], stride=2, 
-                        activation=activation, use_batchnorm=use_batchnorm,
-                        norm_after_activation=norm_after_activation, 
-                        layer_name='layer3',
-                        normalization_affine=normalization_affine)
-        self._make_layer(block, base_channels*8, layers[3], stride=2, 
-                        activation=activation, use_batchnorm=use_batchnorm,
-                        norm_after_activation=norm_after_activation, 
-                        layer_name='layer4',
-                        normalization_affine=normalization_affine)
+        for li,num_blocks in enumerate(layers):
+            self._make_layer(block, base_channels*(2**li), num_blocks, stride=1 if li == 0 else 2,
+                            activation=activation, use_batchnorm=use_batchnorm, 
+                            norm_after_activation=norm_after_activation, 
+                            layer_name=f'layer{li+1}',
+                            normalization_affine=normalization_affine)
         
         self.layers['avgpool'] = nn.AdaptiveAvgPool2d((1, 1))
         self.layers['flatten'] = nn.Flatten()
@@ -118,7 +104,7 @@ class ResNet(nn.Module):
         if dropout_p > 0:
             self.layers['dropout'] = nn.Dropout(dropout_p)
         
-        self.layers['fc'] = nn.Linear(base_channels*8*block.expansion, num_classes)
+        self.layers['fc'] = nn.Linear(base_channels*(2**(len(layers)-1))*block.expansion, num_classes)
         
         # Initialize weights
         for m in self.modules():
