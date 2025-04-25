@@ -19,3 +19,4 @@ task:
 training:
   batch_size: 128
   epochs_per_task: 20
+  

@@ -1,0 +1,10 @@
+# @package _global_.metrics
+# Extends the default metrics config but only monitors block outputs
+# All other settings are inherited from default.yaml
+
+defaults:
+  - default # Inherit all settings from default.yaml
+  - _self_ # Override with settings from this file
+
+# Override only the monitor_filters parameter
+monitor_filters: ["block_outputs"]

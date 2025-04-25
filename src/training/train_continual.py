@@ -40,11 +40,21 @@ def train_continual_learning(model,
 
     # Create module filter function
     def create_module_filter(filters, model_name):
-        if not filters:
+        # Check if we have model-specific filters (from model.metrics.monitor_filters)
+        model_filters = None
+        if hasattr(cfg.model, 'metrics') and hasattr(cfg.model.metrics, 'monitor_filters'):
+            model_filters = cfg.model.metrics.monitor_filters
+            print(f"Found model-specific filters: {model_filters}")
+        
+        # Use model-specific filters if available, otherwise use global metrics filters
+        filters_to_use = model_filters if model_filters else filters
+        print(f"Using filters: {filters_to_use} for model: {model_name}")
+        
+        if not filters_to_use:
             # If no filters, monitor all layers
             return lambda name: True
         
-        if 'block_outputs' in filters:
+        if 'block_outputs' in filters_to_use:
             if model_name.lower() == 'resnet':
                 # For ResNet: monitor main layers and direct block outputs, but not their internals
                 def resnet_filter(name):
@@ -70,7 +80,7 @@ def train_continual_learning(model,
                 return vit_filter
         
         # Default case: match any of the provided filters
-        return lambda name: any(f in name for f in filters)
+        return lambda name: any(f in name for f in filters_to_use)
     
     module_filter = create_module_filter(cfg.metrics.monitor_filters, cfg.model.name)
     
