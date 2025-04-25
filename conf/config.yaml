@@ -5,15 +5,9 @@ defaults:
   - model: mlp
   - dataset: cifar10
   - optimizer: adam
-  - training: continual
+  - training: standard
   - metrics: default
   - _self_
-
-# Experiment defaults
-task:
-  tasks: 5
-  classes_per_task: 2
-  partitions: null
 
 # Logging defaults
 logging:

@@ -14,7 +14,6 @@ from .schema import (
     OptimizerConfig,
     MetricsConfig,
     TrainingConfig,
-    TaskConfig,
     LoggingConfig
 )
 
@@ -38,7 +37,6 @@ __all__ = [
     'OptimizerConfig',
     'MetricsConfig',
     'TrainingConfig',
-    'TaskConfig',
     'LoggingConfig',
     
     # Registration function

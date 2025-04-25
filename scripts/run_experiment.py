@@ -68,7 +68,7 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     # Save model
     os.makedirs('models', exist_ok=True)
     torch.save(model.state_dict(), 
-              f'models/{cfg.model.name}_{cfg.dataset.name}_{cfg.task.tasks}tasks.pth')
+              f'models/{cfg.model.name}_{cfg.dataset.name}_{cfg.training.tasks}tasks.pth')
     
     # Finish W&B run
     if use_wandb:

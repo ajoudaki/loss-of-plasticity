@@ -7,3 +7,8 @@ reinit_output: false
 reset: false
 seed: 42
 device: null
+
+# Task configurations (merged from task section)
+tasks: 1
+classes_per_task: null  # Will use all classes
+partitions: null

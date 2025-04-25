@@ -188,11 +188,7 @@ class TrainingConfig:
     reset: bool = False  # Reset model weights before training on each new task
     seed: int = 42
     device: Optional[str] = None  # 'cuda', 'cpu', or 'mps'
-
-
-@dataclass
-class TaskConfig:
-    """Configuration for continual learning tasks."""
+    # Task configuration (formerly in TaskConfig)
     tasks: int = 10  # Number of tasks
     classes_per_task: int = 2  # Classes per task
     partitions: Optional[List[List[int]]] = None  # Custom class partitions
@@ -215,6 +211,5 @@ class ExperimentConfig:
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
-    task: TaskConfig = field(default_factory=TaskConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     dryrun: bool = False
