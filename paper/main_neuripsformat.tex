@@ -56,8 +56,8 @@ According to Richard~Sutton, standard deep models trained with back‑propagatio
 Over extended interaction with non‑stationary environments, however, the very same optimisation process that created powerful representations gradually destroys the network's ability to continue learning.  
 Sutton calls this phenomenon \emph{loss of plasticity}.  
 This paper takes a first‑principles look at why gradient‑based models lose plasticity, offering
-a rigorous definition based on dynamical‑system language,  
-two general mechanisms—frozen units and cloned‑units manifolds—that provably trap gradient trajectories, and  
+a definition based on dynamical‑system language,  
+two general mechanisms—frozen units and cloned‑unit manifolds—that provably trap gradient trajectories, and  
 conditions under which perturbations or architectural choices can prevent or undo the collapse.  
 The resulting theory unifies several strands of ideas within a single mathematical framework. These results show a stark contrast, where properties such as low rank or simplicity bias are desirable in the two-phase learning regime, but lead to loss of plasticity. Thus, we consolidate key propositions of Sutton about barriers of learning continuously and point to several avenues for future research to overcome these barriers. 
 \end{abstract}
@@ -72,7 +72,7 @@ When an \emph{agent} must act in a world whose dynamics or task distribution kee
 Empirically, deep networks subjected to long sequences of tasks or slowly drifting data eventually learn no better than a shallow linear model.  
 Typical symptoms are:
 \begin{itemize}[nosep]
-    \item explosive weight magnitudes and saturated activations,
+    \item Explosive weight magnitudes and saturated activations,
     \item "dead" ReLUs whose upstream parameters stop moving,
     \item collapsing effective rank of hidden representations,
     \item attention heads or filters that cease to contribute.
@@ -86,7 +86,7 @@ We revisit gradient descent and back‑propagation from scratch, asking:
 \emph{What structural features of gradient flow inevitably give rise to loss of plasticity, and how might we design algorithms or architectures that stay plastic forever?}
 \end{quote}
 
-The central proposition of this work is that low rank representations are at the heart of loss of plasticity. Remarkably, while low-rank representations are known to improve accuracy on two-phased training system, as they reduce the effective number of parameters, they also make the network prone to loss of plasticity, as they reduce its effective features. 
+The central proposition of this work is that low rank representations are at the heart of loss of plasticity. While low-rank representations are known to improve accuracy on two-phased training system, as they reduce the effective number of parameters, they also make the network prone to loss of plasticity, as they reduce its effective features. 
 
 \section{Preliminaries}
 \label{sec:framework}
@@ -161,7 +161,7 @@ for every $\theta\in\Theta_{\text{up}}$ and all subsequent gradient‑based upda
 
 The proof is immediate by chain rule. Examples include dead ReLUs, sigmoid/tanh saturation, dominant soft‑max logits, and attention heads with vanishing weights.
 
-Plasticity can also vanish without saturation: duplicated ("cloned") features constrain weight evolution.
+Plasticity can also vanish without saturation by being trapped in a cloned or duplicated features manifold. The following proposition sheds more light on this phenomenon.
 
 \begin{proposition}[Cloned‑unit plasticity loss]
 \label{prop:cloned}
@@ -240,6 +240,7 @@ Our analysis casts several well‑known empirical phenomena—dead ReLUs, neural
 \begin{itemize}[nosep]
     \item Can we design \emph{continual} randomisation schemes that keep trajectories away from stable plasticity‑loss manifolds?
     \item How do second‑order or meta‑gradient methods interact with the manifolds identified here?
+    \item Is there a loss of plasticity of non-linear form, ie, where the sub-space is not linear? 
     \item Can plasticity be preserved in parameter‑efficient fine‑tuning (LoRA, adapters) by ensuring adapter sub‑spaces do not themselves collapse?
 \end{itemize}
 We leave these directions to future work.
