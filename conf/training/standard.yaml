@@ -9,6 +9,6 @@ seed: 42
 device: null
 
 # Task configurations (merged from task section)
-tasks: 1
+tasks: null
 classes_per_task: null  # Will use all classes
 partitions: null
