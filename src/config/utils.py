@@ -76,7 +76,7 @@ def setup_wandb(cfg: DictConfig) -> bool:
         timestamp = int(time.time())
         
         # Create run name with all requested parameters and timestamp
-        run_name = f"{model_name}_{normalization}_drop{dropout}_depth{depth}_{reset_type}_cls{cfg.task.classes_per_task}_{timestamp}"
+        run_name = f"{model_name}_{normalization}_drop{dropout}_depth{depth}_{reset_type}_cls{cfg.training.classes_per_task}_{timestamp}"
         
         # Initialize wandb with optional entity parameter and the created run name
         init_args = {

@@ -376,13 +376,13 @@ def generate_class_sequence(cfg: DictConfig, num_classes: int) -> List[List[int]
         List of class lists, one for each task
     """
     # Parse partitions if provided
-    if cfg.task.partitions is not None:
+    if cfg.training.partitions is not None:
         # Use provided partitions
-        return [list(p) for p in cfg.task.partitions]
+        return [list(p) for p in cfg.training.partitions]
     else:
         # Auto-generate partitions
-        tasks = cfg.task.tasks
-        classes_per_task = cfg.task.classes_per_task
+        tasks = cfg.training.tasks
+        classes_per_task = cfg.training.classes_per_task
         
         # if tasks and classes_per_task are not provided, assume we have one task and all classes in it 
         if tasks is None and classes_per_task is None:
@@ -402,10 +402,11 @@ def generate_class_sequence(cfg: DictConfig, num_classes: int) -> List[List[int]
         # Get all class IDs
         all_class_ids = list(range(num_classes))
         
-        # Shuffle class IDs 
-        random.seed(cfg.training)
-        random.shuffle(all_class_ids)
-        print(f"Shuffled class IDs with seed {cfg.training}: {all_class_ids}")
+        # Shuffle class IDs if this is a continual learning scenario
+        if tasks is not None or classes_per_task is not None:
+            random.seed(cfg.training.seed)
+            random.shuffle(all_class_ids)
+            print(f"Shuffled class IDs with seed {cfg.training.seed}: {all_class_ids}")
         
         # Create class sequence
         return [

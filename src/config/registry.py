@@ -15,7 +15,6 @@ from .schema import (
     OptimizerConfig,
     MetricsConfig,
     TrainingConfig,
-    TaskConfig,
     LoggingConfig
 )
 
@@ -36,7 +35,6 @@ def register_configs():
     cs.store(group="optimizer", name="optimizer_schema", node=OptimizerConfig)
     cs.store(group="metrics", name="metrics_schema", node=MetricsConfig)
     cs.store(group="training", name="training_schema", node=TrainingConfig)
-    cs.store(group="task", name="task_schema", node=TaskConfig)
     cs.store(group="logging", name="logging_schema", node=LoggingConfig)
     
     return cs
