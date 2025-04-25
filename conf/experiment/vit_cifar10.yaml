@@ -1,0 +1,16 @@
+# @package _global_
+
+# Vision Transformer model on CIFAR-10 dataset with block monitoring
+defaults:
+  - override /model: vit
+  - override /dataset: cifar10
+  - override /optimizer: adam
+  - override /metrics: block_outputs
+
+task:
+  tasks: 5
+  classes_per_task: 2
+
+training:
+  batch_size: 128
+  epochs_per_task: 20

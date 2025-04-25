@@ -22,6 +22,8 @@ venv/
 dist/
 build/
 *.egg
+# ignore .bak files
+*.bak
 
 # Jupyter Lab
 .ipynb_checkpoints/
