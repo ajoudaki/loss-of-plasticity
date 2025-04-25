@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import project modules
 from src.models.layers import set_seed
-from src.training.train_continual import train_continual_learning
+from src.training import train_continual_learning, train_cloning_experiment
 from src.config import register_configs
 from src.utils.data import prepare_continual_learning_dataloaders
 from src.config.utils import get_device, setup_wandb
@@ -62,8 +62,13 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
         print("Dry run completed, exiting without training.")
         return None
     
-    # Train using continual learning - directly pass the cfg object
-    history = train_continual_learning(model, task_dataloaders, cfg, device=device)
+    # Train using the appropriate training method based on config
+    if hasattr(cfg.training, 'expansion_factor') and hasattr(cfg.training, 'num_expansions'):
+        # Use cloning experiment training
+        history = train_cloning_experiment(model, task_dataloaders, cfg, device=device)
+    else:
+        # Use standard continual learning training
+        history = train_continual_learning(model, task_dataloaders, cfg, device=device)
     
     # Save model
     os.makedirs('models', exist_ok=True)
