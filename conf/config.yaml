@@ -5,7 +5,7 @@ defaults:
   - model: mlp
   - dataset: cifar10
   - optimizer: adam
-  - training: standard
+  - training: continual
   - metrics: default
   - _self_
 

@@ -5,4 +5,4 @@ weight_decay: 0.000
 momentum: 0.9
 dampening: 0.0  # Default SGD dampening
 nesterov: false  # Default SGD nesterov
-reinit_optimizer: true  # Flag for reinitializing optimizer
+reinit_optimizer: false  # Flag for reinitializing optimizer
