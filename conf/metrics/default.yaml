@@ -9,4 +9,4 @@ log_activation_histograms: true
 # List of string patterns to filter which layers to monitor
 # If empty, all layers will be monitored
 # For cloning experiments, we need to monitor hidden layers
-monitor_filters: ["hidden_layers", "linear", "fc", "conv"]
+monitor_filters: ["default"]

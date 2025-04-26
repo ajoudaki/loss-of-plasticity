@@ -433,21 +433,8 @@ def create_module_filter(filters, model_name, cfg: DictConfig):
     Returns:
         A function that takes a layer name and returns True if it should be monitored
     """
-    # Check if we have model-specific filters (from model.metrics.monitor_filters)
-    model_filters = None
-    if hasattr(cfg.model, 'metrics') and hasattr(cfg.model.metrics, 'monitor_filters'):
-        model_filters = cfg.model.metrics.monitor_filters
-        print(f"Found model-specific filters: {model_filters}")
     
-    # Use model-specific filters if available, otherwise use global metrics filters
-    filters_to_use = model_filters if model_filters else filters
-    print(f"Using filters: {filters_to_use} for model: {model_name}")
-    
-    if not filters_to_use:
-        # If no filters, monitor all layers
-        return lambda name: True
-    
-    if 'block_outputs' in filters_to_use:
+    if 'default' in filters:
         if model_name.lower() == 'resnet':
             # For ResNet: monitor main layers and direct block outputs, but not their internals
             def resnet_filter(name):
@@ -455,7 +442,7 @@ def create_module_filter(filters, model_name, cfg: DictConfig):
                 if re.search(r'layer\d+_block\d+$', name):
                     return True
                 # Also include other main model components
-                if name in ['conv1', 'bn1', 'activation', 'avgpool', 'flatten', 'dropout', 'fc']:
+                if name in ['conv1', 'bn1', 'activation', 'avgpool', 'flatten', 'dropout', 'out']:
                     return True
                 return False
             return resnet_filter
@@ -467,10 +454,21 @@ def create_module_filter(filters, model_name, cfg: DictConfig):
                 if re.search(r'block_\d+$', name):
                     return True
                 # Also include other main model components
-                if name in ['patch_embed', 'pos_drop', 'norm', 'head']:
+                if name in ['patch_embed', 'pos_drop', 'norm', 'out']:
                     return True
                 return False
             return vit_filter
+        
+        elif model_name.lower() == 'mlp':
+            # For MLP: monitor all layers
+            def mlp_filter(name):
+                return True
+            return mlp_filter
+        elif model_name.lower() == 'cnn':
+            # For CNN: monitor all layers
+            def cnn_filter(name):
+                return True
+            return cnn_filter
     
     # Default case: match any of the provided filters
-    return lambda name: any(f in name for f in filters_to_use)
+    return lambda name: any(f in name for f in filters)
