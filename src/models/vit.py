@@ -145,7 +145,7 @@ class VisionTransformer(nn.Module):
             )
 
         self.layers['norm'] = get_normalization(normalization, embed_dim, affine=normalization_affine)
-        self.layers['head'] = nn.Linear(embed_dim, num_classes)
+        self.layers['out'] = nn.Linear(embed_dim, num_classes)
 
         self._init_weights()
         self.depth = depth
@@ -178,6 +178,6 @@ class VisionTransformer(nn.Module):
         
         x = self.layers['norm'](x)
         x = x[:, 0]  # Use CLS token for classification
-        x = self.layers['head'](x)
+        x = self.layers['out'](x)
             
         return x
