@@ -121,6 +121,10 @@ def train_continual_learning(model,
         if cfg.optimizer.reinit_optimizer and task_id > 0 and not cfg.training.reset:
             optimizer = create_optimizer(model, cfg)
             print("Reinitialized optimizer state for new task")
+            
+        # set output weights to zero for all classes
+        model.layers.out.weight.data.zero_()
+        model.layers.out.bias.data.zero_()
         
         task_history = {
             'epochs': [],
