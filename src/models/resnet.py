@@ -104,7 +104,7 @@ class ResNet(nn.Module):
         if dropout_p > 0:
             self.layers['dropout'] = nn.Dropout(dropout_p)
         
-        self.layers['fc'] = nn.Linear(base_channels*(2**(len(layers)-1))*block.expansion, num_classes)
+        self.layers['out'] = nn.Linear(base_channels*(2**(len(layers)-1))*block.expansion, num_classes)
         
         # Initialize weights
         for m in self.modules():
@@ -172,6 +172,6 @@ class ResNet(nn.Module):
         if 'dropout' in self.layers:
             x = self.layers['dropout'](x)
             
-        x = self.layers['fc'](x)
+        x = self.layers['out'](x)
             
         return x

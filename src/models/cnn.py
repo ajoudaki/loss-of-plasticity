@@ -63,7 +63,7 @@ class CNN(nn.Module):
             
             fc_input_size = hidden_units
         
-        self.layers['fc_out'] = nn.Linear(fc_input_size, num_classes)
+        self.layers['out'] = nn.Linear(fc_input_size, num_classes)
     
     def forward(self, x):
         for k, l in self.layers.items():
