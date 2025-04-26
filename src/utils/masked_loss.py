@@ -47,17 +47,9 @@ class MaskedCrossEntropy(nn.Module):
         # Extract only the logits for active classes
         active_logits = logits[:, active_classes]
         
-        # Create a mask for samples with active target classes
-        mask = torch.zeros_like(targets, dtype=torch.bool)
-        for cls in active_classes:
-            mask |= (targets == cls)
-        
-        if not torch.any(mask):
-            return torch.tensor(0.0, device=device, requires_grad=True)
-        
         # Select valid logits and targets
-        valid_logits = active_logits[mask]
-        valid_targets = targets[mask]
+        valid_logits = active_logits
+        valid_targets = targets
         
         # Create a mapping from original class indices to new positions
         mapping = torch.full((logits.size(1),), -1, dtype=torch.long, device=device)
