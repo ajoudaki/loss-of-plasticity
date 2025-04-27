@@ -11,11 +11,11 @@ defaults:
 
 # Logging defaults
 logging:
-  use_wandb: true
-  wandb_project: "continual-learning-experiment"
   summary: true
 
 # Execution mode
+use_wandb: true
+wandb_project: "continual-learning-experiment"
 dryrun: false
 
 # Hydra-specific configuration
