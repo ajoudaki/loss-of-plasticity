@@ -22,7 +22,7 @@ def get_activation(activation_name):
     
     return activations[activation_name.lower()]
 
-def get_normalization(norm_name, num_features, affine=True):
+def get_normalization(norm_name, num_features, affine=True, spatial_size=None):
     """Returns the normalization layer based on name."""
     if norm_name is None:
         return None
@@ -31,6 +31,7 @@ def get_normalization(norm_name, num_features, affine=True):
         'batch': nn.BatchNorm1d(num_features, affine=affine),
         'batch2d': nn.BatchNorm2d(num_features, affine=affine),
         'layer': nn.LayerNorm(num_features, elementwise_affine=affine),
+        'layer2d': nn.LayerNorm([num_features, spatial_size, spatial_size], elementwise_affine=affine),  # Custom 2D layer norm for CNN/ResNet
         'instance': nn.InstanceNorm1d(num_features, affine=affine),
         'instance2d': nn.InstanceNorm2d(num_features, affine=affine),
         'group': nn.GroupNorm(min(32, num_features), num_features, affine=affine),
