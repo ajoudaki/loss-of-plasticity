@@ -68,7 +68,7 @@ def train_continual_learning(model,
     global_step = 0
     
     def analyze_callback(monitor, fixed_batch, fixed_targets, prefix="", metrics_log=None):
-        use_wandb = cfg.logging.use_wandb
+        use_wandb = cfg.use_wandb
         return analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, device=device, 
                                   dead_threshold=dead_threshold, corr_threshold=corr_threshold, 
                                   saturation_threshold=saturation_threshold, saturation_percentage=saturation_percentage,
@@ -176,7 +176,7 @@ def train_continual_learning(model,
                     task_history['validation_metrics_history'][layer_name][metric_name].append(value)
                     
             # Log to wandb if enabled
-            if cfg.logging.use_wandb:
+            if cfg.use_wandb:
                 wandb.log(initial_metrics_log)
         except StopIteration:
             print("Warning: Not enough samples for fixed batch metrics")
@@ -275,7 +275,7 @@ def train_continual_learning(model,
                     val_metrics, val_act_stats, fixed_metrics_log = analyze_val_callback(fixed_metrics_log)
                     
                     # Log all metrics to wandb if enabled
-                    if cfg.logging.use_wandb:
+                    if cfg.use_wandb:
                         wandb.log(fixed_metrics_log)
                     
                     # Store metrics in history for later analysis
@@ -302,7 +302,7 @@ def train_continual_learning(model,
                 "val_acc": val_acc
             }
             
-            if cfg.logging.use_wandb:
+            if cfg.use_wandb:
                 wandb.log(log_data)
             
             # Print progress

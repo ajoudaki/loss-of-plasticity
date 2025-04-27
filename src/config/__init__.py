@@ -21,8 +21,7 @@ from .registry import register_configs
 from .utils import (
     get_device,
     setup_wandb,
-    create_optimizer,
-    reinitialize_output_weights
+    create_optimizer
 )
 
 __all__ = [
