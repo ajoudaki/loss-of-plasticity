@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
-from .layers import get_activation, get_normalization
+from .layers import get_activation
+from .layers import get_normalization as gn
+
+def get_normalization(norm_name, num_features, affine=True):
+    return gn(norm_name, num_features, affine=affine, model='cnn')
 
 class CNN(nn.Module):
     def __init__(self, 
@@ -26,22 +30,18 @@ class CNN(nn.Module):
             "Convolutional parameters must have the same length"
         
         # normalization is in ['none', 'batch', 'layer', ] create a layer accordingly 
-        if normalization in ['batch', 'layer']:
-            normalization = f'{normalization}2d'
-        
+    
         self.norm_after_activation = norm_after_activation
         
         self.layers = nn.ModuleDict()
-        current_size = input_size
         channels = in_channels
         
         channels = in_channels
         for i, (out_channels, kernel_size, stride, padding) in enumerate(
                 zip(conv_channels, kernel_sizes, strides, paddings)):
             self.layers[f'conv_{i}'] = nn.Conv2d(channels, out_channels, kernel_size, stride, padding)
-            conv_output_size = ((current_size + 2 * padding - kernel_size) // stride) + 1
             
-            norm = get_normalization(normalization, out_channels, affine=normalization_affine, spatial_size=conv_output_size)
+            norm = get_normalization(normalization, out_channels, affine=normalization_affine)
             
             if norm_after_activation:
                 self.layers[f'act_{i}'] = get_activation(activation)
@@ -53,12 +53,8 @@ class CNN(nn.Module):
             # Add pooling layer if specified
             if pool_type == 'max':
                 self.layers[f'pool_{i}'] = nn.MaxPool2d(pool_size, pool_size)
-                current_size = conv_output_size // pool_size
             elif pool_type == 'avg':
                 self.layers[f'pool_{i}'] = nn.AvgPool2d(pool_size, pool_size)
-                current_size = conv_output_size // pool_size
-            else:
-                current_size = conv_output_size
             
             channels = out_channels
         

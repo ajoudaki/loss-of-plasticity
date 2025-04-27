@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
-from .layers import get_activation, get_normalization
+from .layers import get_activation
+from .layers import get_normalization as gn
+
+def get_normalization(norm_name, num_features, affine=True):
+    return gn(norm_name, num_features, affine=affine, model='resnet')
 
 class BasicBlock(nn.Module):
     """Basic ResNet block with activation and normalization."""
@@ -8,28 +12,21 @@ class BasicBlock(nn.Module):
     
     def __init__(self, in_planes, planes, stride=1, activation='relu', 
                  normalization='batch', norm_after_activation=False, downsample=None,
-                 normalization_affine=True, spatial_size=None):
+                 normalization_affine=True):
         super(BasicBlock, self).__init__()
         
         self.norm_after_activation = norm_after_activation
         self.layers = nn.ModuleDict()
         if normalization in ['batch', 'layer']:
             normalization = f'{normalization}2d'
-        
-        # Calculate output spatial size after conv1 (if spatial_size is provided)
-        if spatial_size is not None:
-            # Applying the formula for conv with padding=1, kernel=3
-            output_spatial_size = ((spatial_size + 2*1 - 3) // stride) + 1
-        else:
-            output_spatial_size = None
+    
         
         self.layers['conv1'] = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, 
                                         padding=1, bias=(normalization == 'none'))
         
         # Add norm1 with spatial_size
         self.layers['norm1'] = get_normalization(normalization, planes, 
-                                                affine=normalization_affine,
-                                                spatial_size=output_spatial_size)
+                                                affine=normalization_affine,)
         
         self.layers['activation'] = get_activation(activation)
         
@@ -38,8 +35,7 @@ class BasicBlock(nn.Module):
         
         # Add norm2 with same spatial_size (since stride=1, padding=1, kernel=3)
         self.layers['norm2'] = get_normalization(normalization, planes, 
-                                                affine=normalization_affine,
-                                                spatial_size=output_spatial_size)
+                                                affine=normalization_affine,)
         
         if downsample is not None:
             self.layers['downsample'] = downsample
@@ -79,7 +75,6 @@ class ResNet(nn.Module):
                  num_classes=10,
                  in_channels=3,
                  base_channels=64,
-                 input_size=32,
                  activation='relu',
                  dropout_p=0.0,
                  normalization='batch',
@@ -95,25 +90,21 @@ class ResNet(nn.Module):
         
         self.layers = nn.ModuleDict()
         
-        current_size = input_size
         self.layers['conv1'] = nn.Conv2d(in_channels, base_channels, kernel_size=3, 
                                         stride=1, padding=1, bias=(normalization == 'none'))
         
-        self.layers['norm1'] = get_normalization(normalization, base_channels, affine=normalization_affine, spatial_size=current_size)
+        self.layers['norm1'] = get_normalization(normalization, base_channels, affine=normalization_affine)
         
         self.layers['activation'] = get_activation(activation)
         
         # Create ResNet blocks
         for li,num_blocks in enumerate(layers):
             stride=1 if li == 0 else 2
-            if stride == 2:
-                current_size = current_size // 2
             self._make_layer(block, base_channels*(2**li), num_blocks, stride=stride,
                             activation=activation, normalization=normalization, 
                             norm_after_activation=norm_after_activation, 
                             layer_name=f'layer{li+1}',
-                            normalization_affine=normalization_affine,
-                            spatial_size=current_size)
+                            normalization_affine=normalization_affine)
         
         self.layers['avgpool'] = nn.AdaptiveAvgPool2d((1, 1))
         self.layers['flatten'] = nn.Flatten()
@@ -136,7 +127,7 @@ class ResNet(nn.Module):
                 
     def _make_layer(self, block, planes, num_blocks, stride, activation, 
                     normalization, norm_after_activation=False, layer_name='layer',
-                    normalization_affine=True, spatial_size=None):
+                    normalization_affine=True):
         downsample = None
         if stride != 1 or self.in_planes != planes * block.expansion:
             downsample_layers = nn.Sequential(
@@ -144,14 +135,13 @@ class ResNet(nn.Module):
                          kernel_size=1, stride=stride, bias=(normalization == 'none'))
             )
             
-            downsample_layers.add_module('1', get_normalization(normalization, planes * block.expansion, affine=normalization_affine, spatial_size=spatial_size//stride))
+            downsample_layers.add_module('1', get_normalization(normalization, planes * block.expansion, affine=normalization_affine))
                 
             downsample = downsample_layers
         self.layers[f'{layer_name}_block0'] = block(
             self.in_planes, planes, stride, activation, 
             normalization, norm_after_activation, downsample,
-            normalization_affine=normalization_affine,
-            spatial_size=spatial_size // stride
+            normalization_affine=normalization_affine
         )
         
         self.in_planes = planes * block.expansion
@@ -160,8 +150,7 @@ class ResNet(nn.Module):
             self.layers[f'{layer_name}_block{i}'] = block(
                 self.in_planes, planes, 1, activation, 
                 normalization, norm_after_activation,
-                normalization_affine=normalization_affine,
-                spatial_size=spatial_size  // stride
+                normalization_affine=normalization_affine
             )
         
     def forward(self, x):
