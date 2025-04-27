@@ -39,44 +39,22 @@ def setup_wandb(cfg: DictConfig) -> bool:
     Returns:
         bool: True if wandb was initialized, False otherwise
     """
-    if cfg.logging.use_wandb:
+    if cfg.use_wandb:
         # Prepare wandb config
         wandb_config = OmegaConf.to_container(cfg, resolve=True)
         
         # Create a descriptive run name with the requested parameters
         model_name = cfg.model.name
-        
-        
-        dropout = cfg.model.dropout_p
-        
-        # Get depth based on model type
-        if model_name == 'mlp':
-            depth = len(cfg.model.hidden_sizes)
-        elif model_name == 'cnn':
-            depth = len(cfg.model.conv_channels)
-        elif model_name == 'resnet':
-            depth = len(cfg.model.layers)
-        elif model_name == 'vit':
-            depth = cfg.model.depth
-        else:
-            depth = 0
-        
-        # Get normalization type based on model
-        normalization = cfg.model.normalization
-        
-        # Determine if we're resetting all weights or just output weights
-        reset_type = "all_reset" if cfg.training.reset else "no_reset"
-        
-        # Add timestamp to ensure unique run names
+        dataset_name = cfg.dataset.name
         import time
         timestamp = int(time.time())
         
-        # Create run name with all requested parameters and timestamp
-        run_name = f"{model_name}_{normalization}_drop{dropout}_depth{depth}_{reset_type}_cls{cfg.training.classes_per_task}_{timestamp}"
+        # Create run name with model and dataset name and the run name with a timestamp
+        run_name = f"{model_name}_{dataset_name}_{timestamp}"
         
         # Initialize wandb with optional entity parameter and the created run name
         init_args = {
-            "project": cfg.logging.wandb_project,
+            "project": cfg.wandb_project,
             "config": wandb_config,
             "name": run_name
         }
@@ -139,44 +117,3 @@ def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer
         )
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
-
-def reinitialize_output_weights(model: nn.Module, task_classes: List[int], model_type: str = 'mlp') -> None:
-    """
-    Reinitialize the output weights for the specified task classes.
-    
-    Args:
-        model: The neural network model
-        task_classes: List of class indices for the current task
-        model_type: Type of model ('mlp', 'cnn', 'resnet', or 'vit')
-    """
-    # Get the output layer
-    if model_type == 'mlp':
-        # For MLP, the output layer is accessible through the layers ModuleDict with key 'out'
-        output_layer = model.layers['out']
-    elif model_type == 'cnn':
-        # For CNN, the output layer is the final output layer in the ModuleDict
-        output_layer = model.layers['out']
-    elif model_type == 'resnet':
-        # For ResNet, the output layer is the output layer in the layers ModuleDict
-        output_layer = model.layers['out']
-    elif model_type == 'vit':
-        # For ViT, the output layer is the output layer in the ModuleDict
-        output_layer = model.layers['out']
-    else:
-        raise ValueError(f"Unsupported model type: {model_type}")
-    
-    # Only reinitialize weights for task classes
-    with torch.no_grad():
-        # Calculate the current layer norm for proper scaling
-        layer_norm = (output_layer.weight**2).mean().item()**0.5
-        
-        # Reinitialize weights only for the specific task classes
-        for cls in task_classes:
-            if cls < len(output_layer.weight):  # Ensure class index is valid
-                # Initialize the weights for this class, use layer std
-                nn.init.normal_(output_layer.weight[cls], std=layer_norm)
-                # Initialize the bias for this class
-                if output_layer.bias is not None:
-                    nn.init.zeros_(output_layer.bias[cls])
-    
-    print(f"Reinitialized output weights for classes: {task_classes}")

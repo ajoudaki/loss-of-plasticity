@@ -194,8 +194,6 @@ class TrainingConfig:
 @dataclass
 class LoggingConfig:
     """Configuration for experiment logging."""
-    use_wandb: bool = False
-    wandb_project: str = "continual-learning-experiment" 
     wandb_entity: Optional[str] = None
     summary: bool = True  # Show summary after each task
 
@@ -210,3 +208,5 @@ class ExperimentConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     dryrun: bool = False
+    use_wandb: bool = False
+    wandb_project: str = "continual-learning-experiment" 

@@ -155,7 +155,7 @@ def train_cloning_experiment(original_model,
                     model_history['metrics_history'][metric_key].append(value)
         
         # Log to wandb if enabled
-        if cfg.logging.use_wandb:
+        if cfg.use_wandb:
             wandb.log(metrics_log)
         
         return metrics_log
@@ -163,7 +163,7 @@ def train_cloning_experiment(original_model,
     # Helper function for analyze_fixed_batch with consistent parameters
     def analyze_callback(model, monitor, fixed_batch, fixed_targets, prefix="", metrics_log=None):
         """Run analyze_fixed_batch with consistent parameters."""
-        use_wandb = cfg.logging.use_wandb
+        use_wandb = cfg.use_wandb
         return analyze_fixed_batch(
             model, monitor, fixed_batch, fixed_targets, 
             nn.CrossEntropyLoss(), device=device, 
@@ -230,7 +230,7 @@ def train_cloning_experiment(original_model,
                 compute_and_store_metrics(base_model, base_monitor, base_history, epoch, "base_")
         
         # Log to wandb
-        if cfg.logging.use_wandb:
+        if cfg.use_wandb:
             wandb.log({
                 "epoch": epoch,
                 "global_epoch": global_epoch,
@@ -394,7 +394,7 @@ def train_cloning_experiment(original_model,
                     )
                     
                     # Add similarity metrics to wandb log
-                    if cfg.logging.use_wandb:
+                    if cfg.use_wandb:
                         similarity_log = {
                             "epoch": epoch,
                             "global_epoch": global_epoch,
@@ -412,7 +412,7 @@ def train_cloning_experiment(original_model,
                         wandb.log(similarity_log)
             
             # Log to wandb
-            if cfg.logging.use_wandb:
+            if cfg.use_wandb:
                 log_data = {
                     "epoch": epoch,
                     "global_epoch": global_epoch,
