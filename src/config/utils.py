@@ -47,7 +47,7 @@ def setup_wandb(cfg: DictConfig) -> bool:
         model_name = cfg.model.name
         
         
-        dropout = cfg.model.dropout_p if model_name != 'vit' else cfg.model.drop_rate
+        dropout = cfg.model.dropout_p
         
         # Get depth based on model type
         if model_name == 'mlp':
@@ -61,12 +61,8 @@ def setup_wandb(cfg: DictConfig) -> bool:
         else:
             depth = 0
         
-        # Override normalization for CNN and ResNet (they use use_batchnorm flag)
-        if model_name in ['cnn', 'resnet']:
-            normalization = "batchnorm" if cfg.model.use_batchnorm else "none"
-        else:
-            # Get normalization type based on model
-            normalization = cfg.model.normalization
+        # Get normalization type based on model
+        normalization = cfg.model.normalization
         
         # Determine if we're resetting all weights or just output weights
         reset_type = "all_reset" if cfg.training.reset else "no_reset"
@@ -158,14 +154,14 @@ def reinitialize_output_weights(model: nn.Module, task_classes: List[int], model
         # For MLP, the output layer is accessible through the layers ModuleDict with key 'out'
         output_layer = model.layers['out']
     elif model_type == 'cnn':
-        # For CNN, the output layer is the final fc layer in the ModuleDict
-        output_layer = model.layers['fc_out']
+        # For CNN, the output layer is the final output layer in the ModuleDict
+        output_layer = model.layers['out']
     elif model_type == 'resnet':
-        # For ResNet, the output layer is the linear layer in the layers ModuleDict
-        output_layer = model.layers['fc']
+        # For ResNet, the output layer is the output layer in the layers ModuleDict
+        output_layer = model.layers['out']
     elif model_type == 'vit':
-        # For ViT, the output layer is the head in the ModuleDict
-        output_layer = model.layers['head']
+        # For ViT, the output layer is the output layer in the ModuleDict
+        output_layer = model.layers['out']
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
     

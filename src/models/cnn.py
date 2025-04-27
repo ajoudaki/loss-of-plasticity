@@ -16,7 +16,7 @@ class CNN(nn.Module):
                  dropout_p=0.0,
                  pool_type='max',
                  pool_size=2,
-                 use_batchnorm=True,
+                 normalization='batch',
                  norm_after_activation=False,
                  normalization_affine=True):
         """CNN with configurable layers, activations, and normalizations."""
@@ -34,8 +34,9 @@ class CNN(nn.Module):
                 zip(conv_channels, kernel_sizes, strides, paddings)):
             self.layers[f'conv_{i}'] = nn.Conv2d(channels, out_channels, kernel_size, stride, padding)
             
-            if use_batchnorm:
-                self.layers[f'norm_{i}'] = get_normalization('batch2d', out_channels, affine=normalization_affine)
+            if normalization != 'none':
+                norm_type = 'batch2d' if normalization == 'batch' else 'layer'
+                self.layers[f'norm_{i}'] = get_normalization(norm_type, out_channels, affine=normalization_affine)
             
             self.layers[f'act_{i}'] = get_activation(activation)
             

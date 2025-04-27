@@ -9,7 +9,7 @@ depth: 6
 n_heads: 6
 mlp_ratio: 4.0
 qkv_bias: true
-drop_rate: 0.1
+dropout_p: 0.1
 attn_drop_rate: 0.1
 activation: gelu
 normalization: layer
