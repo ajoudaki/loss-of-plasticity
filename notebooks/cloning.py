@@ -594,7 +594,7 @@ def test_various_models_cloning():
         num_classes=2, 
         embed_dim=64, 
         depth=2, 
-        drop_rate=0.0,
+        dropout_p=0.0,
         attn_drop_rate=0.0,
         activation="relu",)
 
@@ -604,7 +604,7 @@ def test_various_models_cloning():
         patch_size=4, 
         embed_dim=64*2, 
         depth=2, 
-        drop_rate=0.0,
+        dropout_p=0.0,
         attn_drop_rate=0.0,
         activation="relu",)
 

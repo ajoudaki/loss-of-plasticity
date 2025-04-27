@@ -12,7 +12,7 @@ activation: relu
 dropout_p: 0.1
 pool_type: max
 pool_size: 2
-use_batchnorm: true
+normalization: batch
 norm_after_activation: false
 normalization_affine: true
 

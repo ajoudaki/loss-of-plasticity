@@ -120,7 +120,7 @@ class VisionTransformer(nn.Module):
                  n_heads=8, 
                  mlp_ratio=4., 
                  qkv_bias=True, 
-                 drop_rate=0.1,
+                 dropout_p=0.1,
                  attn_drop_rate=0.0,
                  activation='gelu',
                  normalization='layer',
@@ -135,12 +135,12 @@ class VisionTransformer(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, n_patches + 1, embed_dim))
         
-        self.layers['pos_drop'] = nn.Dropout(drop_rate)
+        self.layers['pos_drop'] = nn.Dropout(dropout_p)
 
         for i in range(depth):
             self.layers[f'block_{i}'] = TransformerBlock(
                 embed_dim, n_heads, mlp_ratio, qkv_bias, 
-                drop_rate, attn_drop_rate, activation, normalization,
+                dropout_p, attn_drop_rate, activation, normalization,
                 normalization_affine=normalization_affine
             )
 
