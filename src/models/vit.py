@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
-from .layers import get_activation, get_normalization
+from .layers import get_activation
+from .layers import get_normalization as gn
+
+def get_normalization(norm_name, num_features, affine=True):
+    return gn(norm_name, num_features, affine=affine, model='vit')
 
 class Attention(nn.Module):
     """Multi-head attention module."""
@@ -126,7 +130,6 @@ class VisionTransformer(nn.Module):
                  normalization='layer',
                  normalization_affine=True):
         super().__init__()
-        
         self.layers = nn.ModuleDict()
         
         self.layers['patch_embed'] = PatchEmbedding(img_size, patch_size, in_channels, embed_dim)
