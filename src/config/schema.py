@@ -36,7 +36,7 @@ class CNNConfig:
     dropout_p: float = 0.1
     pool_type: str = "max"
     pool_size: int = 2
-    use_batchnorm: bool = True
+    normalization: str = "batch"
     norm_after_activation: bool = False
     normalization_affine: bool = True
     input_size: Optional[int] = None  # Will be set based on dataset
@@ -52,7 +52,7 @@ class ResNetConfig:
     base_channels: int = 64
     activation: str = "relu"
     dropout_p: float = 0.1
-    use_batchnorm: bool = True
+    normalization: str = "batch"
     norm_after_activation: bool = False
     normalization_affine: bool = True
     in_channels: Optional[int] = None  # Will be set based on dataset
@@ -69,7 +69,7 @@ class ViTConfig:
     n_heads: int = 6
     mlp_ratio: float = 4.0
     qkv_bias: bool = True
-    drop_rate: float = 0.1
+    dropout_p: float = 0.1
     attn_drop_rate: float = 0.1
     activation: str = "gelu"
     normalization: str = "layer"
@@ -106,7 +106,6 @@ class ModelConfig:
     fc_hidden_units: List[int] = field(default_factory=lambda: [512])
     pool_type: str = "max"
     pool_size: int = 2
-    use_batchnorm: bool = True
     
     # ResNet parameters
     layers: List[int] = field(default_factory=lambda: [2, 2, 2, 2])
@@ -119,7 +118,6 @@ class ModelConfig:
     n_heads: int = 6
     mlp_ratio: float = 4.0
     qkv_bias: bool = True
-    drop_rate: float = 0.1
     attn_drop_rate: float = 0.1
     
     # Dynamic parameters that will be set based on dataset

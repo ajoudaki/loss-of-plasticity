@@ -7,7 +7,7 @@ class BasicBlock(nn.Module):
     expansion = 1
     
     def __init__(self, in_planes, planes, stride=1, activation='relu', 
-                 use_batchnorm=True, norm_after_activation=False, downsample=None,
+                 normalization='batch', norm_after_activation=False, downsample=None,
                  normalization_affine=True):
         super(BasicBlock, self).__init__()
         
@@ -15,18 +15,20 @@ class BasicBlock(nn.Module):
         self.layers = nn.ModuleDict()
         
         self.layers['conv1'] = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, 
-                                        padding=1, bias=not use_batchnorm)
+                                        padding=1, bias=(normalization == 'none'))
         
-        if use_batchnorm:
-            self.layers['bn1'] = get_normalization('batch2d', planes, affine=normalization_affine)
+        if normalization != 'none':
+            norm_type = 'batch2d' if normalization == 'batch' else 'layer'
+            self.layers['bn1'] = get_normalization(norm_type, planes, affine=normalization_affine)
         
         self.layers['activation'] = get_activation(activation)
         
         self.layers['conv2'] = nn.Conv2d(planes, planes, kernel_size=3, stride=1, 
-                                        padding=1, bias=not use_batchnorm)
+                                        padding=1, bias=(normalization == 'none'))
         
-        if use_batchnorm:
-            self.layers['bn2'] = get_normalization('batch2d', planes, affine=normalization_affine)
+        if normalization != 'none':
+            norm_type = 'batch2d' if normalization == 'batch' else 'layer'
+            self.layers['bn2'] = get_normalization(norm_type, planes, affine=normalization_affine)
         
         if downsample is not None:
             self.layers['downsample'] = downsample
@@ -71,29 +73,30 @@ class ResNet(nn.Module):
                  base_channels=64,
                  activation='relu',
                  dropout_p=0.0,
-                 use_batchnorm=True,
+                 normalization='batch',
                  norm_after_activation=False,
                  normalization_affine=True):
         super(ResNet, self).__init__()
         
-        self.use_batchnorm = use_batchnorm
+        self.normalization = normalization
         self.norm_after_activation = norm_after_activation
         self.in_planes = base_channels
         
         self.layers = nn.ModuleDict()
         
         self.layers['conv1'] = nn.Conv2d(in_channels, base_channels, kernel_size=3, 
-                                        stride=1, padding=1, bias=not use_batchnorm)
+                                        stride=1, padding=1, bias=(normalization == 'none'))
         
-        if use_batchnorm:
-            self.layers['bn1'] = get_normalization('batch2d', base_channels, affine=normalization_affine)
+        if normalization != 'none':
+            norm_type = 'batch2d' if normalization == 'batch' else 'layer'
+            self.layers['bn1'] = get_normalization(norm_type, base_channels, affine=normalization_affine)
         
         self.layers['activation'] = get_activation(activation)
         
         # Create ResNet blocks
         for li,num_blocks in enumerate(layers):
             self._make_layer(block, base_channels*(2**li), num_blocks, stride=1 if li == 0 else 2,
-                            activation=activation, use_batchnorm=use_batchnorm, 
+                            activation=activation, normalization=normalization, 
                             norm_after_activation=norm_after_activation, 
                             layer_name=f'layer{li+1}',
                             normalization_affine=normalization_affine)
@@ -118,23 +121,24 @@ class ResNet(nn.Module):
         self.blocks_per_layer = layers
                 
     def _make_layer(self, block, planes, num_blocks, stride=1, activation='relu', 
-                    use_batchnorm=True, norm_after_activation=False, layer_name='layer',
+                    normalization='batch', norm_after_activation=False, layer_name='layer',
                     normalization_affine=True):
         downsample = None
         if stride != 1 or self.in_planes != planes * block.expansion:
             downsample_layers = nn.Sequential(
                 nn.Conv2d(self.in_planes, planes * block.expansion, 
-                         kernel_size=1, stride=stride, bias=not use_batchnorm)
+                         kernel_size=1, stride=stride, bias=(normalization == 'none'))
             )
             
-            if use_batchnorm:
-                downsample_layers.add_module('1', get_normalization('batch2d', planes * block.expansion, affine=normalization_affine))
+            if normalization != 'none':
+                norm_type = 'batch2d' if normalization == 'batch' else 'layer'
+                downsample_layers.add_module('1', get_normalization(norm_type, planes * block.expansion, affine=normalization_affine))
                 
             downsample = downsample_layers
         
         self.layers[f'{layer_name}_block0'] = block(
             self.in_planes, planes, stride, activation, 
-            use_batchnorm, norm_after_activation, downsample,
+            normalization, norm_after_activation, downsample,
             normalization_affine=normalization_affine
         )
         
@@ -143,20 +147,20 @@ class ResNet(nn.Module):
         for i in range(1, num_blocks):
             self.layers[f'{layer_name}_block{i}'] = block(
                 self.in_planes, planes, 1, activation, 
-                use_batchnorm, norm_after_activation,
+                normalization, norm_after_activation,
                 normalization_affine=normalization_affine
             )
         
     def forward(self, x):
         x = self.layers['conv1'](x)
         
-        if self.use_batchnorm and not self.norm_after_activation:
+        if self.normalization != 'none' and not self.norm_after_activation:
             if 'bn1' in self.layers:
                 x = self.layers['bn1'](x)
                 
         x = self.layers['activation'](x)
         
-        if self.use_batchnorm and self.norm_after_activation:
+        if self.normalization != 'none' and self.norm_after_activation:
             if 'bn1' in self.layers:
                 x = self.layers['bn1'](x)
         
