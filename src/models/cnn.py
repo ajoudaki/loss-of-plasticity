@@ -25,25 +25,40 @@ class CNN(nn.Module):
         assert len(conv_channels) == len(kernel_sizes) == len(strides) == len(paddings), \
             "Convolutional parameters must have the same length"
         
+        # normalization is in ['none', 'batch', 'layer', ] create a layer accordingly 
+        if normalization in ['batch', 'layer']:
+            normalization = f'{normalization}2d'
+        
         self.norm_after_activation = norm_after_activation
         
         self.layers = nn.ModuleDict()
+        current_size = input_size
+        channels = in_channels
         
         channels = in_channels
         for i, (out_channels, kernel_size, stride, padding) in enumerate(
                 zip(conv_channels, kernel_sizes, strides, paddings)):
             self.layers[f'conv_{i}'] = nn.Conv2d(channels, out_channels, kernel_size, stride, padding)
+            conv_output_size = ((current_size + 2 * padding - kernel_size) // stride) + 1
             
-            if normalization != 'none':
-                norm_type = 'batch2d' if normalization == 'batch' else 'layer'
-                self.layers[f'norm_{i}'] = get_normalization(norm_type, out_channels, affine=normalization_affine)
+            norm = get_normalization(normalization, out_channels, affine=normalization_affine, spatial_size=conv_output_size)
             
-            self.layers[f'act_{i}'] = get_activation(activation)
+            if norm_after_activation:
+                self.layers[f'act_{i}'] = get_activation(activation)
+                self.layers[f'norm_{i}'] = norm
+            else:
+                self.layers[f'norm_{i}'] = norm
+                self.layers[f'act_{i}'] = get_activation(activation)
             
+            # Add pooling layer if specified
             if pool_type == 'max':
                 self.layers[f'pool_{i}'] = nn.MaxPool2d(pool_size, pool_size)
+                current_size = conv_output_size // pool_size
             elif pool_type == 'avg':
                 self.layers[f'pool_{i}'] = nn.AvgPool2d(pool_size, pool_size)
+                current_size = conv_output_size // pool_size
+            else:
+                current_size = conv_output_size
             
             channels = out_channels
         
