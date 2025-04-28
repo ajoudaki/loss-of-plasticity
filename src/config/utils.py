@@ -46,17 +46,13 @@ def setup_wandb(cfg: DictConfig) -> bool:
         # Create a descriptive run name with the requested parameters
         model_name = cfg.model.name
         dataset_name = cfg.dataset.name
-        import time
-        timestamp = int(time.time())
-        
-        # Create run name with model and dataset name and the run name with a timestamp
-        run_name = f"{model_name}_{dataset_name}_{timestamp}"
+        training_type = cfg.training.training_type
         
         # Initialize wandb with optional entity parameter and the created run name
         init_args = {
             "project": cfg.wandb_project,
+            "tags": [model_name, dataset_name, training_type],
             "config": wandb_config,
-            "name": run_name
         }
         
         # Add entity parameter if it exists
