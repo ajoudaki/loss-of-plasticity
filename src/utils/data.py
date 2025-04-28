@@ -435,8 +435,8 @@ def create_task_dataloaders(
     task_dataloaders = {}
     
     for task_id, (train_subset, val_subset) in enumerate(zip(partitioned_train_datasets, partitioned_val_datasets)):
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2, multiprocessing_context='fork')
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=2, multiprocessing_context='fork')
         
         # Fixed batches for metrics
         fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
