@@ -225,8 +225,17 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
         # We convert to a non-Gaussianity score (1-W) so higher means less Gaussian
         non_gaussianity = []
         for j in range(D):
+            # Calculate standard deviation
+            std_val = np.std(act_np[:, j])
+            
+            # If std is very small (effectively constant values), skip the statistical test
+            if std_val < 1e-6:
+                # For constant values, consider them maximally non-Gaussian
+                non_gaussianity.append(1.0)
+                continue
+                
             # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
             try:
                 # Maximum sample size is 5000 for Shapiro-Wilk
                 if len(x) > 5000:
@@ -242,8 +251,17 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
         # Kolmogorov-Smirnov test against a normal distribution
         non_gaussianity = []
         for j in range(D):
+            # Calculate standard deviation
+            std_val = np.std(act_np[:, j])
+            
+            # If std is very small (effectively constant values), skip the statistical test
+            if std_val < 1e-6:
+                # For constant values, consider them maximally non-Gaussian
+                non_gaussianity.append(1.0)
+                continue
+                
             # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
             try:
                 # Test against normal distribution - returns KS statistic and p-value
                 # Higher KS indicates greater deviation from normality
@@ -256,8 +274,17 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
         # Anderson-Darling test - more sensitive to tails
         non_gaussianity = []
         for j in range(D):
+            # Calculate standard deviation
+            std_val = np.std(act_np[:, j])
+            
+            # If std is very small (effectively constant values), skip the statistical test
+            if std_val < 1e-6:
+                # For constant values, consider them maximally non-Gaussian
+                non_gaussianity.append(10.0)  # Use max value consistent with this method
+                continue
+                
             # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
             try:
                 result = stats.anderson(x, 'norm')
                 # Higher statistic means greater deviation from normality
@@ -273,10 +300,22 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
         # We take absolute value so both super- and sub-Gaussian show as deviation
         non_gaussianity = []
         for j in range(D):
+            # Calculate standard deviation
+            std_val = np.std(act_np[:, j])
+            
+            # If std is very small (effectively constant values), skip the statistical test
+            if std_val < 1e-6:
+                # For constant values, consider them maximally non-Gaussian
+                non_gaussianity.append(10.0)  # Use max value consistent with this method
+                continue
+                
             # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (np.std(act_np[:, j]) + 1e-8)
-            kurtosis = stats.kurtosis(x)
-            non_gaussianity.append(min(abs(kurtosis), 10.0))  # Cap at 10
+            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
+            try:
+                kurtosis = stats.kurtosis(x)
+                non_gaussianity.append(min(abs(kurtosis), 10.0))  # Cap at 10
+            except Exception:
+                non_gaussianity.append(10.0)
     
     else:
         raise ValueError(f"Unknown method: {method}")
