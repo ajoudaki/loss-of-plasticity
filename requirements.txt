@@ -1,6 +1,7 @@
 torch>=1.8.0
 scipy
 pynvml
+hydra-joblib-launcher
 torchvision>=0.9.0
 numpy>=1.19.0
 matplotlib>=3.3.0
