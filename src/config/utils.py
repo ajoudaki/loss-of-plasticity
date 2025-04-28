@@ -51,7 +51,7 @@ def setup_wandb(cfg: DictConfig) -> bool:
         # Initialize wandb with optional entity parameter and the created run name
         init_args = {
             "project": cfg.wandb_project,
-            "tags": [model_name, dataset_name, training_type],
+            "tags": cfg.wandb_tags + [training_type],
             "config": wandb_config,
         }
         

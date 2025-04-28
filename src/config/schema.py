@@ -211,3 +211,4 @@ class ExperimentConfig:
     dryrun: bool = False
     use_wandb: bool = False
     wandb_project: str = "continual-learning-experiment" 
+    wandb_tags: List[str] = field(default_factory=list)
