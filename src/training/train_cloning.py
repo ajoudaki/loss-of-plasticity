@@ -482,15 +482,15 @@ def train_epoch(model, dataloader, criterion, optimizer, device='cpu') -> Tuple[
     return epoch_loss, epoch_acc
 
 
-def compute_model_similarity(src_model, cloned_model, inputs, device, clone_factor):
-    """Compute similarity metrics between source and cloned models."""
+def compute_model_similarity(base_model, cloned_model, inputs, device, clone_factor):
+    """Compute similarity metrics between base and cloned models."""
     # Use forward hooks to collect activations
-    src_activations = {}
+    base_activations = {}
     cloned_activations = {}
     
-    def get_src_activation(name):
+    def get_base_activation(name):
         def hook(module, input, output):
-            src_activations[name] = output.detach()
+            base_activations[name] = output.detach()
         return hook
     
     def get_cloned_activation(name):
@@ -499,21 +499,21 @@ def compute_model_similarity(src_model, cloned_model, inputs, device, clone_fact
         return hook
     
     # Register hooks for each module
-    src_hooks = []
+    base_hooks = []
     cloned_hooks = []
     
-    for name, module in src_model.named_modules():
+    for name, module in base_model.named_modules():
         if isinstance(module, (nn.Linear, nn.Conv2d)) and name != "":
-            src_hooks.append(module.register_forward_hook(get_src_activation(name)))
+            base_hooks.append(module.register_forward_hook(get_base_activation(name)))
             
     for name, module in cloned_model.named_modules():
         if isinstance(module, (nn.Linear, nn.Conv2d)) and name != "":
-            if name in src_activations.keys():
+            if name in base_activations.keys():
                 cloned_hooks.append(module.register_forward_hook(get_cloned_activation(name)))
     
     # Forward pass to collect activations
     with torch.no_grad():
-        _ = src_model(inputs)
+        _ = base_model(inputs)
         _ = cloned_model(inputs)
     
     # Compute similarity metrics
@@ -521,21 +521,21 @@ def compute_model_similarity(src_model, cloned_model, inputs, device, clone_fact
     similarity_scores = []
     alignment_scores = []
     
-    for name in src_activations.keys():
+    for name in base_activations.keys():
         if name in cloned_activations:
-            src_act = src_activations[name]
+            base_act = base_activations[name]
             cloned_act = cloned_activations[name]
             
             # If dimensions differ due to cloning, compare appropriate slices
-            if src_act.shape != cloned_act.shape:
+            if base_act.shape != cloned_act.shape:
                 # For feature dimension in MLP or channels in CNN
                 feature_dim = 1  # Default for most layers
                 
                 # Handle the case where shapes are different
-                if len(src_act.shape) == len(cloned_act.shape):
+                if len(base_act.shape) == len(cloned_act.shape):
                     # Find the dimension that has been scaled
-                    for dim in range(len(src_act.shape)):
-                        if cloned_act.shape[dim] == src_act.shape[dim] * clone_factor:
+                    for dim in range(len(base_act.shape)):
+                        if cloned_act.shape[dim] == base_act.shape[dim] * clone_factor:
                             feature_dim = dim
                             break
                     
@@ -547,22 +547,22 @@ def compute_model_similarity(src_model, cloned_model, inputs, device, clone_fact
                         idx[feature_dim] = slice(i, None, clone_factor)
                         slices.append(cloned_act[tuple(idx)])
                     
-                    # Compute similarity between source and each slice
+                    # Compute similarity between base and each slice
                     slice_similarities = []
                     for slice_act in slices:
                         # Flatten for cosine similarity if needed
-                        if len(src_act.shape) > 2:
-                            src_flat = src_act.view(src_act.shape[0], -1)
+                        if len(base_act.shape) > 2:
+                            base_flat = base_act.view(base_act.shape[0], -1)
                             slice_flat = slice_act.view(slice_act.shape[0], -1)
                         else:
-                            src_flat = src_act
+                            base_flat = base_act
                             slice_flat = slice_act
                         
                         # Compute cosine similarity
-                        src_norm = torch.norm(src_flat, dim=1, keepdim=True)
+                        base_norm = torch.norm(base_flat, dim=1, keepdim=True)
                         slice_norm = torch.norm(slice_flat, dim=1, keepdim=True)
                         cos_sim = torch.mean(
-                            torch.sum(src_flat * slice_flat, dim=1) / (src_norm * slice_norm).clamp(min=1e-8)
+                            torch.sum(base_flat * slice_flat, dim=1) / (base_norm * slice_norm).clamp(min=1e-8)
                         ).item()
                         slice_similarities.append(cos_sim)
                     
@@ -578,25 +578,25 @@ def compute_model_similarity(src_model, cloned_model, inputs, device, clone_fact
                     alignment_scores.append(1.0 / (1.0 + similarity_variance))
             else:
                 # Direct comparison if shapes match
-                if len(src_act.shape) > 2:
-                    src_flat = src_act.view(src_act.shape[0], -1)
+                if len(base_act.shape) > 2:
+                    base_flat = base_act.view(base_act.shape[0], -1)
                     cloned_flat = cloned_act.view(cloned_act.shape[0], -1)
                 else:
-                    src_flat = src_act
+                    base_flat = base_act
                     cloned_flat = cloned_act
                 
                 # Compute cosine similarity
-                src_norm = torch.norm(src_flat, dim=1, keepdim=True)
+                base_norm = torch.norm(base_flat, dim=1, keepdim=True)
                 cloned_norm = torch.norm(cloned_flat, dim=1, keepdim=True)
                 cos_sim = torch.mean(
-                    torch.sum(src_flat * cloned_flat, dim=1) / (src_norm * cloned_norm).clamp(min=1e-8)
+                    torch.sum(base_flat * cloned_flat, dim=1) / (base_norm * cloned_norm).clamp(min=1e-8)
                 ).item()
                 
                 metrics[f"{name}_similarity"] = cos_sim
                 similarity_scores.append(cos_sim)
     
     # Clean up hooks
-    for hook in src_hooks + cloned_hooks:
+    for hook in base_hooks + cloned_hooks:
         hook.remove()
     
     # Overall metrics
