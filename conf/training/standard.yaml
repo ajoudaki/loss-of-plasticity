@@ -1,4 +1,5 @@
 # @package _global_.training
+training_type: "standard"
 epochs_per_task: 20
 batch_size: 128
 no_augment: false
