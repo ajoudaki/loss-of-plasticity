@@ -37,6 +37,9 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     Returns:
         Optional[Dict[str, Any]]: Training history if successful, None for dry run
     """
+    # Initialize W&B if requested and available
+    use_wandb = setup_wandb(cfg)
+    
     # Print configuration
     print(OmegaConf.to_yaml(cfg))
     
@@ -54,8 +57,6 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     model = create_model(cfg).to(device)
     print(f"Created {cfg.model.name.upper()} model")
     
-    # Initialize W&B if requested and available
-    use_wandb = setup_wandb(cfg)
     
     # Check for dryrun
     if cfg.dryrun:
