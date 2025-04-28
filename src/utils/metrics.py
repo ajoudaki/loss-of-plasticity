@@ -421,7 +421,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
     
     return metrics, activation_stats, metrics_log
 
-def create_module_filter(filters, model_name, cfg: DictConfig):
+def create_module_filter(filters, model_name, cfg: DictConfig=None):
     """
     Create a filter function for selectively monitoring model layers.
     
