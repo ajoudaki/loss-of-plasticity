@@ -18,7 +18,6 @@ class NetworkMonitor:
         self.fwd_hooks = []
         self.bwd_hooks = []
         self.hooks_active = False
-        self.register_hooks()
         
     def set_filter(self, filter_func):
         """Update the filter function for selecting layers to monitor."""
