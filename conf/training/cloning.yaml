@@ -1,5 +1,6 @@
 # @package _global_.training
 # Base model training
+training_type: "cloning"
 initial_epochs: 20  # How many epochs to train the base model
 
 # Expansion parameters

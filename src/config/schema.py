@@ -178,6 +178,7 @@ class MetricsConfig:
 @dataclass
 class TrainingConfig:
     """Configuration for training procedures."""
+    training_type: str = "standard"  # Options: "finetune", "replay", "ewc", "lwf"
     epochs_per_task: int = 20
     batch_size: int = 128
     no_augment: bool = False
