@@ -37,6 +37,7 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     Returns:
         Optional[Dict[str, Any]]: Training history if successful, None for dry run
     """
+    
     # Initialize W&B if requested and available
     use_wandb = setup_wandb(cfg)
     
@@ -46,12 +47,13 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     # Set random seed for reproducibility
     set_seed(cfg.training.seed)
     
-    # Get device
-    device = get_device(cfg.training.device)
-    print(f"Using device: {device}")
-    
     # Prepare dataloaders for continual learning
     task_dataloaders, num_classes, class_sequence = prepare_continual_learning_dataloaders(cfg)
+    
+    # Get device
+    device = get_device(cfg.training.device)
+    cfg.training.device = device
+    print(f"Using device: {device}")
     
     # Create model and move it to the device
     model = create_model(cfg).to(device)
