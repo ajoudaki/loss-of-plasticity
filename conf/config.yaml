@@ -7,7 +7,6 @@ defaults:
   - optimizer: adam
   - training: continual
   - metrics: default
-  - override hydra/launcher: joblib
   - _self_
 
 # Logging defaults
@@ -22,8 +21,6 @@ dryrun: false
 
 # Hydra-specific configuration
 hydra:
-  launcher:
-    n_jobs: 1 # by default run sequentially 
   job:
     chdir: true
   run:
