@@ -52,7 +52,8 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     
     # Get device
     device = get_device(cfg.training.device)
-    cfg.training.device = device
+    # Store as string representation instead of device object
+    cfg.training.device = str(device)
     print(f"Using device: {device}")
     
     # Create model and move it to the device
