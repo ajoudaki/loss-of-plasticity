@@ -1,14 +1,20 @@
 import torch
 import torch.nn as nn
-from typing import Union
-from ..models.layers import TransformerBatchNorm
+# Import the utility module and Setup the path
 
-# Define type hints
+from ..models.layers import TransformerBatchNorm
+from .monitor import NetworkMonitor
+
+from typing import Union, List, Dict, Set
+
+# Replace TypeVar with Union for proper type handling
 NormalizationLayer = Union[nn.BatchNorm1d, nn.BatchNorm2d, nn.LayerNorm,  nn.GroupNorm, TransformerBatchNorm]
+
+# Define activation function types properly
 ActivationFunction = Union[nn.ReLU, nn.Sigmoid, nn.Tanh, nn.SELU, nn.GELU, nn.SiLU, nn.ELU, 
-                       nn.LeakyReLU, nn.PReLU, nn.Threshold, nn.Softmax, nn.LogSoftmax, 
-                       nn.Softplus, nn.Softmin, nn.Hardsigmoid, nn.Hardswish, nn.Softshrink, 
-                       nn.Hardshrink, nn.Softsign, nn.GLU, nn.CELU, nn.Identity]
+                         nn.LeakyReLU, nn.PReLU, nn.Threshold, nn.Softmax, nn.LogSoftmax, 
+                         nn.Softplus, nn.Softmin, nn.Hardsigmoid, nn.Hardswish, nn.Softshrink, 
+                         nn.Hardshrink, nn.Softsign, nn.GLU, nn.CELU, nn.Identity]
 
 
 class CloneAwareFlatten(nn.Module):
@@ -59,25 +65,23 @@ class CloneAwareFlatten(nn.Module):
         # [batch, half_channels, h, w, 2] -> [batch, half_channels * h * w * 2]
         return x_permuted.reshape(batch_size, -1)
 
-
 def clone_linear(base_module: nn.Linear, cloned_module: nn.Linear):
-    """Clone parameters from a base linear module to a cloned module."""
     # Get module dimensions
-    src_in_features = base_module.in_features
-    src_out_features = base_module.out_features
+    base_in_features = base_module.in_features
+    base_out_features = base_module.out_features
     cloned_in_features = cloned_module.in_features
     cloned_out_features = cloned_module.out_features
     
     # Verify expansion factors are valid
-    if cloned_in_features % src_in_features != 0 or cloned_out_features % src_out_features != 0:
+    if cloned_in_features % base_in_features != 0 or cloned_out_features % base_out_features != 0:
         raise ValueError(f"Linear module dimensions are not integer multiples: "
-                     f"{src_in_features}→{cloned_in_features}, {src_out_features}→{cloned_out_features}")
+                         f"{base_in_features}→{cloned_in_features}, {base_out_features}→{cloned_out_features}")
         
     # Calculate expansion factors
-    in_expansion = cloned_in_features // src_in_features
-    out_expansion = cloned_out_features // src_out_features
+    in_expansion = cloned_in_features // base_in_features
+    out_expansion = cloned_out_features // base_out_features
     
-    print(f"Cloning Linear module: {src_in_features}→{cloned_in_features}, {src_out_features}→{cloned_out_features}, in expansion: {in_expansion}, out expansion: {out_expansion}")
+    print(f"Cloning Linear module: {base_in_features}→{cloned_in_features}, {base_out_features}→{cloned_out_features}, in expansion: {in_expansion}, out expansion: {out_expansion}")
     
     # Clone the weights with proper scaling
     for i in range(in_expansion):
@@ -92,22 +96,21 @@ def clone_linear(base_module: nn.Linear, cloned_module: nn.Linear):
 
 
 def clone_conv1d(base_module: nn.Conv1d, cloned_module: nn.Conv1d):
-    """Clone parameters from a base 1D conv module to a cloned module."""
     # Get module dimensions
-    src_in_channels = base_module.in_channels
-    src_out_channels = base_module.out_channels
+    base_in_channels = base_module.in_channels
+    base_out_channels = base_module.out_channels
     cloned_in_channels = cloned_module.in_channels
     cloned_out_channels = cloned_module.out_channels
     # Calculate expansion factors
-    in_expansion = cloned_in_channels // src_in_channels
-    out_expansion = cloned_out_channels // src_out_channels
+    in_expansion = cloned_in_channels // base_in_channels
+    out_expansion = cloned_out_channels // base_out_channels
     
-    print(f"Cloning Conv1d module: {src_in_channels}→{cloned_in_channels}, {src_out_channels}→{cloned_out_channels}, in expansion: {in_expansion}, out expansion: {out_expansion}")
+    print(f"Cloning Conv1d module: {base_in_channels}→{cloned_in_channels}, {base_out_channels}→{cloned_out_channels}, in expansion: {in_expansion}, out expansion: {out_expansion}")
     
     # Verify expansion factors are valid
-    if cloned_in_channels % src_in_channels != 0 or cloned_out_channels % src_out_channels != 0:
+    if cloned_in_channels % base_in_channels != 0 or cloned_out_channels % base_out_channels != 0:
         raise ValueError(f"Conv1d module dimensions are not integer multiples: "
-                     f"{src_in_channels}→{cloned_in_channels}, {src_out_channels}→{cloned_out_channels}")
+                         f"{base_in_channels}→{cloned_in_channels}, {base_out_channels}→{cloned_out_channels}")
     
     # Clone the weights with proper scaling
     for i in range(in_expansion):
@@ -122,22 +125,21 @@ def clone_conv1d(base_module: nn.Conv1d, cloned_module: nn.Conv1d):
 
     
 def clone_conv2d(base_module: nn.Conv2d, cloned_module: nn.Conv2d):
-    """Clone parameters from a base 2D conv module to a cloned module."""
     # Get module dimensions
-    src_in_channels = base_module.in_channels
-    src_out_channels = base_module.out_channels
+    base_in_channels = base_module.in_channels
+    base_out_channels = base_module.out_channels
     cloned_in_channels = cloned_module.in_channels
     cloned_out_channels = cloned_module.out_channels
     # Calculate expansion factors
-    in_expansion = cloned_in_channels // src_in_channels
-    out_expansion = cloned_out_channels // src_out_channels
+    in_expansion = cloned_in_channels // base_in_channels
+    out_expansion = cloned_out_channels // base_out_channels
     
-    print(f"Cloning Conv2d module: {src_in_channels}→{cloned_in_channels}, {src_out_channels}→{cloned_out_channels}, in expansion: {in_expansion}, out expansion: {out_expansion}")
+    print(f"Cloning Conv2d module: {base_in_channels}→{cloned_in_channels}, {base_out_channels}→{cloned_out_channels}, in expansion: {in_expansion}, out expansion: {out_expansion}")
     
     # Verify expansion factors are valid
-    if cloned_in_channels % src_in_channels != 0 or cloned_out_channels % src_out_channels != 0:
+    if cloned_in_channels % base_in_channels != 0 or cloned_out_channels % base_out_channels != 0:
         raise ValueError(f"Conv2d module dimensions are not integer multiples: "
-                     f"{src_in_channels}→{cloned_in_channels}, {src_out_channels}→{cloned_out_channels}")
+                         f"{base_in_channels}→{cloned_in_channels}, {base_out_channels}→{cloned_out_channels}")
     
     # Clone the weights with proper scaling
     for i in range(in_expansion):
@@ -192,23 +194,22 @@ def clone_normalization(
     
     
 def clone_embedding(base_module: nn.Embedding, cloned_module: nn.Embedding):
-    """Clone parameters from a base embedding module to a cloned module."""
     # Get module dimensions
-    src_num_embeddings = base_module.num_embeddings
-    src_embedding_dim = base_module.embedding_dim
+    base_num_embeddings = base_module.num_embeddings
+    base_embedding_dim = base_module.embedding_dim
     cloned_num_embeddings = cloned_module.num_embeddings
     cloned_embedding_dim = cloned_module.embedding_dim
     
     # Calculate expansion factors
-    num_expansion = cloned_num_embeddings // src_num_embeddings
-    dim_expansion = cloned_embedding_dim // src_embedding_dim
+    num_expansion = cloned_num_embeddings // base_num_embeddings
+    dim_expansion = cloned_embedding_dim // base_embedding_dim
     
-    print(f"Cloning Embedding module: {src_num_embeddings}→{cloned_num_embeddings}, {src_embedding_dim}→{cloned_embedding_dim}, num expansion: {num_expansion}, dim expansion: {dim_expansion}")
+    print(f"Cloning Embedding module: {base_num_embeddings}→{cloned_num_embeddings}, {base_embedding_dim}→{cloned_embedding_dim}, num expansion: {num_expansion}, dim expansion: {dim_expansion}")
     
     # Verify expansion factors are valid
-    if cloned_num_embeddings % src_num_embeddings != 0 or cloned_embedding_dim % src_embedding_dim != 0:
+    if cloned_num_embeddings % base_num_embeddings != 0 or cloned_embedding_dim % base_embedding_dim != 0:
         raise ValueError(f"Embedding module dimensions are not integer multiples: "
-                     f"{src_num_embeddings}→{cloned_num_embeddings}, {src_embedding_dim}→{cloned_embedding_dim}")
+                         f"{base_num_embeddings}→{cloned_num_embeddings}, {base_embedding_dim}→{cloned_embedding_dim}")
     
     # Clone the weights with proper scaling
     for i in range(num_expansion):
@@ -274,7 +275,6 @@ def clone_dropout(base_module: nn.Dropout, cloned_module: nn.Dropout):
         print(f"Warning: Dropout probability is set to {cloned_module.p}, cloning is not perfect")
     return cloned_module
 
-
 def clone_flatten(base_module: nn.Flatten) -> CloneAwareFlatten:
     """
     Clone parameters from a standard Flatten and return a new CloneAwareFlatten.
@@ -307,6 +307,114 @@ def clone_parameter_free(base_module: nn.Module, cloned_module: nn.Module) -> nn
     return cloned_module
 
 
+# Validation functions
+
+def validate_activation_cloning(base_module: ActivationFunction, cloned_module: ActivationFunction):
+    assert isinstance(cloned_module, type(base_module)), "Cloned module must be of the same type as base module"
+    
+    # Validate configuration parameters for different activation types
+    if isinstance(base_module, nn.LeakyReLU):
+        assert base_module.negative_slope == cloned_module.negative_slope, "LeakyReLU negative_slope does not match"
+    
+    elif isinstance(base_module, (nn.ELU, nn.CELU)):
+        assert base_module.alpha == cloned_module.alpha, "Alpha parameter does not match"
+    
+    elif isinstance(base_module, nn.Threshold):
+        assert base_module.threshold == cloned_module.threshold, "Threshold value does not match"
+        assert base_module.value == cloned_module.value, "Replacement value does not match"
+    
+    elif isinstance(base_module, (nn.Softmax, nn.LogSoftmax)):
+        assert base_module.dim == cloned_module.dim, "Dimension parameter does not match"
+    
+    elif isinstance(base_module, (nn.Hardshrink, nn.Softshrink)):
+        assert base_module.lambd == cloned_module.lambd, "Lambda parameter does not match"
+        
+    elif isinstance(base_module, nn.GLU):
+        assert base_module.dim == cloned_module.dim, "Dimension parameter does not match"
+    
+    # Validate PReLU parameters
+    elif isinstance(base_module, nn.PReLU):
+        if base_module.num_parameters == 1 and cloned_module.num_parameters > 1:
+            # All elements should be equal to the single parameter
+            assert torch.all(cloned_module.weight.data == base_module.weight.data[0])
+        elif base_module.num_parameters > 1 and cloned_module.num_parameters > 1:
+            expansion = cloned_module.num_parameters // base_module.num_parameters
+            for i in range(expansion):
+                assert torch.allclose(cloned_module.weight.data[i::expansion], base_module.weight.data)
+    
+    print("Passed all tests")
+    return True
+
+
+def validate_dropout_cloning(base_module: nn.Dropout, cloned_module: nn.Dropout):
+    assert cloned_module.p == base_module.p, "Dropout probability must match"
+    print("Passed all tests")
+    return True
+
+
+def validate_embedding_cloning(base_module: nn.Embedding, cloned_module: nn.Embedding):
+    num_expansion = cloned_module.num_embeddings // base_module.num_embeddings
+    dim_expansion = cloned_module.embedding_dim // base_module.embedding_dim
+    for j in range(num_expansion):
+        for i in range(dim_expansion):
+            assert torch.allclose(cloned_module.weight.data[j::num_expansion, i::dim_expansion], base_module.weight.data)
+    print("Passed all tests")
+    return True
+
+
+def validate_normalization_cloning(base_module: NormalizationLayer, cloned_module: NormalizationLayer):
+    assert isinstance(cloned_module, type(base_module)), "Cloned module must be of the same type as base module"
+    
+    if hasattr(base_module, 'weight') and base_module.weight is not None and hasattr(cloned_module, 'weight'):
+        expansion = cloned_module.weight.data.shape[0] // base_module.weight.data.shape[0] 
+        for i in range(expansion):
+            assert torch.allclose(cloned_module.weight.data[i::expansion], base_module.weight.data)
+            
+            if hasattr(base_module, 'bias') and base_module.bias is not None and hasattr(cloned_module, 'bias'):
+                assert torch.allclose(cloned_module.bias.data[i::expansion], base_module.bias.data)
+    
+    # Check running stats for BatchNorm layers
+    if hasattr(base_module, 'running_mean') and base_module.running_mean is not None:
+        if hasattr(cloned_module, 'running_mean') and cloned_module.running_mean is not None:
+            expansion = cloned_module.running_mean.data.shape[0] // base_module.running_mean.data.shape[0]
+            for i in range(expansion):
+                assert torch.allclose(cloned_module.running_mean.data[i::expansion], base_module.running_mean.data)
+                assert torch.allclose(cloned_module.running_var.data[i::expansion], base_module.running_var.data)
+    
+    print("Passed all tests")
+    
+
+def validate_linear_cloning(base_module: nn.Linear, cloned_module: nn.Linear):
+    in_expansion = cloned_module.in_features // base_module.in_features
+    out_expansion = cloned_module.out_features // base_module.out_features
+    for j in range(out_expansion):
+        for i in range(in_expansion):
+            assert torch.allclose(cloned_module.weight.data[j::out_expansion, i::in_expansion], base_module.weight.data/in_expansion)
+            assert torch.allclose(cloned_module.bias.data[j::out_expansion], base_module.bias.data)
+    print("Passed all tests")
+    
+    
+def validate_conv1d_cloning(base_module: nn.Conv1d, cloned_module: nn.Conv1d):
+    in_expansion = cloned_module.in_channels // base_module.in_channels
+    out_expansion = cloned_module.out_channels // base_module.out_channels
+    for j in range(out_expansion):
+        for i in range(in_expansion):
+            assert torch.allclose(cloned_module.weight.data[j::out_expansion, i::in_expansion, :], base_module.weight.data/in_expansion)
+            assert torch.allclose(cloned_module.bias.data[j::out_expansion], base_module.bias.data)
+    print("Passed all tests")
+    
+
+def validate_conv2d_cloning(base_module: nn.Conv2d, cloned_module: nn.Conv2d):
+    in_expansion = cloned_module.in_channels // base_module.in_channels
+    out_expansion = cloned_module.out_channels // base_module.out_channels
+    for j in range(out_expansion):
+        for i in range(in_expansion):
+            assert torch.allclose(cloned_module.weight.data[j::out_expansion, i::in_expansion, :, :], base_module.weight.data/in_expansion)
+            assert torch.allclose(cloned_module.bias.data[j::out_expansion], base_module.bias.data)
+    print("Passed all tests")
+
+
+
 def clone_module(
     base_module: nn.Module, 
     cloned_module: nn.Module,
@@ -326,9 +434,9 @@ def clone_module(
     # Define normalization and activation types inline for easier checking
     norm_types = (nn.BatchNorm1d, nn.BatchNorm2d, nn.LayerNorm)
     activation_types = (nn.ReLU, nn.Sigmoid, nn.Tanh, nn.SELU, nn.GELU, nn.SiLU, nn.ELU, nn.LeakyReLU, 
-                      nn.PReLU, nn.Threshold, nn.Softmax, nn.LogSoftmax, nn.Softplus, nn.Softmin, 
-                      nn.Hardsigmoid, nn.Hardswish, nn.Softshrink, nn.Hardshrink, nn.Softsign, 
-                      nn.GLU, nn.CELU, nn.Identity)
+                       nn.PReLU, nn.Threshold, nn.Softmax, nn.LogSoftmax, nn.Softplus, nn.Softmin, 
+                       nn.Hardsigmoid, nn.Hardswish, nn.Softshrink, nn.Hardshrink, nn.Softsign, 
+                       nn.GLU, nn.CELU, nn.Identity)
     
     if isinstance(base_module, nn.Linear):
         clone_linear(base_module, cloned_module)
@@ -355,7 +463,8 @@ def clone_module(
     return success
 
 
-def clone_model(base_model: nn.Module, cloned_model: nn.Module) -> nn.Module:
+
+def model_clone(base_model: nn.Module, cloned_model: nn.Module) -> nn.Module:
     """
     Clone parameters from a base model to a cloned model.
     
@@ -388,21 +497,21 @@ def clone_model(base_model: nn.Module, cloned_model: nn.Module) -> nn.Module:
     # Second, handle direct parameters of the model (not within modules)
     for name, param in list(base_model.named_parameters(recurse=False)):
         if hasattr(cloned_model, name):
-            src_param = getattr(base_model, name)
+            base_param = getattr(base_model, name)
             cloned_param = getattr(cloned_model, name)
             
             # Check if dimensions differ and can be expanded
-            if src_param.shape != cloned_param.shape:
+            if base_param.shape != cloned_param.shape:
                 # For embedding dimensions (typically last dimension in transformers)
-                if len(src_param.shape) >= 2 and src_param.shape[:-1] == cloned_param.shape[:-1]:
-                    src_dim = src_param.shape[-1]
+                if len(base_param.shape) >= 2 and base_param.shape[:-1] == cloned_param.shape[:-1]:
+                    base_dim = base_param.shape[-1]
                     cloned_dim = cloned_param.shape[-1]
                     
-                    if cloned_dim % src_dim == 0:
-                        expansion = cloned_dim // src_dim
+                    if cloned_dim % base_dim == 0:
+                        expansion = cloned_dim // base_dim
                         # Duplicate across embedding dimension
                         for i in range(expansion):
-                            cloned_param.data[..., i::expansion] = src_param.data
+                            cloned_param.data[..., i::expansion] = base_param.data
                         print(f"Cloned parameter {name} with embedding expansion {expansion}")
                     else:
                         print(f"Warning: Parameter {name} dimensions don't match and can't be expanded automatically")
@@ -410,14 +519,12 @@ def clone_model(base_model: nn.Module, cloned_model: nn.Module) -> nn.Module:
                     print(f"Warning: Parameter {name} shapes don't match and can't be expanded automatically")
             else:
                 # Exact shape match, just copy
-                cloned_param.data.copy_(src_param.data)
+                cloned_param.data.copy_(base_param.data)
                 print(f"Cloned parameter {name} with direct copy")
     
     # Finally, process module parameters
     for name, base_module in base_model.named_modules():
         try:
-            if name == "":
-                continue  # Skip the root module
             cloned_module = cloned_model.get_submodule(name)
             print(f"Cloning module {name}")
             clone_module(base_module, cloned_module)
@@ -427,79 +534,127 @@ def clone_model(base_model: nn.Module, cloned_model: nn.Module) -> nn.Module:
     return cloned_model
 
 
-def test_activation_cloning(base_model, cloned_model, input_data, tolerance=1e-3):
-    """Test if activations match between base and cloned models."""
-    from src.utils.monitor import NetworkMonitor
-    
-    src_monitor = NetworkMonitor(base_model)
-    cloned_monitor = NetworkMonitor(cloned_model)
-    src_monitor.register_hooks()
+
+def test_activation_cloning(base_model, cloned_model, input, target, tolerance=1e-3, check_equality=False):
+    criterion = nn.CrossEntropyLoss()
+    base_monitor = NetworkMonitor(base_model,)
+    cloned_monitor = NetworkMonitor(cloned_model,)
+    base_monitor.register_hooks()
     cloned_monitor.register_hooks()
 
-    with torch.no_grad():
-        y1 = base_model(input_data)
-        y2 = cloned_model(input_data)
-    
-    assert torch.allclose(y1, y2, atol=tolerance), "Outputs do not match after cloning"
-
-    acts1 = src_monitor.get_latest_activations()
-    acts2 = cloned_monitor.get_latest_activations()
-
-    for key, a1 in acts1.items():
-        if key not in acts2:
-            continue
-        a2 = acts2[key]
-        s1, s2 = torch.tensor(a1.shape), torch.tensor(a2.shape)
-        i = (s1 != s2).nonzero()
-        if len(i) == 0:
-            assert torch.allclose(a1, a2, atol=tolerance), f"Activations for {key} do not match"
-        if len(i) == 1:
-            expansion = a2.shape[i[0][0]] // a1.shape[i[0][0]]
-            for j in range(expansion):
-                assert torch.allclose(a2[:, j::expansion], a1, atol=tolerance), f"Activations for {key} do not match"
-        if len(i) > 1:
-            assert False, f"Activations for {key} have more than one dimension mismatch, this is unexpected behavior"
-            
-    print(f"All activations match after cloning up to tolerance {tolerance}")
-    
-    # Clean up monitors
-    src_monitor.remove_hooks()
+    y1 = base_model(input)
+    y2 = cloned_model(input)
+    l1 = criterion(y1, target)
+    l2 = criterion(y2, target)
+    l1.backward()
+    l2.backward()
     cloned_monitor.remove_hooks()
+    base_monitor.remove_hooks()
+    if check_equality:
+        assert torch.allclose(y1, y2,atol=tolerance), "Outputs do not match after cloning"
 
+    un_explained_vars = []
+    for act_type in ['forward', 'backward']:
+        if act_type == 'forward':
+            base_acts = base_monitor.get_latest_activations()
+            clone_acts = cloned_monitor.get_latest_activations()
+        elif act_type == 'backward':
+            base_acts = base_monitor.get_latest_gradients()
+            clone_acts = cloned_monitor.get_latest_gradients()
 
-def create_cloned_model(base_model, full_config, clone_factor):
-    """Create a cloned model with scaled dimensions based on the base model."""
-    from src.models.model_factory import create_model
-    from copy import deepcopy
-    import omegaconf
+        for key, a1 in base_acts.items():
+            a2 = clone_acts[key]
+            s1, s2 = torch.tensor(a1.shape), torch.tensor(a2.shape)
+            print(f"key: {key}, a1: {a1.shape}, a2: {a2.shape}")
+            i = (s1 != s2).nonzero()
+            if len(i)==0:
+                if check_equality:
+                    assert torch.allclose(a1, a2, atol=tolerance), f"Activations for {key} do not match"
+            elif len(i)==1:
+                i = i[0][0]
+                expansion = a2.shape[i] // a1.shape[i]
+                # check expansion depending on the dimension 
+                for j in range(expansion):
+                    print(f"mismatch dim: {i}, checking slice: {j}, expansion: {expansion}")
+                    slices = []
+                    if i==0:
+                        slice = a2[j::expansion]
+                    elif i==1:
+                        slice = a2[:, j::expansion]
+                    elif i==2:
+                        slice = a2[:, :, j::expansion]
+                    elif i==3:
+                        slice = a2[:, :, :, j::expansion]
+                    slices.append(slice)
+                    if check_equality:
+                        assert torch.allclose(slice, a1, atol=tolerance), f"Activations for {key} do not match"
+                slices = torch.stack(slices)
+                if slices.shape[0]>1:
+                    print(f"slices for {key} shape = {slices.shape}")
+                    std, rms = slices.std(dim=0), ((slices**2).mean(dim=0)**0.5)
+                    unexplained = (std/rms).mean().item()
+                    print(f"unexplained variance for {key} is {unexplained}")
+                    un_explained_vars[f'{key}_{act_type}'] = unexplained
+                    assert unexplained<tolerance, f"unexplained variance is higher than the threshold {tolerance}"
+
+            elif len(i)>1:
+                assert False, f"Activations for {key} more than one dimension mismatch, this is unexpected behavior"
+                    
+            print(f"All {act_type} activations match after cloning up to tolerance {tolerance}")
+            return un_explained_vars
     
-    # Create a deep copy of the full config
-    cloned_config = omegaconf.OmegaConf.create(
-        omegaconf.OmegaConf.to_container(full_config, resolve=True)
-    )
+def test_various_models_cloning(normalization='none', drpout_p=0.0, activation='relu', tolerance=1e-3,check_equality=False):
+    from src.models import MLP, CNN, ResNet, VisionTransformer
     
-    model_config = full_config.model
+    # generate random input and targets
+    x_flat = torch.randn(32, 10) # for MLP 
+    x = torch.randn(32, 3, 32, 32)
+    y = torch.randint(0, 2, (32,))
     
-    # Scale hidden dimensions based on model type
-    if model_config.name.lower() == 'mlp':
-        cloned_config.model.hidden_sizes = [size * clone_factor for size in model_config.hidden_sizes]
     
-    elif model_config.name.lower() == 'cnn':
-        cloned_config.model.conv_channels = [size * clone_factor for size in model_config.conv_channels]
-        
-    elif model_config.name.lower() == 'resnet':
-        cloned_config.model.base_channels = model_config.base_channels * clone_factor
-        
-    elif model_config.name.lower() == 'vit':
-        cloned_config.model.embed_dim = model_config.embed_dim * clone_factor
-        if 'mlp_ratio' in cloned_config.model:
-            # Keep the same expansion ratio for MLP blocks
-            pass
+    base_model = MLP(input_size=10, output_size=2, hidden_sizes=[64, 32,], activation=activation, dropout_p=drpout_p, normalization=normalization)
+    cloned_model = MLP(input_size=10, output_size=2, hidden_sizes=[64*2, 32*2,], activation=activation, dropout_p=drpout_p, normalization=normalization)
+    cloned_model = model_clone(base_model, cloned_model)
+    test_activation_cloning(base_model, cloned_model, x_flat, y, tolerance=tolerance, check_equality=check_equality)
     
-    # Create the cloned model with scaled dimensions
-    cloned_model = create_model(cloned_config)
+    base_model = CNN(in_channels=3, num_classes=2, conv_channels=[64, 128, 256], activation=activation, dropout_p=drpout_p, normalization=normalization)
+    cloned_model = CNN(in_channels=3, num_classes=2, conv_channels=[64*2, 128*2, 256*2], activation=activation, dropout_p=drpout_p, normalization=normalization)
+    cloned_model = model_clone(base_model, cloned_model)
+    test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality)
+
+    base_model = ResNet(in_channels=3, num_classes=2, base_channels=64, activation=activation, dropout_p=drpout_p, normalization=normalization)
+    cloned_model = ResNet(in_channels=3, num_classes=2, base_channels=64*2, activation=activation, dropout_p=drpout_p, normalization=normalization)
+    cloned_model = model_clone(base_model, cloned_model)
+    test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality)
+
+    base_model = VisionTransformer(
+        in_channels=3, 
+        num_classes=2, 
+        embed_dim=64, 
+        depth=2, 
+        dropout_p=drpout_p,
+        attn_drop_rate=drpout_p,
+        activation=activation,)
+
+    cloned_model = VisionTransformer(
+        in_channels=3, 
+        num_classes=2, 
+        patch_size=4, 
+        embed_dim=64*2, 
+        depth=2, 
+        dropout_p=drpout_p,
+        attn_drop_rate=drpout_p,
+        activation=activation,)
+
+    cloned_model = model_clone(base_model, cloned_model)
+
+    test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance)
     
-    # Clone parameters from base to cloned model
-    cloned_model = clone_model(base_model, cloned_model)
+# if __name__ == "__main__":
+#     # Test the cloning functionality with various models
+#     for activation in ['relu', 'tanh', 'gelu']:
+#         for normalization in ['none', 'layer', 'batch']:
+#             test_various_models_cloning(activation=activation, normalization=normalization,drpout_p=0.0, tolerance=1e-8, check_equality=False)    
+# if __name__ == "__main__":
+#     test_various_models_cloning(activation=activation, normalization=normalization,drpout_p=0.0, tolerance=0.1)
     
-    return cloned_model
