@@ -13,7 +13,6 @@ import sys
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-
 # Import your cloning functions
 from src.models import MLP, CNN, ResNet, VisionTransformer
 from src.utils.monitor import NetworkMonitor
@@ -194,6 +193,7 @@ def fixed_test_activation_cloning(base_model, cloned_model, input, target, toler
             clone_acts = cloned_monitor.get_latest_gradients()
         
         for key, a1 in base_acts.items():
+            # Skip if key not in clone_acts
             if key not in clone_acts:
                 continue
                 
@@ -295,12 +295,12 @@ def run_cloning_experiment(model_type='cnn', num_epochs=5, activation='relu', no
     
     # 1. Train base model
     print(f"\n{'='*20} Training base {model_type.upper()} model {'='*20}")
-    base_model = create_model(model_type, expanded=False, activation=activation, 
-                            normalization=normalization, dropout_p=dropout_p)
+    base_model_inner = create_model(model_type, expanded=False, activation=activation, 
+                          normalization=normalization, dropout_p=dropout_p)
     
     # Wrap MLP model to handle input reshaping
     needs_flatten = model_type == 'mlp'
-    base_model = ModelWrapper(base_model, flatten=needs_flatten).to(device)
+    base_model = ModelWrapper(base_model_inner, flatten=needs_flatten).to(device)
     
     optimizer = optim.SGD(base_model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
@@ -332,21 +332,18 @@ def run_cloning_experiment(model_type='cnn', num_epochs=5, activation='relu', no
     
     # 2. Clone and continue training
     print(f"\n{'='*20} Training cloned {model_type.upper()} model {'='*20}")
-    expanded_model = create_model(model_type, expanded=True, activation=activation, 
-                                normalization=normalization, dropout_p=dropout_p)
+    expanded_model_inner = create_model(model_type, expanded=True, activation=activation, 
+                              normalization=normalization, dropout_p=dropout_p)
     
-    # Extract the inner model for cloning if wrapped
-    inner_base_model = base_model.model if needs_flatten else base_model
+    # Create a reference model for validation (important: keep same structure as base model)
+    reference_model_inner = create_model(model_type, expanded=False, activation=activation, 
+                             normalization=normalization, dropout_p=dropout_p)
+    reference_model_inner.load_state_dict(base_model_inner.state_dict())
+    reference_model = ModelWrapper(reference_model_inner, flatten=needs_flatten).to(device)
     
     # Clone the model
-    cloned_model_inner = model_clone(inner_base_model, expanded_model)
+    cloned_model_inner = model_clone(base_model_inner, expanded_model_inner)
     cloned_model = ModelWrapper(cloned_model_inner, flatten=needs_flatten).to(device)
-    
-    # Create an identical model for reference to verify cloning properties
-    reference_model = create_model(model_type, expanded=False, activation=activation, 
-                                 normalization=normalization, dropout_p=dropout_p)
-    reference_model.load_state_dict(inner_base_model.state_dict())
-    reference_model = reference_model.to(device)
     
     # Validate initial cloning
     print("Validating initial cloning properties...")
@@ -360,15 +357,15 @@ def run_cloning_experiment(model_type='cnn', num_epochs=5, activation='relu', no
     # Initial validation
     try:
         if needs_flatten:
-            inner_model = cloned_model.model
+            # For MLP, we need to flatten the inputs
             val_inputs_flattened = val_inputs.view(val_inputs.size(0), -1)
             unexplained_var = fixed_test_activation_cloning(
-                reference_model, inner_model, val_inputs_flattened, val_targets, 
+                reference_model_inner, cloned_model_inner, val_inputs_flattened, val_targets, 
                 tolerance=tolerance, check_equality=False
             )
         else:
             unexplained_var = fixed_test_activation_cloning(
-                reference_model, cloned_model, val_inputs, val_targets, 
+                reference_model_inner, cloned_model_inner, val_inputs, val_targets, 
                 tolerance=tolerance, check_equality=False
             )
         
@@ -409,15 +406,14 @@ def run_cloning_experiment(model_type='cnn', num_epochs=5, activation='relu', no
             try:
                 # Need to handle MLP differently due to input flattening
                 if needs_flatten:
-                    inner_model = cloned_model.model
                     val_inputs_flattened = val_inputs.view(val_inputs.size(0), -1)
                     unexplained_var = fixed_test_activation_cloning(
-                        reference_model, inner_model, val_inputs_flattened, val_targets, 
+                        reference_model_inner, cloned_model_inner, val_inputs_flattened, val_targets, 
                         tolerance=tolerance, check_equality=False
                     )
                 else:
                     unexplained_var = fixed_test_activation_cloning(
-                        reference_model, cloned_model, val_inputs, val_targets, 
+                        reference_model_inner, cloned_model_inner, val_inputs, val_targets, 
                         tolerance=tolerance, check_equality=False
                     )
                 
@@ -461,7 +457,7 @@ def run_cloning_experiment(model_type='cnn', num_epochs=5, activation='relu', no
     # 3. Train from scratch for 2*num_epochs
     print(f"\n{'='*20} Training expanded {model_type.upper()} model from scratch {'='*20}")
     scratch_model_inner = create_model(model_type, expanded=True, activation=activation, 
-                                     normalization=normalization, dropout_p=dropout_p)
+                               normalization=normalization, dropout_p=dropout_p)
     scratch_model = ModelWrapper(scratch_model_inner, flatten=needs_flatten).to(device)
     
     optimizer = optim.SGD(scratch_model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
@@ -639,8 +635,17 @@ def plot_results(results, model_type, num_epochs, save_path):
 
 # Example usage
 if __name__ == "__main__":
+    model_type = 'cnn'  # Default is CNN
+    
+    # Check if a model type is provided as a command-line argument
+    if len(sys.argv) > 1:
+        model_type = sys.argv[1].lower()
+        if model_type not in ['mlp', 'cnn', 'resnet', 'vit']:
+            print(f"Invalid model type: {model_type}. Using default: 'cnn'")
+            model_type = 'cnn'
+    
     results = run_cloning_experiment(
-        model_type='mlp',  # Options: 'mlp', 'cnn', 'resnet', 'vit'
+        model_type=model_type,
         num_epochs=1,
         activation='relu',
         normalization='batch',
