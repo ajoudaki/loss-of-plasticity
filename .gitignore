@@ -18,6 +18,7 @@ artifacts/
 *.pyc
 __pycache__/
 venv/
+lop/
 *.egg-info/
 dist/
 build/
