@@ -80,7 +80,7 @@ def measure_effective_rank(layer_act, svd_sample_size=1024, seed=None):
         else:
             idx = torch.randperm(N)[:svd_sample_size]
         flattened_act = flattened_act[idx]
-    U, S, Vt = torch.linalg.svd(flattened_act, full_matrices=False)
+    S = torch.linalg.svdvals(flattened_act)
     S_sum = S.sum()
     if S_sum < 1e-9:
         return 0.0
