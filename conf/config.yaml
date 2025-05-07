@@ -15,7 +15,7 @@ logging:
 
 # Execution mode
 use_wandb: true
-wandb_project: "continual-learning-experiment"
+wandb_project: "continual-learning-experiments"
 wandb_tags: []
 dryrun: false
 
