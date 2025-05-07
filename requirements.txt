@@ -11,3 +11,5 @@ nbformat>=5.1.0  # For notebook processing
 hydra-core>=1.3.0
 omegaconf>=2.3.0
 hydra-colorlog>=1.2.0  # Optional for colored logging
+pandas
+seaborn
