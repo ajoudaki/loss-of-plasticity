@@ -603,6 +603,86 @@ def test_activation_cloning(base_model, cloned_model, input, target, tolerance=1
             print(f"All {act_type} activations match after cloning up to tolerance {tolerance}")
             return un_explained_vars
     
+def create_cloned_model(current_model, cfg, expansion_factor):
+    """
+    Create an expanded model by cloning the current model with an expansion factor.
+    
+    Args:
+        current_model: The base model to clone
+        cfg: Configuration object containing model specifications
+        expansion_factor: Factor by which to expand model capacity
+        
+    Returns:
+        An initialized expanded model with cloned parameters
+    """
+    from ..models import MLP, CNN, ResNet, VisionTransformer
+    from omegaconf import OmegaConf
+    import copy
+    
+    # Get the model type from config
+    model_name = cfg.model.name.lower()
+    
+    # Convert model config to a mutable dictionary
+    model_params = OmegaConf.to_container(cfg.model, resolve=True)
+    
+    # Ensure dataset parameters are added to model params
+    model_params['num_classes'] = cfg.dataset.num_classes
+    
+    # Remove name and _target_ from parameters
+    if 'name' in model_params:
+        del model_params['name']
+    if '_target_' in model_params:
+        del model_params['_target_']
+    
+    # Expand appropriate dimensions based on model type
+    if model_name == 'mlp':
+        # Add input_size and output_size for MLP
+        model_params['input_size'] = cfg.dataset.input_size
+        model_params['output_size'] = cfg.dataset.num_classes
+        
+        # Expand hidden sizes
+        model_params['hidden_sizes'] = [size * expansion_factor for size in model_params['hidden_sizes']]
+        expanded_model = MLP(**model_params)
+        
+    elif model_name == 'cnn':
+        # Add CNN specific parameters
+        model_params['in_channels'] = cfg.dataset.in_channels
+        model_params['input_size'] = cfg.dataset.img_size
+        
+        # Expand conv channels and fc hidden units
+        model_params['conv_channels'] = [channels * expansion_factor for channels in model_params['conv_channels']]
+        model_params['fc_hidden_units'] = [units * expansion_factor for units in model_params['fc_hidden_units']]
+        expanded_model = CNN(**model_params)
+        
+    elif model_name == 'resnet':
+        # Add ResNet specific parameters
+        model_params['in_channels'] = cfg.dataset.in_channels
+        
+        # Expand base channels
+        model_params['base_channels'] = model_params['base_channels'] * expansion_factor
+        expanded_model = ResNet(**model_params)
+        
+    elif model_name == 'vit':
+        # Add ViT specific parameters
+        model_params['img_size'] = cfg.dataset.img_size
+        model_params['in_channels'] = cfg.dataset.in_channels
+        
+        # Expand embed dimensions
+        model_params['embed_dim'] = model_params['embed_dim'] * expansion_factor
+        expanded_model = VisionTransformer(**model_params)
+        
+    else:
+        raise ValueError(f"Unsupported model type for cloning: {model_name}")
+    
+    # Clone parameters from the current model to the expanded model
+    expanded_model = model_clone(current_model, expanded_model)
+    
+    # Ensure the expanded model is on the same device as the current model
+    expanded_model = expanded_model.to(current_model.device)
+    
+    return expanded_model
+
+
 def test_various_models_cloning(normalization='none', drpout_p=0.0, activation='relu', tolerance=1e-3,check_equality=False):
     from src.models import MLP, CNN, ResNet, VisionTransformer
     
