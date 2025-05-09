@@ -279,15 +279,15 @@ def train_cloning_experiment(original_model,
             similarity_log = {
                 "epoch": epoch,
                 "global_epoch": global_epoch,
-                "model_type": cfg.model.name,
-                "cloning_train_success": train_success,
-                "cloning_train_unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
-                "cloning_val_success": val_success,
-                "cloning_val_unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+                "model_type": expanded_history['model_type'],
+                f"expanded_{current_expansion}x_train/success": float(train_success),
+                f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                f"expanded_{current_expansion}x_val/success": float(val_success),
+                f"expanded_{current_expansion}x_val/unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
             }
             for k,v in train_unexplained_var.items():
-                similarity_log[f"cloning_train_unexplained_var/{k}"] = v
-                similarity_log[f"cloning_val_unexplained_var/{k}"] = val_unexplained_var[k]
+                similarity_log[f"expanded_{current_expansion}x_train/unexplained_var/{k}"] = v
+                similarity_log[f"expanded_{current_expansion}x_val/unexplained_var/{k}"] = val_unexplained_var[k]
             wandb.log(similarity_log)
         
         # Create optimizer for expanded model
@@ -413,14 +413,14 @@ def train_cloning_experiment(original_model,
                             "epoch": epoch,
                             "global_epoch": global_epoch,
                             "model_type": expanded_history['model_type'],
-                            "cloning_train_success": train_success,
-                            "cloning_train_unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
-                            "cloning_val_success": val_success,
-                            "cloning_val_unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+                            f"expanded_{current_expansion}x_train/success": float(train_success),
+                            f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                            f"expanded_{current_expansion}x_val/success": float(val_success),
+                            f"expanded_{current_expansion}x_val/unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
                         }
                         for k,v in train_unexplained_var.items():
-                            similarity_log[f"cloning_train_unexplained_var/{k}"] = v
-                            similarity_log[f"cloning_val_unexplained_var/{k}"] = val_unexplained_var[k]
+                            similarity_log[f"expanded_{current_expansion}x_train/unexplained_var/{k}"] = v
+                            similarity_log[f"expanded_{current_expansion}x_val/unexplained_var/{k}"] = val_unexplained_var[k]
                         wandb.log(similarity_log)
 
                         # Store in history
