@@ -279,7 +279,7 @@ def train_cloning_experiment(original_model,
             similarity_log = {
                 "epoch": epoch,
                 "global_epoch": global_epoch,
-                "model_type": expanded_history['model_type'],
+                "model_type": cfg.model.name,
                 f"expanded_{current_expansion}x_train/success": float(train_success),
                 f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
                 f"expanded_{current_expansion}x_val/success": float(val_success),
