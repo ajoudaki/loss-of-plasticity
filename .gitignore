@@ -6,6 +6,7 @@ artifacts/
 
 # data
 **/data/
+**/cifar_data/
 **/iframe_figures/
 **/results/
 **/saved_models/
