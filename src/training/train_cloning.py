@@ -267,13 +267,28 @@ def train_cloning_experiment(original_model,
             cfg.training.expansion_factor
         ).to(device)
         
-        # Test if cloning was successful 
-        try:
-            test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3)
-            test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3)
-            print("✓ Cloning validation successful - activations match between models")
-        except AssertionError as e:
-            print(f"⚠ Cloning validation warning: {e}")
+        # Test if cloning is successful 
+        train_success, train_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)
+        
+        val_success, val_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3, model_name=cfg.model.name)
+        print(f"✓ Epoch {epoch}: Cloning validation successful - activations match between models")
+
+
+        # Add cloning metrics to wandb log
+        if cfg.use_wandb:
+            similarity_log = {
+                "epoch": epoch,
+                "global_epoch": global_epoch,
+                "model_type": cfg.model.name,
+                "cloning_train_success": train_success,
+                "cloning_train_unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                "cloning_val_success": val_success,
+                "cloning_val_unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+            }
+            for k,v in train_unexplained_var.items():
+                similarity_log[f"cloning_train_unexplained_var/{k}"] = v
+                similarity_log[f"cloning_val_unexplained_var/{k}"] = val_unexplained_var[k]
+            wandb.log(similarity_log)
         
         # Create optimizer for expanded model
         expanded_optimizer = create_optimizer(expanded_model, cfg)
@@ -386,44 +401,34 @@ def train_cloning_experiment(original_model,
                         )
                     
                     # Test if cloning is still effective at the end of each epoch
-                    try:
-                        test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3)
-                        test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3)
-                        print(f"✓ Epoch {epoch}: Cloning validation successful - activations match between models")
+                    train_success, train_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    
+                    val_success, val_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    print(f"✓ Epoch {epoch}: Cloning training set: {train_success} validation success: {val_success} ")
 
-                        # Add cloning metrics to wandb log
-                        if cfg.use_wandb:
-                            similarity_log = {
-                                "epoch": epoch,
-                                "global_epoch": global_epoch,
-                                "model_type": expanded_history['model_type'],
-                                "cloning_test_success": 1.0
-                            }
-                            wandb.log(similarity_log)
 
-                            # Store in history
-                            metric_key = "cloning_test_success"
-                            if metric_key not in expanded_history['metrics_history']:
-                                expanded_history['metrics_history'][metric_key] = []
-                            expanded_history['metrics_history'][metric_key].append(1.0)
-                    except AssertionError as e:
-                        print(f"⚠ Epoch {epoch}: Cloning validation warning: {e}")
+                    # Add cloning metrics to wandb log
+                    if cfg.use_wandb:
+                        similarity_log = {
+                            "epoch": epoch,
+                            "global_epoch": global_epoch,
+                            "model_type": expanded_history['model_type'],
+                            "cloning_train_success": train_success,
+                            "cloning_train_unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                            "cloning_val_success": val_success,
+                            "cloning_val_unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+                        }
+                        for k,v in train_unexplained_var.items():
+                            similarity_log[f"cloning_train_unexplained_var/{k}"] = v
+                            similarity_log[f"cloning_val_unexplained_var/{k}"] = val_unexplained_var[k]
+                        wandb.log(similarity_log)
 
-                        # Add cloning metrics to wandb log
-                        if cfg.use_wandb:
-                            similarity_log = {
-                                "epoch": epoch,
-                                "global_epoch": global_epoch,
-                                "model_type": expanded_history['model_type'],
-                                "cloning_test_success": 0.0
-                            }
-                            wandb.log(similarity_log)
+                        # Store in history
+                        metric_key = "cloning_test_success"
+                        if metric_key not in expanded_history['metrics_history']:
+                            expanded_history['metrics_history'][metric_key] = []
+                        expanded_history['metrics_history'][metric_key].append(1.0)
 
-                            # Store in history
-                            metric_key = "cloning_test_success"
-                            if metric_key not in expanded_history['metrics_history']:
-                                expanded_history['metrics_history'][metric_key] = []
-                            expanded_history['metrics_history'][metric_key].append(0.0)
             
             # Log to wandb
             if cfg.use_wandb:
