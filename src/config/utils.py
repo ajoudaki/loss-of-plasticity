@@ -184,16 +184,16 @@ def setup_wandb(cfg: DictConfig) -> bool:
 def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer:
     """
     Create an optimizer based on configuration.
-    
+
     Args:
         model: The model whose parameters will be optimized
         cfg: Configuration object containing optimizer settings
-        
+
     Returns:
         Optimizer instance
     """
     optimizer_name = cfg.optimizer.name.lower()
-    
+
     if optimizer_name == 'adam':
         return torch.optim.Adam(
             model.parameters(),
@@ -228,6 +228,18 @@ def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer
             betas=tuple(cfg.optimizer.betas),
             eps=cfg.optimizer.eps,
             weight_decay=cfg.optimizer.weight_decay
+        )
+    elif optimizer_name == 'noisysgd':
+        from ..utils.noisy_optimizer import NoisySGD
+        return NoisySGD(
+            model.parameters(),
+            lr=cfg.optimizer.lr,
+            noise_scale=cfg.optimizer.noise_scale,
+            noise_decay=cfg.optimizer.noise_decay,
+            momentum=cfg.optimizer.momentum,
+            dampening=cfg.optimizer.dampening,
+            weight_decay=cfg.optimizer.weight_decay,
+            nesterov=cfg.optimizer.nesterov
         )
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
