@@ -626,7 +626,6 @@ def create_cloned_model(current_model, cfg, expansion_factor):
     model_params = OmegaConf.to_container(cfg.model, resolve=True)
     
     # Ensure dataset parameters are added to model params
-    model_params['num_classes'] = cfg.dataset.num_classes
     
     # Remove name and _target_ from parameters
     if 'name' in model_params:
@@ -646,6 +645,7 @@ def create_cloned_model(current_model, cfg, expansion_factor):
         
     elif model_name == 'cnn':
         # Add CNN specific parameters
+        model_params['num_classes'] = cfg.dataset.num_classes
         model_params['in_channels'] = cfg.dataset.in_channels
         model_params['input_size'] = cfg.dataset.img_size
         
@@ -655,6 +655,7 @@ def create_cloned_model(current_model, cfg, expansion_factor):
         expanded_model = CNN(**model_params)
         
     elif model_name == 'resnet':
+        model_params['num_classes'] = cfg.dataset.num_classes
         # Add ResNet specific parameters
         model_params['in_channels'] = cfg.dataset.in_channels
         
@@ -664,6 +665,7 @@ def create_cloned_model(current_model, cfg, expansion_factor):
         
     elif model_name == 'vit':
         # Add ViT specific parameters
+        model_params['num_classes'] = cfg.dataset.num_classes
         model_params['img_size'] = cfg.dataset.img_size
         model_params['in_channels'] = cfg.dataset.in_channels
         
@@ -676,9 +678,6 @@ def create_cloned_model(current_model, cfg, expansion_factor):
     
     # Clone parameters from the current model to the expanded model
     expanded_model = model_clone(current_model, expanded_model)
-    
-    # Ensure the expanded model is on the same device as the current model
-    expanded_model = expanded_model.to(current_model.device)
     
     return expanded_model
 

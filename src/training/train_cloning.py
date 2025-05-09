@@ -269,7 +269,8 @@ def train_cloning_experiment(original_model,
         
         # Test if cloning was successful
         try:
-            test_activation_cloning(current_model, expanded_model, fixed_train_batch)
+            # pattern of use : test_activation_cloning(current_model, expanded_model, input, target, tolerance=1e-3, check_equality=False)
+            test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3)
             print("✓ Cloning validation successful - activations match between models")
         except AssertionError as e:
             print(f"⚠ Cloning validation warning: {e}")
