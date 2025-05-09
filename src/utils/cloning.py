@@ -597,8 +597,8 @@ def test_activation_cloning(base_model, cloned_model, input, target, model_name=
                 slices = torch.stack(slices)
                 if slices.shape[0]>1:
                     print(f"slices for {key} shape = {slices.shape}")
-                    std, rms = slices.std(dim=0), ((slices**2).mean(dim=0)**0.5)
-                    unexplained = ((std)/(rms+eps)).mean().item()
+                    var, var_all = slices.std(dim=0), slices.std()
+                    unexplained = ((var)/(var_all+eps)).mean().item()
                     print(f"unexplained variance for {key} is {unexplained}")
                     un_explained_vars[f'{key}_{act_type}'] = unexplained
                     if unexplained>tolerance:
