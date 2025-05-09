@@ -29,3 +29,6 @@ build/
 # Jupyter Lab
 .ipynb_checkpoints/
 .DS_Store
+
+# ignore claude generated files 
+**/CLAUDE.md 
