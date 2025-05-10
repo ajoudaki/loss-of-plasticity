@@ -16,7 +16,7 @@ from typing import List, Dict, Any, Optional
 @dataclass
 class ExperimentSettings:
     FIGURE_DIR: str = "./figures/"
-    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"))
     DEBUG_VERBOSE: bool = False # Set to True for detailed print statements
     QUICK_TEST_MODE: bool = False # True for small epochs, subset of data, smaller model
     SEED: int = 42
@@ -72,11 +72,13 @@ class ExperimentSettings:
             self.batch_size = 128
             self.eval_batch_size = 256
             if self.DEBUG_VERBOSE: print(f"--- QUICK TEST MODE ENABLED ({self.dataset_name}, ExpType: {self.experiment_type}) ---")
-        
+
         if self.dataset_name == "MNIST":
             self.input_dim = 28 * 28 * 1
             self.num_classes = 10
-        # Add CIFAR10 specifics if needed later
+        elif self.dataset_name == "CIFAR10":
+            self.input_dim = 32 * 32 * 3
+            self.num_classes = 10
         else:
             raise ValueError(f"Unsupported dataset_name: {self.dataset_name}")
 
@@ -267,55 +269,85 @@ def get_pixel_permutation(s: ExperimentSettings, task_id: int, num_pixels: int) 
     permutation_indices = torch.randperm(num_pixels, generator=rng)
     return permutation_indices
 
-class PermutedMNIST(Dataset):
-    def __init__(self, mnist_dataset: torchvision.datasets.MNIST, 
+class PermutedDataset(Dataset):
+    def __init__(self, dataset: torch.utils.data.Dataset,
                  permutation_indices: Optional[torch.Tensor] = None,
-                 image_shape: tuple = (1, 28, 28)):
-        self.mnist_dataset = mnist_dataset
+                 image_shape: Optional[tuple] = None):
+        self.dataset = dataset
         self.permutation_indices = permutation_indices
-        self.image_shape = image_shape # (C, H, W)
-        self.num_pixels = image_shape[1] * image_shape[2]
+
+        # Detect image shape if not provided
+        if image_shape is None:
+            sample_img, _ = dataset[0]
+            self.image_shape = sample_img.shape  # (C, H, W)
+        else:
+            self.image_shape = image_shape
+
+        self.num_pixels = self.image_shape[0] * self.image_shape[1] * self.image_shape[2]
 
         if self.permutation_indices is not None and len(self.permutation_indices) != self.num_pixels:
             raise ValueError(f"Permutation length {len(self.permutation_indices)} does not match num_pixels {self.num_pixels}")
 
     def __len__(self):
-        return len(self.mnist_dataset)
+        return len(self.dataset)
 
     def __getitem__(self, idx):
-        img, label = self.mnist_dataset[idx] # img is (C, H, W) tensor
-        
+        img, label = self.dataset[idx] # img is (C, H, W) tensor
+
         if self.permutation_indices is not None:
             img_flat = img.view(-1) # Flatten to (C*H*W)
             img_permuted_flat = img_flat[self.permutation_indices]
             img = img_permuted_flat.view(self.image_shape) # Reshape back
-            
+
         return img, label
 
-def get_mnist_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_size: int,
-                                   num_workers: int = 2, data_root: str = './data'):
+def get_dataset_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_size: int,
+                                     num_workers: int = 2, data_root: str = './data'):
     os.makedirs(data_root, exist_ok=True)
-    # Base MNIST transform (normalization is standard)
-    base_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-    
-    # Load the full MNIST datasets once
-    try:
-        trainset_full_orig = torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform=base_transform)
-        testset_full_orig = torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform=base_transform)
-    except Exception as e:
-        if s.DEBUG_VERBOSE: print(f"Failed to download/load MNIST: {e}. Trying without download flag.")
-        trainset_full_orig = torchvision.datasets.MNIST(root=data_root, train=True, download=False, transform=base_transform)
-        testset_full_orig = torchvision.datasets.MNIST(root=data_root, train=False, download=False, transform=base_transform)
+
+    if s.dataset_name == "MNIST":
+        # Base MNIST transform (normalization is standard)
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
+
+        # Load the full MNIST datasets once
+        try:
+            trainset_full_orig = torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform=transform)
+            testset_full_orig = torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform=transform)
+        except Exception as e:
+            if s.DEBUG_VERBOSE: print(f"Failed to download/load MNIST: {e}. Trying without download flag.")
+            trainset_full_orig = torchvision.datasets.MNIST(root=data_root, train=True, download=False, transform=transform)
+            testset_full_orig = torchvision.datasets.MNIST(root=data_root, train=False, download=False, transform=transform)
+
+    elif s.dataset_name == "CIFAR10":
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+        ])
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+        ])
+        try:
+            trainset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=True, download=True, transform=transform_train)
+            testset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=False, download=True, transform=transform_test)
+        except Exception as e:
+            if s.DEBUG_VERBOSE: print(f"Failed to download/load CIFAR10: {e}. Trying without download flag.")
+            trainset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=True, download=False, transform=transform_train)
+            testset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=False, download=False, transform=transform_test)
+    else:
+        raise ValueError(f"Unsupported dataset: {s.dataset_name}")
 
     # Get permutation for the current task
     current_permutation = get_pixel_permutation(s, task_id, s.input_dim) # s.input_dim is num_pixels
 
-    # Wrap with PermutedMNIST dataset
-    trainset_task = PermutedMNIST(trainset_full_orig, current_permutation)
-    testset_task = PermutedMNIST(testset_full_orig, current_permutation)
+    # Wrap with PermutedDataset
+    trainset_task = PermutedDataset(trainset_full_orig, current_permutation)
+    testset_task = PermutedDataset(testset_full_orig, current_permutation)
 
     if s.QUICK_TEST_MODE:
         train_stride = max(1, len(trainset_task) // (500 // (batch_size // 32 or 1) or 1))
@@ -324,12 +356,12 @@ def get_mnist_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_si
         val_indices = list(range(0, len(testset_task), test_stride))
         trainset_final = Subset(trainset_task, train_indices)
         testset_final = Subset(testset_task, val_indices)
-        if s.DEBUG_VERBOSE: print(f"  Task {task_id}: USING SUBSET of MNIST: {len(trainset_final)} train, {len(testset_final)} val samples.")
+        if s.DEBUG_VERBOSE: print(f"  Task {task_id}: USING SUBSET of {s.dataset_name}: {len(trainset_final)} train, {len(testset_final)} val samples.")
     else:
         trainset_final, testset_final = trainset_task, testset_task
 
-    trainloader = DataLoader(trainset_final, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
-    testloader = DataLoader(testset_final, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
+    trainloader = DataLoader(trainset_final, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
+    testloader = DataLoader(testset_final, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
     return trainloader, testloader
 
 
@@ -402,21 +434,21 @@ def train_model_on_task_epoch(model: nn.Module, train_loader: DataLoader, optimi
 def run_permuted_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings) -> pd.DataFrame:
     activation_to_run = model_cfg.activation_name if model_cfg.activation_name else s.default_activation_name
     print(f"\n===== Running Permuted Exp: {model_cfg.name} (Act: {activation_to_run}, Data: {s.dataset_name}) =====")
-    
+
     layer_dims = [s.input_dim] + s.mlp_hidden_layers + [s.num_classes]
-    
+
     # Model is initialized ONCE before all tasks
     model = ConfigurableMLP(layer_dims, activation_to_run, model_cfg.norm_type).to(s.DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=s.learning_rate)
     criterion = nn.CrossEntropyLoss()
-    
+
     all_metrics_data_raw: List[Dict[str, Any]] = []
     total_tasks = s.num_initial_tasks + s.num_permutation_tasks
 
     for task_id in range(total_tasks):
         print(f"\n--- Starting Task {task_id} ({'Original' if task_id == 0 else f'Permutation {task_id}'}) for {model_cfg.name} ---")
-        train_loader_task, val_loader_task = get_mnist_dataloaders_for_task(s, task_id, batch_size=s.batch_size)
-        
+        train_loader_task, val_loader_task = get_dataset_dataloaders_for_task(s, task_id, batch_size=s.batch_size)
+
         fixed_eval_batch_task = get_fixed_eval_batch(val_loader_task, s.eval_batch_size, s.DEVICE, s)
         metrics_logger = MetricsLogger(model, fixed_eval_batch_task, model_cfg.name, s) # Logger uses current task's eval batch
 
@@ -427,17 +459,17 @@ def run_permuted_experiment_configuration(model_cfg: ModelConfig, s: ExperimentS
         for epoch_in_task in range(s.epochs_per_task):
             epoch_desc = f"Task {task_id} - E{epoch_in_task+1}/{s.epochs_per_task} [{model_cfg.name}]"
             train_model_on_task_epoch(model, train_loader_task, optimizer, criterion, s.DEVICE, epoch_desc)
-        
+
         # Log metrics AFTER training on this task
         all_metrics_data_raw.extend(metrics_logger.log_metrics_after_task(task_id))
-            
+
     df_raw = pd.DataFrame(all_metrics_data_raw)
     if s.DEBUG_VERBOSE and not df_raw.empty:
         raw_csv_path = os.path.join(s.FIGURE_DIR, f"debug_raw_metrics_permuted_{model_cfg.name.replace(' ', '_')}_{activation_to_run}_{s.dataset_name}.csv")
         df_raw.to_csv(raw_csv_path, index=False)
         print(f"Saved Permuted RAW unaggregated metrics to {raw_csv_path}")
 
-    if not df_raw.empty: 
+    if not df_raw.empty:
         # Group by task_id now instead of epoch
         final_df = df_raw.groupby(['model_config', 'task_id', 'layer_name'], as_index=False).agg(
              lambda x: x.dropna().unique()[0] if len(x.dropna().unique()) > 0 else np.nan
