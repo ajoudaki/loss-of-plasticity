@@ -25,7 +25,7 @@ class ExperimentSettings:
     dataset_name: str = "MNIST"
     num_epochs: int = 15
     log_metrics_every_n_epochs: int = 1
-    mlp_hidden_layers: List[int] = field(default_factory=lambda: [256,256,256,256])
+    mlp_hidden_layers: List[int] = field(default_factory=lambda: [512,512,512,512])
     default_activation_name: str = "ReLU"
 
     # Training hyperparameters
@@ -37,12 +37,14 @@ class ExperimentSettings:
     input_dim: int = 784 
     num_classes: int = 10
 
-    # Metric calculation thresholds << --- NEWLY ADDED/CONSOLIDATED
-    frozen_relu_threshold: float = 1e-6
-    frozen_tanh_deriv_threshold: float = 1e-3
-    frozen_sigmoid_deriv_threshold: float = 1e-3 
+    # Metric calculation thresholds
+    frozen_relu_threshold: float = 1e-6 # Pre-activation value for ReLU to be considered having near-zero derivative
+    frozen_tanh_deriv_threshold: float = 1e-3 # Derivative value below which Tanh is considered frozen
+    frozen_sigmoid_deriv_threshold: float = 1e-3 # Derivative value below which Sigmoid is considered frozen
+    frozen_feature_batch_threshold: float = 0.95 # << --- NEW: Min fraction of samples in a batch for a feature to be "batch-frozen"
+    
     duplicate_corr_threshold: float = 0.95
-    duplicate_min_std_dev: float = 1e-5 # For a feature to be considered in correlation analysis
+    duplicate_min_std_dev: float = 1e-5 
 
     # Plotting settings
     FONT_FAMILY: str = 'serif'
@@ -79,10 +81,8 @@ class ModelConfig:
 
 # Initialize global settings
 SETTINGS = ExperimentSettings()
-# Example: SETTINGS.QUICK_TEST_MODE = True; SETTINGS.__post_init__()
 
 # --- Matplotlib Styling ---
-# ... (setup_matplotlib_style function remains the same)
 def setup_matplotlib_style(s: ExperimentSettings):
     try:
         plt.style.use('seaborn-v0_8-paper')
@@ -119,12 +119,11 @@ torch.manual_seed(SETTINGS.SEED); np.random.seed(SETTINGS.SEED)
 
 # --- Metric Calculation Functions (Updated Signatures) ---
 def compute_effective_rank_empirical(activations_batch_cpu, stage_name_for_debug=""):
-    # ... (implementation remains the same)
     if activations_batch_cpu.ndim == 1: return 1.0 if activations_batch_cpu.shape[0] > 1 else 0.0
     if activations_batch_cpu.shape[1] == 0: return 0.0
     if activations_batch_cpu.shape[1] == 1: return 1.0
     if activations_batch_cpu.shape[0] <= 1: return float(activations_batch_cpu.shape[1] > 0)
-    std_devs = torch.std(activations_batch_cpu, dim=0); valid_features_mask = std_devs > SETTINGS.duplicate_min_std_dev # Use from settings
+    std_devs = torch.std(activations_batch_cpu, dim=0); valid_features_mask = std_devs > SETTINGS.duplicate_min_std_dev
     if valid_features_mask.sum() < 2: return float(valid_features_mask.sum().item())
     activations_batch_filtered = activations_batch_cpu[:, valid_features_mask]
     if activations_batch_filtered.shape[0] <= 1 or activations_batch_filtered.shape[1] < 2: return float(activations_batch_filtered.shape[1] > 0)
@@ -151,37 +150,62 @@ def compute_effective_rank_empirical(activations_batch_cpu, stage_name_for_debug
     return min(er_val, activations_batch_filtered.shape[1])
 
 
-def compute_frozen_stats(pre_activations_batch_cpu, activation_type_str, 
+def compute_frozen_stats(pre_activations_batch_cpu: torch.Tensor, 
+                         activation_type_str: str, 
                          s: ExperimentSettings, # Pass full settings object
-                         stage_name_for_debug=""):
+                         stage_name_for_debug: str = "") -> float:
+    """
+    Calculates the percentage of features (neurons) that are "frozen" for a batch.
+    A feature is considered frozen if its derivative is below a threshold
+    for more than `s.frozen_feature_batch_threshold` fraction of the samples in the batch.
+    """
     if pre_activations_batch_cpu.numel() == 0 or pre_activations_batch_cpu.shape[1] == 0: return 0.0
-    if pre_activations_batch_cpu.shape[0] == 0: return 0.0
-    frozen_map = torch.zeros_like(pre_activations_batch_cpu, dtype=torch.bool)
+    if pre_activations_batch_cpu.shape[0] <= 1: # Need multiple samples to check across batch
+        if s.DEBUG_VERBOSE: print(f"  [Frozen Debug {stage_name_for_debug}] Not enough samples ({pre_activations_batch_cpu.shape[0]}) for batch-frozen definition.")
+        return 0.0 
+        
+    frozen_map_per_instance = torch.zeros_like(pre_activations_batch_cpu, dtype=torch.bool) # True if (sample, feature) has low derivative
     act_str_lower = activation_type_str.lower()
 
     if act_str_lower == "relu": 
-        frozen_map = pre_activations_batch_cpu <= s.frozen_relu_threshold
+        frozen_map_per_instance = pre_activations_batch_cpu <= s.frozen_relu_threshold
     elif act_str_lower == "tanh": 
         tanh_x_sq = torch.tanh(pre_activations_batch_cpu)**2
-        frozen_map = tanh_x_sq > (1.0 - s.frozen_tanh_deriv_threshold)
+        frozen_map_per_instance = tanh_x_sq > (1.0 - s.frozen_tanh_deriv_threshold)
     elif act_str_lower == "sigmoid": 
         sig_x = torch.sigmoid(pre_activations_batch_cpu)
         derivative = sig_x * (1.0 - sig_x)
-        frozen_map = derivative < s.frozen_sigmoid_deriv_threshold
+        frozen_map_per_instance = derivative < s.frozen_sigmoid_deriv_threshold
     else: 
         if s.DEBUG_VERBOSE: print(f"  [Frozen Debug {stage_name_for_debug}] Frozen stats NA for {act_str_lower}, ret 0.")
         return 0.0 
     
-    perc = frozen_map.float().mean().item() * 100.0
-    if s.DEBUG_VERBOSE: print(f"  [Frozen Debug {stage_name_for_debug}] Act: {act_str_lower}, InShape: {pre_activations_batch_cpu.shape}, Frozen: {frozen_map.sum().item()}/{frozen_map.numel()}, Perc: {perc:.2f}%")
-    return perc
+    # For each feature, calculate the fraction of samples where its derivative is low
+    # frozen_map_per_instance has shape (batch_size, num_features)
+    fraction_frozen_per_feature = frozen_map_per_instance.float().mean(dim=0) # Shape: (num_features,)
+    
+    # A feature is "batch-frozen" if this fraction exceeds the threshold
+    batch_frozen_features_mask = fraction_frozen_per_feature > s.frozen_feature_batch_threshold # Shape: (num_features,)
+    
+    # Percentage of features in the layer that are "batch-frozen"
+    if batch_frozen_features_mask.numel() == 0: # Should not happen if pre_activations_batch_cpu.shape[1] > 0
+        percentage_batch_frozen_features = 0.0
+    else:
+        percentage_batch_frozen_features = batch_frozen_features_mask.float().mean().item() * 100.0
+    
+    if s.DEBUG_VERBOSE: 
+        print(f"  [Frozen Debug {stage_name_for_debug}] Act: {act_str_lower}, InShape: {pre_activations_batch_cpu.shape}")
+        print(f"    Total low-deriv instances: {frozen_map_per_instance.sum().item()}/{frozen_map_per_instance.numel()}")
+        print(f"    Num batch-frozen features (>{s.frozen_feature_batch_threshold*100:.0f}% of samples): {batch_frozen_features_mask.sum().item()}/{batch_frozen_features_mask.numel()}")
+        print(f"    Percentage of batch-frozen features: {percentage_batch_frozen_features:.2f}%")
+    return percentage_batch_frozen_features
 
 def compute_duplicate_neurons_stats(activations_batch_cpu, 
-                                    s: ExperimentSettings, # Pass full settings object
+                                    s: ExperimentSettings, 
                                     stage_name_for_debug=""):
     if activations_batch_cpu.ndim < 2 or activations_batch_cpu.shape[1] < 2: return 0.0
     std_devs = torch.std(activations_batch_cpu, dim=0)
-    valid_features_mask = std_devs > s.duplicate_min_std_dev # Use from settings
+    valid_features_mask = std_devs > s.duplicate_min_std_dev
     
     if valid_features_mask.sum() < 2:
         if s.DEBUG_VERBOSE: print(f"  [Duplicate Debug {stage_name_for_debug}] Not enough variant features ({valid_features_mask.sum().item()}). Orig: {activations_batch_cpu.shape[1]}")
@@ -198,12 +222,12 @@ def compute_duplicate_neurons_stats(activations_batch_cpu,
         
     abs_corr_matrix = torch.abs(corr_matrix)
     abs_corr_matrix.fill_diagonal_(0) 
-    is_duplicate_neuron = torch.any(abs_corr_matrix > s.duplicate_corr_threshold, dim=1) # Use from settings
+    is_duplicate_neuron = torch.any(abs_corr_matrix > s.duplicate_corr_threshold, dim=1)
     perc = is_duplicate_neuron.float().mean().item() * 100.0
     if s.DEBUG_VERBOSE: print(f"  [Duplicate Debug {stage_name_for_debug}] InShape: {activations_batch_cpu.shape}, ValidFeats: {num_valid_features}, DupFound: {is_duplicate_neuron.sum().item()}, Perc: {perc:.2f}%")
     return perc
 
-def get_activation_fn_and_name(activation_name_str: str): # Unchanged
+def get_activation_fn_and_name(activation_name_str: str):
     name_lower = activation_name_str.lower()
     if name_lower == "relu": return nn.ReLU(), "ReLU"
     elif name_lower == "tanh": return nn.Tanh(), "Tanh"
@@ -211,8 +235,7 @@ def get_activation_fn_and_name(activation_name_str: str): # Unchanged
     else: raise ValueError(f"Unsupported activation: {activation_name_str}")
 
 # --- Model Definition ---
-# ... (MLPBlock and ConfigurableMLP classes remain the same)
-class MLPBlock(nn.Module): # From previous version
+class MLPBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, norm_type: Optional[str], 
                  activation_fn_instance: nn.Module, activation_name: str, 
                  is_output_layer_block: bool, block_idx: int):
@@ -245,7 +268,7 @@ class MLPBlock(nn.Module): # From previous version
             if record_activations and self.stage_names["act_out"]: recorded_stages[self.stage_names["act_out"]] = current_features.detach().cpu()
         return current_features, recorded_stages
 
-class ConfigurableMLP(nn.Module): # From previous version
+class ConfigurableMLP(nn.Module):
     def __init__(self, layer_dims: List[int], model_activation_name: str = "ReLU", norm_type: Optional[str] = None):
         super().__init__()
         self.model_activation_name_for_frozen = model_activation_name
@@ -270,7 +293,6 @@ class ConfigurableMLP(nn.Module): # From previous version
 
 # --- Data Utilities (Updated for MNIST) ---
 def get_mnist_dataloaders(s: ExperimentSettings, batch_size: int, num_workers: int = 2, data_root: str = './data'):
-    # ... (implementation from previous thought block, using s.QUICK_TEST_MODE, s.DEBUG_VERBOSE)
     os.makedirs(data_root, exist_ok=True)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
     try: 
@@ -292,9 +314,7 @@ def get_mnist_dataloaders(s: ExperimentSettings, batch_size: int, num_workers: i
     testloader = DataLoader(testset, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
     return trainloader, testloader
 
-
 def get_fixed_eval_batch(dataloader: DataLoader, batch_size: int, device: torch.device, s: ExperimentSettings) -> torch.Tensor:
-    # ... (same as before)
     eval_batch_list = []; num_to_fetch = max(1, batch_size // (dataloader.batch_size or batch_size))
     data_iter = iter(dataloader)
     try:
@@ -311,69 +331,40 @@ def get_fixed_eval_batch(dataloader: DataLoader, batch_size: int, device: torch.
 # --- Metrics Logging (Updated to pass settings to compute_* functions) ---
 class MetricsLogger:
     def __init__(self, model: ConfigurableMLP, fixed_eval_batch: torch.Tensor, 
-                 model_config_name: str, s: ExperimentSettings): # s is ExperimentSettings
-        self.model = model
-        self.fixed_eval_batch = fixed_eval_batch
-        self.model_config_name = model_config_name
-        self.s = s # Store the settings object
-
+                 model_config_name: str, s: ExperimentSettings):
+        self.model = model; self.fixed_eval_batch = fixed_eval_batch
+        self.model_config_name = model_config_name; self.s = s
     def log_epoch_metrics(self, epoch_num: int) -> List[Dict[str, Any]]:
-        self.model.eval()
-        raw_metrics_for_epoch: List[Dict[str, Any]] = []
-        with torch.no_grad():
-            _, recorded_stages_dict = self.model(self.fixed_eval_batch, record_activations=True)
-        
+        self.model.eval(); raw_metrics_for_epoch: List[Dict[str, Any]] = []
+        with torch.no_grad(): _, recorded_stages_dict = self.model(self.fixed_eval_batch, record_activations=True)
         if self.s.DEBUG_VERBOSE: print(f"\n--- Logging metrics for Epoch {epoch_num}, Config: {self.model_config_name} ---")
-        
         temp_frozen_stats: Dict[str, float] = {}
-
         for stage_name, acts_cpu in recorded_stages_dict.items():
             if stage_name is None: continue
             if stage_name.endswith("_ActIn"):
                 if self.s.DEBUG_VERBOSE: print(f" Processing for frozen: {stage_name}, shape: {acts_cpu.shape}")
-                perc_frozen = compute_frozen_stats(
-                    acts_cpu, 
-                    self.model.model_activation_name_for_frozen,
-                    s=self.s, # Pass ExperimentSettings object
-                    stage_name_for_debug=stage_name
-                )
+                perc_frozen = compute_frozen_stats(acts_cpu, self.model.model_activation_name_for_frozen, s=self.s, stage_name_for_debug=stage_name)
                 target_act_out_name = stage_name.replace("_ActIn", "_Act")
                 temp_frozen_stats[target_act_out_name] = perc_frozen
                 if self.s.DEBUG_VERBOSE: print(f"  Stored frozen={perc_frozen:.2f} for {target_act_out_name} (from {stage_name})")
-        
         summary_parts = []
         for stage_name, acts_cpu in recorded_stages_dict.items():
             if stage_name is None or stage_name.endswith("_ActIn"): continue
-
             if self.s.DEBUG_VERBOSE: print(f" Processing stage for ER/Dup: {stage_name}, shape: {acts_cpu.shape}")
             eff_rank, perc_duplicates = np.nan, np.nan
-            
             if acts_cpu.numel() > 0 and acts_cpu.shape[0] > 1 and acts_cpu.shape[1] > 0:
                 eff_rank = compute_effective_rank_empirical(acts_cpu, stage_name)
-                perc_duplicates = compute_duplicate_neurons_stats(
-                    activations_batch_cpu=acts_cpu,
-                    s=self.s, # Pass ExperimentSettings object
-                    stage_name_for_debug=stage_name
-                )
-            elif self.s.DEBUG_VERBOSE:
-                print(f"  Skipping ER/Dup for stage {stage_name} due to insufficient data.")
-
+                perc_duplicates = compute_duplicate_neurons_stats(activations_batch_cpu=acts_cpu, s=self.s, stage_name_for_debug=stage_name)
+            elif self.s.DEBUG_VERBOSE: print(f"  Skipping ER/Dup for stage {stage_name} due to insufficient data.")
             current_perc_frozen = temp_frozen_stats.get(stage_name, np.nan)
-
-            raw_metrics_for_epoch.append({
-                'model_config': self.model_config_name, 'epoch': epoch_num, 'layer_name': stage_name,
-                'eff_rank': eff_rank, 'perc_frozen': current_perc_frozen, 'perc_duplicates': perc_duplicates
-            })
+            raw_metrics_for_epoch.append({'model_config': self.model_config_name, 'epoch': epoch_num, 'layer_name': stage_name,
+                'eff_rank': eff_rank, 'perc_frozen': current_perc_frozen, 'perc_duplicates': perc_duplicates})
             if self.s.DEBUG_VERBOSE: print(f"  Logged for {stage_name}: ER={eff_rank:.2f}, Frozen={current_perc_frozen:.2f}, Dup={perc_duplicates:.2f}")
-            
             if "_Act" in stage_name and not np.isnan(eff_rank): summary_parts.append(f"{stage_name.split('_')[0]}ER:{eff_rank:.1f}")
-
         print(f"E{epoch_num} [{self.model_config_name}] Metric Summary (ERs): {' '.join(summary_parts[:4])}...")
-        self.model.train()
-        return raw_metrics_for_epoch
+        self.model.train(); return raw_metrics_for_epoch
 
 # --- Training Functions ---
-# ... (train_model_epoch remains the same)
 def train_model_epoch(model: nn.Module, train_loader: DataLoader, optimizer: optim.Optimizer, criterion: nn.Module, device: torch.device, epoch_desc: str) -> float:
     model.train(); total_loss = 0.0
     prog_bar = tqdm(train_loader, desc=epoch_desc, leave=False)
@@ -384,49 +375,36 @@ def train_model_epoch(model: nn.Module, train_loader: DataLoader, optimizer: opt
         total_loss += loss.item(); prog_bar.set_postfix({'loss': f'{loss.item():.3f}'})
     return total_loss / len(train_loader)
 
-
 def run_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings) -> pd.DataFrame:
     activation_to_run = model_cfg.activation_name if model_cfg.activation_name else s.default_activation_name
     print(f"\n===== Running Exp: {model_cfg.name} (Act: {activation_to_run}, Data: {s.dataset_name}) =====")
-    
     layer_dims = [s.input_dim] + s.mlp_hidden_layers + [s.num_classes]
     train_loader, val_loader = get_mnist_dataloaders(s, batch_size=s.batch_size)
-    
     model = ConfigurableMLP(layer_dims, activation_to_run, model_cfg.norm_type).to(s.DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=s.learning_rate)
     criterion = nn.CrossEntropyLoss()
-
     fixed_eval_batch = get_fixed_eval_batch(val_loader, s.eval_batch_size, s.DEVICE, s)
     metrics_logger = MetricsLogger(model, fixed_eval_batch, model_cfg.name, s)
-    
     all_metrics_data_raw: List[Dict[str, Any]] = []
-
-    if fixed_eval_batch.nelement() > 0:
-        all_metrics_data_raw.extend(metrics_logger.log_epoch_metrics(0))
-
+    if fixed_eval_batch.nelement() > 0: all_metrics_data_raw.extend(metrics_logger.log_epoch_metrics(0))
     for epoch in range(s.num_epochs):
         epoch_description = f"E{epoch+1}/{s.num_epochs} [{model_cfg.name}]"
         train_model_epoch(model, train_loader, optimizer, criterion, s.DEVICE, epoch_description)
-        
         if (epoch + 1) % s.log_metrics_every_n_epochs == 0 and fixed_eval_batch.nelement() > 0:
             all_metrics_data_raw.extend(metrics_logger.log_epoch_metrics(epoch + 1))
-            
     df_raw = pd.DataFrame(all_metrics_data_raw)
     if s.DEBUG_VERBOSE and not df_raw.empty:
         raw_csv_path = os.path.join(s.FIGURE_DIR, f"debug_raw_metrics_{model_cfg.name.replace(' ', '_')}_{activation_to_run}_{s.dataset_name}.csv")
         df_raw.to_csv(raw_csv_path, index=False)
         print(f"Saved RAW unaggregated metrics to {raw_csv_path}")
-
     if not df_raw.empty: 
         final_df = df_raw.groupby(['model_config', 'epoch', 'layer_name'], as_index=False).agg(
              lambda x: x.dropna().unique()[0] if len(x.dropna().unique()) > 0 else np.nan
         ).dropna(subset=['eff_rank', 'perc_frozen', 'perc_duplicates'], how='all')
         return final_df
-    else:
-        return pd.DataFrame()
+    else: return pd.DataFrame()
 
 # --- Plotting Function ---
-# ... (plot_all_empirical_metrics_figure remains the same, uses s.dataset_name and s.FIGURE_DIR via settings 's')
 def plot_all_empirical_metrics_figure(final_metrics_df: pd.DataFrame, 
                                       current_activation_name: str, 
                                       ordered_layer_names_for_plot: List[str], 
@@ -478,7 +456,7 @@ def plot_all_empirical_metrics_figure(final_metrics_df: pd.DataFrame,
 def run_all_experiments(s: ExperimentSettings):
     print(f"Device: {s.DEVICE}. Activation: {s.default_activation_name}. Epochs: {s.num_epochs}. Dataset: {s.dataset_name}")
     print(f"Quick Test Mode: {s.QUICK_TEST_MODE}")
-    print(f"Metric Thresholds: ReLU Frozen={s.frozen_relu_threshold}, Tanh Deriv Frozen={s.frozen_tanh_deriv_threshold}, Duplicate Corr={s.duplicate_corr_threshold}, Duplicate Min Std={s.duplicate_min_std_dev}")
+    print(f"Metric Thresholds: ReLU Frozen={s.frozen_relu_threshold}, Tanh Deriv Frozen={s.frozen_tanh_deriv_threshold}, Sigmoid Deriv Frozen={s.frozen_sigmoid_deriv_threshold}, Batch Frozen Feature Thresh={s.frozen_feature_batch_threshold}, Duplicate Corr={s.duplicate_corr_threshold}, Duplicate Min Std={s.duplicate_min_std_dev}")
     
     MODEL_CONFIGURATIONS_TO_RUN = [
         ModelConfig(name="MLP NoNorm", norm_type=None),
@@ -487,9 +465,7 @@ def run_all_experiments(s: ExperimentSettings):
     ]
     
     all_experiments_dfs: List[pd.DataFrame] = []
-
     temp_layer_dims = [s.input_dim] + s.mlp_hidden_layers + [s.num_classes]
-    # Use default_activation_name from settings for consistency in this run
     current_run_activation = s.default_activation_name 
     sample_model = ConfigurableMLP(temp_layer_dims, current_run_activation, MODEL_CONFIGURATIONS_TO_RUN[0].norm_type)
     canonical_ordered_plot_names = sample_model.ordered_plot_stage_names
@@ -497,7 +473,6 @@ def run_all_experiments(s: ExperimentSettings):
     del sample_model
 
     for model_config_obj in MODEL_CONFIGURATIONS_TO_RUN:
-        # Ensure model_config uses the global default activation for this experimental run
         model_config_obj.activation_name = current_run_activation 
         df_for_config = run_experiment_configuration(model_cfg=model_config_obj, s=s)
         if not df_for_config.empty:
@@ -524,9 +499,12 @@ if __name__ == "__main__":
     SETTINGS.dataset_name = "MNIST" 
     SETTINGS.default_activation_name = "ReLU" # Or "Tanh", "Sigmoid"
 
-    # Re-run __post_init__ if QUICK_TEST_MODE or dataset_name was changed after initial SETTINGS instantiation
-    SETTINGS.__post_init__() 
+    # Example of changing a metric threshold for a specific run:
+    # SETTINGS.frozen_feature_batch_threshold = 0.90 
+
+    SETTINGS.__post_init__() # Re-run post_init if any core settings were changed
     
     run_all_experiments(SETTINGS)
     
     print(f"\nAll empirical figures and data processing complete for {SETTINGS.dataset_name} using {SETTINGS.default_activation_name}. Check {SETTINGS.FIGURE_DIR}")
+
