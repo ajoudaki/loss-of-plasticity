@@ -16,9 +16,9 @@ from typing import List, Dict, Any, Optional
 @dataclass
 class ExperimentSettings:
     FIGURE_DIR: str = "./figures/"
-    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    DEBUG_VERBOSE: bool = True 
-    QUICK_TEST_MODE: bool = False 
+    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"))
+    DEBUG_VERBOSE: bool = True
+    QUICK_TEST_MODE: bool = False
     SEED: int = 42
 
     # Experimental parameters
