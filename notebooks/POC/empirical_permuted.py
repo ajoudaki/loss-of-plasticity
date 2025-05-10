@@ -16,7 +16,7 @@ from typing import List, Dict, Any, Optional
 @dataclass
 class ExperimentSettings:
     FIGURE_DIR: str = "./figures/"
-    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"))
     DEBUG_VERBOSE: bool = False # Set to True for detailed print statements
     QUICK_TEST_MODE: bool = False # True for small epochs, subset of data, smaller model
     SEED: int = 42
@@ -328,8 +328,8 @@ def get_mnist_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_si
     else:
         trainset_final, testset_final = trainset_task, testset_task
 
-    trainloader = DataLoader(trainset_final, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
-    testloader = DataLoader(testset_final, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
+    trainloader = DataLoader(trainset_final, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
+    testloader = DataLoader(testset_final, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
     return trainloader, testloader
 
 
