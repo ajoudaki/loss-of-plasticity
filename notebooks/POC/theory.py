@@ -166,7 +166,7 @@ def plot_tanh_az_figure(df_tanh_az):
 
 # --- Figure 1.2: Impact of ReLU(z+b) ---
 def generate_relu_zb_data(z_base):
-    b_params = [-2.0, -1.0, -0.5, 0.0, 0.5, 2.0, 5.0]
+    b_params = [-4, -3, -2.0, -1.0, -0.5, 0.0, 0.5, 2.0, 3, 4, 5.0]
     results = []
 
     cov_input = torch.cov(z_base.T)
