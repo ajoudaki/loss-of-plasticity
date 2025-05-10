@@ -16,9 +16,9 @@ from typing import List, Dict, Any, Optional
 @dataclass
 class ExperimentSettings:
     FIGURE_DIR: str = "./figures/"
-    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    DEBUG_VERBOSE: bool = True 
-    QUICK_TEST_MODE: bool = False 
+    DEVICE: torch.device = field(default_factory=lambda: torch.device("cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"))
+    DEBUG_VERBOSE: bool = True
+    QUICK_TEST_MODE: bool = False
     SEED: int = 42
 
     # Experimental parameters
@@ -292,26 +292,54 @@ class ConfigurableMLP(nn.Module):
         return current_features, all_recorded_stages
 
 # --- Data Utilities (Updated for MNIST) ---
-def get_mnist_dataloaders(s: ExperimentSettings, batch_size: int, num_workers: int = 2, data_root: str = './data'):
+def get_dataset_dataloaders(s: ExperimentSettings, batch_size: int, num_workers: int = 2, data_root: str = './data'):
     os.makedirs(data_root, exist_ok=True)
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-    try: 
-        trainset_full = torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform=transform)
-        testset_full = torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform=transform)
-    except Exception as e:
-        if s.DEBUG_VERBOSE: print(f"Failed to download/load MNIST: {e}. Trying without download flag.")
-        trainset_full = torchvision.datasets.MNIST(root=data_root, train=True, download=False, transform=transform)
-        testset_full = torchvision.datasets.MNIST(root=data_root, train=False, download=False, transform=transform)
+
+    if s.dataset_name == "MNIST":
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
+        try:
+            trainset_full = torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform=transform)
+            testset_full = torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform=transform)
+        except Exception as e:
+            if s.DEBUG_VERBOSE: print(f"Failed to download/load MNIST: {e}. Trying without download flag.")
+            trainset_full = torchvision.datasets.MNIST(root=data_root, train=True, download=False, transform=transform)
+            testset_full = torchvision.datasets.MNIST(root=data_root, train=False, download=False, transform=transform)
+    elif s.dataset_name == "CIFAR10":
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+        ])
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+        ])
+        try:
+            trainset_full = torchvision.datasets.CIFAR10(root=data_root, train=True, download=True, transform=transform_train)
+            testset_full = torchvision.datasets.CIFAR10(root=data_root, train=False, download=True, transform=transform_test)
+        except Exception as e:
+            if s.DEBUG_VERBOSE: print(f"Failed to download/load CIFAR10: {e}. Trying without download flag.")
+            trainset_full = torchvision.datasets.CIFAR10(root=data_root, train=True, download=False, transform=transform_train)
+            testset_full = torchvision.datasets.CIFAR10(root=data_root, train=False, download=False, transform=transform_test)
+    else:
+        raise ValueError(f"Unsupported dataset: {s.dataset_name}")
+
     if s.QUICK_TEST_MODE:
         train_stride = max(1, len(trainset_full) // (500 // (batch_size // 32 or 1) or 1))
         test_stride = max(1, len(testset_full) // (100 // (batch_size // 32 or 1) or 1))
         train_indices = list(range(0, len(trainset_full), train_stride))
         val_indices = list(range(0, len(testset_full), test_stride))
         trainset, testset = Subset(trainset_full, train_indices), Subset(testset_full, val_indices)
-        if s.DEBUG_VERBOSE: print(f"USING SUBSET of MNIST: {len(trainset)} train, {len(testset)} val samples.")
-    else: trainset, testset = trainset_full, testset_full
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
-    testloader = DataLoader(testset, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type == 'cuda')
+        if s.DEBUG_VERBOSE: print(f"USING SUBSET of {s.dataset_name}: {len(trainset)} train, {len(testset)} val samples.")
+    else:
+        trainset, testset = trainset_full, testset_full
+
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
+    testloader = DataLoader(testset, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
     return trainloader, testloader
 
 def get_fixed_eval_batch(dataloader: DataLoader, batch_size: int, device: torch.device, s: ExperimentSettings) -> torch.Tensor:
@@ -379,7 +407,7 @@ def run_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings) 
     activation_to_run = model_cfg.activation_name if model_cfg.activation_name else s.default_activation_name
     print(f"\n===== Running Exp: {model_cfg.name} (Act: {activation_to_run}, Data: {s.dataset_name}) =====")
     layer_dims = [s.input_dim] + s.mlp_hidden_layers + [s.num_classes]
-    train_loader, val_loader = get_mnist_dataloaders(s, batch_size=s.batch_size)
+    train_loader, val_loader = get_dataset_dataloaders(s, batch_size=s.batch_size)
     model = ConfigurableMLP(layer_dims, activation_to_run, model_cfg.norm_type).to(s.DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=s.learning_rate)
     criterion = nn.CrossEntropyLoss()
@@ -397,7 +425,7 @@ def run_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings) 
         raw_csv_path = os.path.join(s.FIGURE_DIR, f"debug_raw_metrics_{model_cfg.name.replace(' ', '_')}_{activation_to_run}_{s.dataset_name}.csv")
         df_raw.to_csv(raw_csv_path, index=False)
         print(f"Saved RAW unaggregated metrics to {raw_csv_path}")
-    if not df_raw.empty: 
+    if not df_raw.empty:
         final_df = df_raw.groupby(['model_config', 'epoch', 'layer_name'], as_index=False).agg(
              lambda x: x.dropna().unique()[0] if len(x.dropna().unique()) > 0 else np.nan
         ).dropna(subset=['eff_rank', 'perc_frozen', 'perc_duplicates'], how='all')
@@ -496,7 +524,7 @@ if __name__ == "__main__":
     # --- CONFIGURE YOUR EXPERIMENT ---
     SETTINGS.QUICK_TEST_MODE = False  # <--- SET TO False FOR FULL RUN FOR PAPER
     SETTINGS.DEBUG_VERBOSE = False    # <--- SET TO False FOR CLEANER OUTPUT IN FULL RUN
-    SETTINGS.dataset_name = "MNIST" 
+    SETTINGS.dataset_name = "CIFAR10" 
     SETTINGS.default_activation_name = "ReLU" # Or "Tanh", "Sigmoid"
 
     # Example of changing a metric threshold for a specific run:
