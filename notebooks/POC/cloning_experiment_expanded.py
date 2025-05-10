@@ -636,21 +636,21 @@ def plot_experiment_results(results):
 def main():
     no_escape_config = {
         'scenario': 'no_escape',
-        'dataset_name': 'mnist', 
+        'dataset_name': 'mnist',
         'data_root': os.path.join(PROJECT_ROOT, 'data'), # Adjusted data_root
         'model_params': {
-            'hidden_sizes': [64, 32], 
+            'hidden_sizes': [64, 32],
             'activation': 'relu',
-            'normalization': None, 
-            'dropout_p': 0.0 
+            'normalization': None,
+            'dropout_p': 0.0
         },
         'expansion_factor': 2,
-        'epochs_base_train': 2, 
-        'epochs_main_train': 2, 
+        'epochs_base_train': 10,
+        'epochs_main_train': 20,
         'batch_size': 128,
         'learning_rate': 0.001,
         'weight_decay': 1e-4,
-        'metrics_interval': 2, 
+        'metrics_interval': 5,
         'rank_metric_layers': [] # Will be auto-populated below
     }
     
