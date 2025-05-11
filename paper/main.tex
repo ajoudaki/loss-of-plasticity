@@ -63,8 +63,13 @@
 \begin{document}
 \maketitle
 
+% \begin{abstract}
+% Standard deep learning models, typically trained via back-propagation, demonstrate remarkable success within the conventional two-phase paradigm: an extensive training phase conducted on a largely stationary dataset, followed by deployment where the model weights are frozen or only minimally adjusted \cite{dohare2024loss}. However, as highlighted by Richard Sutton and colleagues, this paradigm falters when models must continually interact with non-stationary environments \cite{dohare2024loss}. Over extended periods of learning in such settings, the very optimization process responsible for creating powerful representations can paradoxically undermine the network's capacity for future learning. Sutton terms this degradation \emph{loss of plasticity} \cite{dohare2024loss} . This work undertakes a first-principles investigation into the mechanisms underlying plasticity loss in gradient-based models. We propose a formal definition grounded in dynamical systems theory, identifying stable sub-manifolds in the parameter space as traps for gradient trajectories. We analyze two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or perturbations can potentially prevent or mitigate this collapse. Our theoretical framework aims to unify disparate observations regarding learning dynamics within a coherent mathematical structure. Notably, our findings reveal a fundamental tension: properties often considered beneficial in the static, two-phase regime, such as low-rank representations or simplicity bias \cite{huh2022lowrank, papyan2020prevalence}, appear to contribute directly to the loss of plasticity in continual learning scenarios \cite{dohare2024loss}. By consolidating key propositions regarding the barriers to continuous learning, this work points towards critical areas for future research aimed at developing truly adaptive artificial intelligence.
+% \end{abstract}
+
+% new abstract 
 \begin{abstract}
-Standard deep learning models, typically trained via back-propagation, demonstrate remarkable success within the conventional two-phase paradigm: an extensive training phase conducted on a largely stationary dataset, followed by deployment where the model weights are frozen or only minimally adjusted \cite{dohare2024loss}. However, as highlighted by Richard Sutton and colleagues, this paradigm falters when models must continually interact with non-stationary environments \cite{dohare2024loss}. Over extended periods of learning in such settings, the very optimization process responsible for creating powerful representations can paradoxically undermine the network's capacity for future learning. Sutton terms this degradation \emph{loss of plasticity} \cite{dohare2024loss} . This work undertakes a first-principles investigation into the mechanisms underlying plasticity loss in gradient-based models. We propose a formal definition grounded in dynamical systems theory, identifying stable sub-manifolds in the parameter space as traps for gradient trajectories. We analyze two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or perturbations can potentially prevent or mitigate this collapse. Our theoretical framework aims to unify disparate observations regarding learning dynamics within a coherent mathematical structure. Notably, our findings reveal a fundamental tension: properties often considered beneficial in the static, two-phase regime, such as low-rank representations or simplicity bias \cite{huh2022lowrank, papyan2020prevalence}, appear to contribute directly to the loss of plasticity in continual learning scenarios \cite{dohare2024loss}. By consolidating key propositions regarding the barriers to continuous learning, this work points towards critical areas for future research aimed at developing truly adaptive artificial intelligence.
+    Standard deep learning models excel when trained on stationary datasets but often falter in non-stationary environments where continuous adaptation is crucial. This paradigm struggle is significantly due to the degradation of future learning capacity, a phenomenon termed loss of plasticity (LoP). This work undertakes a first-principles investigation into the mechanisms underlying LoP in gradient-based models. We propose a formal definition of LoP grounded in dynamical systems theory, identifying stable sub-manifolds in the parameter space that act as traps for gradient trajectories. Our analysis details two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or targeted perturbations might prevent or mitigate this plasticity collapse. A core finding of our theoretical framework is the revelation of a fundamental tension: properties widely considered beneficial for generalization in static, two-phase learning regimes, such as the emergence of low-rank representations or inherent simplicity biases, appear to directly contribute to LoP in continual learning scenarios. By mathematically characterizing these barriers, this work pinpoints critical representational properties that hinder continuous learning, providing a clear direction for developing truly adaptive artificial intelligence.
 \end{abstract}
 
 \section{Introduction}
@@ -183,6 +188,14 @@ Examples of this phenomenon are abundant \giulia{and widely observed in the lite
 \end{itemize}
 This mechanism provides a clear pathway to plasticity loss where parts of the network become unresponsive to new data due to the properties of the activation functions and the dynamics of training. \giulia{Maybe we should be more precise here. Can we quantify how much loss of plasticity a single dead unit brings? How many dead units can be "tolerated" before losing the ability to fit a task?}
 
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.45\linewidth]{paper/images/dead_frac_mlp.png}
+    \includegraphics[width=0.45\linewidth]{paper/images/dead_frac_cnn.png}
+    \caption{(Placeholder figure, not final) No normalization and no dropout. The Accuracy is plotted as a rolling average, with window 20. +resnet and ViT will be added.}
+    \label{fig:DeadReLUs-LoP}
+\end{figure}
+
 
 \subsection{Cloned-Unit Manifolds via Redundancy}
 
@@ -272,6 +285,20 @@ The affine subspace identified in Proposition~\ref{prop:cloned} acts as a stable
 
 \giulia{I would place the results of the experiments showing the emergence of LoP symptoms here, as it should make a more convincing argument for the reader, and make it less abstract.}
 
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.33\linewidth]{paper/images/mlp_dup_frac.png}\includegraphics[width=0.33\linewidth]{paper/images/cnn_dup_frac.png}
+    \includegraphics[width=0.33\linewidth]{paper/images/resnet_dup_frac.png}
+    \caption{(Placeholder figure, not final) No normalization and no dropout. The colours correspond to training steps (binned for convenienc). This figure shows the emergence of duplicate units during training, and their relation with the training performance.}
+    \label{fig:dupfrac-LoP}
+\end{figure}
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.33\linewidth]{paper/images/mlp_stable_rank.png}\includegraphics[width=0.33\linewidth]{paper/images/cnn_stable_rank.png}
+    \includegraphics[width=0.33\linewidth]{paper/images/resnet_stable_rank.png}
+    \caption{(Placeholder figure, not final) No normalization and no dropout. The colours correspond to training steps (binned for convenienc). This figure shows the evolution of the features stable rank during training, and their relation with the training performance.}
+    \label{fig:dupfrac-LoP}
+\end{figure}
 \section{Mitigating and Recovering Plasticity}
 \label{sec:mitigate}
 
@@ -301,6 +328,22 @@ This proposition provides theoretical grounding for the empirical success of cer
 \end{itemize}
 These techniques, while often motivated by improving optimization speed or static generalization, can be reinterpreted through our framework as mechanisms that counteract the dynamics leading to plasticity loss by preserving representational rank and diversity.
 
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.33\linewidth]{paper/images/mlp_rankandnorm.png}\includegraphics[width=0.33\linewidth]{paper/images/mlp_nonGaussnorm.png}
+    
+    \caption{(Placeholder figure, not final) Effect of normalization on Effective Rank and Gaussianity. Dropout is 0.}
+    \label{fig:norm-rank-nG}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.33\linewidth]{paper/images/mlp_rankanddropout.png}
+    
+    \caption{(Placeholder figure, not final) Effect of dropout on Effective Rank. No normalization applied.}
+    \label{fig:dropout-rank}
+\end{figure}
+
 \subsection{Escaping a Plasticity-Loss Manifold}
 
 If a network's parameters $\theta(t)$ have converged to a stable loss-of-plasticity manifold $\mathcal{M}$, gradient descent alone cannot facilitate escape. However, perturbations or noise injection might allow the trajectory to leave the manifold if the curvature permits.
@@ -324,6 +367,15 @@ The distance from the manifold will initially increase (i.e., plasticity is pote
 
 \giulia{Maybe another way to explain the benefit of noise injection is to say that high-dimensional independent noise increases the rank of the features, (intuitively) because two correlated features will be perturbed independently?}
 This corollary explains why techniques involving noise injection or periodic re-initialization of parts of the network, such as the continual backpropagation algorithm proposed by \cite{dohare2024loss} , can sometimes succeed in restoring plasticity. If the manifold is only stable (positive curvature in all normal directions, Equation~\ref{eq:stable}), noise alone won't help escape via gradient descent. However, if the manifold is of saddle type (Equation~\ref{eq:saddle}), perturbations along directions of negative curvature can initiate escape trajectories. If the manifold is unstable (Equation~\ref{eq:unstable}), any perturbation will lead to escape. This highlights the importance of the loss landscape's geometry around these manifolds.
+
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.33\linewidth]{paper/images/mlp_config_finalperf.png}
+    
+    \caption{(Placeholder figure, not final - this should probably become a table) Summary of final performance dependent on normalization and dropout. The y axis is the train accuracy averaged over time for each run, the standard deviation is over all runs with the same configuration.}
+    \label{fig:mlp-config-finalperf}
+\end{figure}
 
 \section{Empirical Evaluation (Planned)}
 \label{sec:experiments}
@@ -461,6 +513,16 @@ These extensions suggest that the core mechanisms of plasticity loss identified 
 
 \subsection{Metrics}
 
+\section{Additional experimental evidence}
+
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.45\linewidth]{paper/images/dead_frac_mlp_layer_detail.png}
+    \includegraphics[width=0.45\linewidth]{paper/images/dead_frac_cnn_layer_detail.png}
+    \caption{(Placeholder figure, not final) No normalization and no dropout. Detail by layers.}
+    \label{fig:DeadReLUs-LoP}
+\end{figure}
 \newpage
 
 \section*{NeurIPS Paper Checklist}
