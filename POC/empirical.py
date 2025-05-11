@@ -11,8 +11,8 @@ from tqdm import tqdm
 import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-import matplotlib.colors as mcolors # Added for color normalization
-import matplotlib.cm as cm # Added for colormaps
+# import matplotlib.colors as mcolors # No longer needed for this plot
+# import matplotlib.cm as cm # No longer needed for this plot
 
 # --- Settings & Configuration ---
 @dataclass
@@ -54,7 +54,7 @@ class ExperimentSettings:
     TITLE_FONT_SIZE_FACTOR: float = 1.1
     LABEL_FONT_SIZE_FACTOR: float = 1.0
     TICK_FONT_SIZE_FACTOR: float = 0.9
-    LEGEND_FONT_SIZE_FACTOR: float = 0.9
+    LEGEND_FONT_SIZE_FACTOR: float = 0.85 # Slightly smaller for more legend entries
     FIG_DPI: int = 300
 
     def __post_init__(self):
@@ -405,7 +405,7 @@ def run_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings) 
 # --- Helper for Canonical Stage Names ---
 def get_canonical_ordered_stages(s: ExperimentSettings, mlp_hidden_layers_list: List[int], include_norm_stages: bool = True) -> List[str]:
     stages = ["Input"]
-    for i in range(len(mlp_hidden_layers_list)): # Use the actual list of hidden layers
+    for i in range(len(mlp_hidden_layers_list)): 
         prefix = f"H{i+1}"
         stages.append(f"{prefix}_Lin")
         if include_norm_stages:
@@ -418,165 +418,130 @@ def get_canonical_ordered_stages(s: ExperimentSettings, mlp_hidden_layers_list: 
 def plot_rank_progression_by_config(final_metrics_df: pd.DataFrame,
                                      s: ExperimentSettings,
                                      model_configurations_list: List[ModelConfig],
-                                     all_possible_stages_ordered: List[str],
+                                     all_possible_stages_ordered: List[str], # This will be filtered
                                      current_activation_name: str
                                      ):
     """
-    Plots effective rank progression. Subplots for model configs are in a row.
-    Epochs are shown with a color gradient and consistent line style.
-    Includes Epoch 0, Last Epoch, and some intermediate epochs.
+    Plots effective rank progression on a single plot.
+    Model configurations are shown by color.
+    Epoch 0 (initialization) and Last Epoch are shown by line style.
+    X-axis shows only hidden layer stages.
     """
     if final_metrics_df.empty:
         print("No metrics data to plot for rank progression.")
         return
 
-    num_configs = len(model_configurations_list)
-    fig, axs = plt.subplots(1, num_configs, 
-                            figsize=(6 * num_configs, 4.5), # Adjusted for row layout
-                            sharex=True, sharey=True, squeeze=False)
-    axs = axs[0] # axs is (1, num_configs), so take the first row
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6)) # Single plot
 
     unique_epochs_sorted = sorted(final_metrics_df['epoch'].dropna().unique().astype(int))
     if not unique_epochs_sorted:
         print("No epoch data found for rank progression plot.")
-        for i, model_cfg_item in enumerate(model_configurations_list):
-            axs[i].text(0.5, 0.5, "No epoch data", horizontalalignment='center', verticalalignment='center', transform=axs[i].transAxes)
-            axs[i].set_title(f"{model_cfg_item.name}")
+        ax.text(0.5, 0.5, "No epoch data", horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
         plt.tight_layout()
         plt.show()
         return
         
-    # Epoch selection logic
-    epochs_to_plot_values = []
+    epochs_to_plot_map = {}
     if unique_epochs_sorted:
-        epochs_to_plot_values.append(unique_epochs_sorted[0]) # Start
-        
-        max_intermediate_epochs = 3 
-        intermediate_candidates = unique_epochs_sorted[1:-1] # Exclude first and last
-        
-        if len(intermediate_candidates) > max_intermediate_epochs:
-            # Calculate step to pick evenly spread intermediate epochs
-            step = len(intermediate_candidates) // (max_intermediate_epochs + 1)
-            # Pick points at roughly step, 2*step, 3*step, etc. within the intermediate_candidates
-            indices_to_pick = [ (j+1) * step -1 for j in range(max_intermediate_epochs)]
-            indices_to_pick = [idx for idx in indices_to_pick if idx < len(intermediate_candidates)] # Ensure bounds
-            selected_intermediate = [intermediate_candidates[i] for i in indices_to_pick]
-        else: 
-            selected_intermediate = intermediate_candidates # Take all if fewer than max
-            
-        epochs_to_plot_values.extend(selected_intermediate)
-        
-        if len(unique_epochs_sorted) > 1 and unique_epochs_sorted[-1] not in epochs_to_plot_values:
-            epochs_to_plot_values.append(unique_epochs_sorted[-1]) # End
-            
-    epochs_to_plot_values = sorted(list(set(epochs_to_plot_values))) # Ensure uniqueness and order
-
-    if not epochs_to_plot_values: # Should not happen if unique_epochs_sorted is not empty
-        print("No epochs selected for plotting.")
+        epochs_to_plot_map["Epoch 0 (Init)"] = unique_epochs_sorted[0]
+    if len(unique_epochs_sorted) > 1:
+        epochs_to_plot_map["Last Epoch"] = unique_epochs_sorted[-1]
+    
+    if not epochs_to_plot_map:
+        print("Not enough epoch data to plot (need at least one).")
         return
 
-    # Colormap and normalization for epoch colors
-    # Ensure vmin is not equal to vmax if only one epoch is plotted
-    vmin_col = min(epochs_to_plot_values)
-    vmax_col = max(epochs_to_plot_values) if len(epochs_to_plot_values) > 1 else vmin_col + 1 
-    norm_for_colormap = mcolors.Normalize(vmin=vmin_col, vmax=vmax_col)
-    colormap = cm.viridis 
+    # Define colors for model configurations and linestyles for epochs
+    model_colors = {
+        "MLP NoNorm": "black", 
+        "MLP BatchNorm": "dodgerblue", 
+        "MLP LayerNorm": "red",
+        # Add more if you have other configs
+    }
+    default_color = "grey" # Fallback color
 
-    stage_to_idx = {name: i for i, name in enumerate(all_possible_stages_ordered)}
+    epoch_linestyles = {
+        "Epoch 0 (Init)": "--", 
+        "Last Epoch": "-"
+    }
+
+    # Filter stages for X-axis: exclude Input and Out_Logits
+    hidden_layer_stages_ordered = [
+        st for st in all_possible_stages_ordered if st not in ["Input", "Out_Logits"]
+    ]
+    if not hidden_layer_stages_ordered:
+        print("No hidden layer stages found for x-axis after filtering.")
+        ax.text(0.5, 0.5, "No hidden layer stages", horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+        plt.tight_layout()
+        plt.show()
+        return
+
+    stage_to_idx = {name: i for i, name in enumerate(hidden_layer_stages_ordered)}
     max_er_overall = 0 
 
-    for i, model_cfg_item in enumerate(model_configurations_list):
-        ax = axs[i]
-        config_data = final_metrics_df[final_metrics_df['model_config'] == model_cfg_item.name].copy()
+    for model_cfg_item in model_configurations_list:
+        config_name = model_cfg_item.name
+        color = model_colors.get(config_name, default_color)
         
+        config_data = final_metrics_df[final_metrics_df['model_config'] == config_name].copy()
         if config_data.empty:
-            if s.DEBUG_VERBOSE: print(f"No data for model config: {model_cfg_item.name} in rank progression plot.")
-            ax.text(0.5, 0.5, "No data", horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
-            ax.set_title(f"{model_cfg_item.name}")
+            if s.DEBUG_VERBOSE: print(f"No data for model config: {config_name} in rank progression plot.")
             continue
         
         current_max_er_for_config = 0
-        for epoch_val in epochs_to_plot_values:
+        for epoch_label, epoch_val in epochs_to_plot_map.items():
+            linestyle = epoch_linestyles[epoch_label]
+            
             epoch_config_data = config_data[config_data['epoch'] == epoch_val].copy()
             if epoch_config_data.empty:
-                if s.DEBUG_VERBOSE: print(f"No data for {model_cfg_item.name} at epoch {epoch_val}")
+                if s.DEBUG_VERBOSE: print(f"No data for {config_name} at epoch {epoch_val}")
                 continue
 
+            # Map to the filtered stage indices
             epoch_config_data['plot_x_idx'] = epoch_config_data['layer_name'].map(stage_to_idx)
             plot_data = epoch_config_data.dropna(subset=['plot_x_idx', 'eff_rank']).sort_values('plot_x_idx')
             
             if not plot_data.empty:
-                color_val = colormap(norm_for_colormap(epoch_val))
+                legend_label = f"{config_name} - {epoch_label}"
                 ax.plot(plot_data['plot_x_idx'].values, plot_data['eff_rank'].values, 
-                        # label=f"Epoch {epoch_val}", # Label handled by colorbar
-                        color=color_val,
-                        linestyle='-', # Consistent line style
-                        marker=None,   # No markers
-                        linewidth=1.5)
+                        label=legend_label, 
+                        color=color,
+                        linestyle=linestyle,
+                        linewidth=1.8, # Slightly thicker lines
+                        marker=None) # No markers for cleaner look
                 current_max_er_for_config = max(current_max_er_for_config, plot_data['eff_rank'].max())
         
         max_er_overall = max(max_er_overall, current_max_er_for_config)
         
-        if i == 0: # Set Y-label only for the first subplot in the row
-            ax.set_ylabel("Effective Rank", fontsize=s.FONT_SIZE_BASE * s.LABEL_FONT_SIZE_FACTOR)
-        ax.set_title(f"{model_cfg_item.name}", fontsize=s.FONT_SIZE_BASE * s.TITLE_FONT_SIZE_FACTOR)
-        # ax.legend(loc='best') # Legend removed as epoch is shown by color
-        ax.grid(True, linestyle=':', alpha=0.7)
+    ax.set_ylabel("Effective Rank", fontsize=s.FONT_SIZE_BASE * s.LABEL_FONT_SIZE_FACTOR)
+    ax.set_xlabel("Hidden Layer Stage", fontsize=s.FONT_SIZE_BASE * s.LABEL_FONT_SIZE_FACTOR)
+    ax.set_title(f"Effective Rank Progression ({s.dataset_name}, Activation: {current_activation_name.upper()})", 
+                 fontsize=s.FONT_SIZE_BASE * s.TITLE_FONT_SIZE_FACTOR)
+    
+    ax.legend(loc='best', fontsize=s.FONT_SIZE_BASE * s.LEGEND_FONT_SIZE_FACTOR)
+    ax.grid(True, linestyle=':', alpha=0.7)
 
-    for ax in axs: # Apply common y-limit after finding max_er_overall
-        if max_er_overall > 0:
-            ax.set_ylim(bottom=0, top=max_er_overall * 1.1 if max_er_overall > 0 else 10)
-        else: # Handle case with no valid ER data
-            ax.set_ylim(bottom=0, top=10)
+    if max_er_overall > 0:
+        ax.set_ylim(bottom=0, top=max_er_overall * 1.1 if max_er_overall > 0 else 10)
+    else:
+        ax.set_ylim(bottom=0, top=10) # Default if no ER data
 
-
-    # Common X-axis tick labels (set once for the shared axis)
-    relevant_xticks = [stage_to_idx[name] for name in all_possible_stages_ordered if name in stage_to_idx]
-    relevant_xticklabels = [name.replace("_Lin", "L").replace("_Nrm", "N").replace("_ActIn","Pre").replace("_Act", "A").replace("Out_Logits","Out") 
-                            for name in all_possible_stages_ordered if name in stage_to_idx]
+    # X-axis tick labels based on filtered hidden_layer_stages_ordered
+    relevant_xticks = [stage_to_idx[name] for name in hidden_layer_stages_ordered if name in stage_to_idx]
+    relevant_xticklabels = [name.replace("_Lin", "L").replace("_Nrm", "N").replace("_Act", "A")
+                            for name in hidden_layer_stages_ordered if name in stage_to_idx]
     
     if relevant_xticks:
-        axs[0].set_xticks(relevant_xticks) # Set for the first, applies to all due to sharex
-        axs[0].set_xticklabels(relevant_xticklabels, rotation=45, ha='right', fontsize=s.FONT_SIZE_BASE * s.TICK_FONT_SIZE_FACTOR * 0.9)
+        ax.set_xticks(relevant_xticks)
+        ax.set_xticklabels(relevant_xticklabels, rotation=45, ha='right', fontsize=s.FONT_SIZE_BASE * s.TICK_FONT_SIZE_FACTOR)
     
-    # Common X-label for the figure
-    fig.supxlabel("Layer Stage", fontsize=s.FONT_SIZE_BASE * s.LABEL_FONT_SIZE_FACTOR, y=0.08 if num_configs >1 else 0.12) # Adjust y based on num_configs
+    plt.tight_layout()
     
-    fig.suptitle(f"Effective Rank Progression ({s.dataset_name}, Activation: {current_activation_name.upper()})", 
-                 fontsize=s.FONT_SIZE_BASE * s.TITLE_FONT_SIZE_FACTOR * 1.1)
-    
-    # Add colorbar
-    if epochs_to_plot_values:
-        sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm_for_colormap)
-        sm.set_array([]) 
-        # Adjust colorbar position: [left, bottom, width, height] in figure coordinates
-        # This might need fine-tuning based on the number of subplots and figure size
-        cbar_left = 0.92 
-        cbar_bottom = 0.20 
-        cbar_width = 0.015
-        cbar_height = 0.6
-        
-        # For single config, adjust colorbar position to be less cramped
-        if num_configs == 1:
-            cbar_left = 0.88
-            cbar_bottom = 0.15
-            cbar_width = 0.03
-            cbar_height = 0.7
-
-
-        cbar_ax = fig.add_axes([cbar_left, cbar_bottom, cbar_width, cbar_height])
-        cbar = fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
-        cbar.set_label('Epoch', size=s.FONT_SIZE_BASE * s.LABEL_FONT_SIZE_FACTOR)
-        cbar.ax.tick_params(labelsize=s.FONT_SIZE_BASE * s.TICK_FONT_SIZE_FACTOR)
-        # Adjust layout to make space for colorbar
-        plt.tight_layout(rect=[0.02, 0.08, cbar_left - 0.02 , 0.94]) # rect: [left, bottom, right, top]
-    else:
-        plt.tight_layout(rect=[0.02, 0.08, 0.98, 0.94])
-    
-    save_path = os.path.join(s.FIGURE_DIR, f"empirical_rank_progression_{current_activation_name.lower()}_{s.dataset_name.lower()}.pdf")
+    save_path = os.path.join(s.FIGURE_DIR, f"empirical_rank_progression_overlay_{current_activation_name.lower()}_{s.dataset_name.lower()}.pdf")
     plt.savefig(save_path)
-    print(f"Saved Rank Progression plot to {save_path}")
+    print(f"Saved Overlaid Rank Progression plot to {save_path}")
     plt.show()
+
 
 # --- Original plotting function ( 그대로 유지 ) ---
 def plot_all_empirical_metrics_figure(final_metrics_df: pd.DataFrame,
@@ -641,6 +606,9 @@ def run_all_experiments(s: ExperimentSettings):
     all_experiments_dfs: List[pd.DataFrame] = []
     current_run_activation = s.default_activation_name
 
+    # This list is used by BOTH plotting functions now.
+    # It includes all potential stages for comprehensive x-axis mapping.
+    # The individual plot functions will filter or map to this as needed.
     canonical_ordered_plot_names = get_canonical_ordered_stages(s, s.mlp_hidden_layers, include_norm_stages=True)
     if s.DEBUG_VERBOSE:
         print(f"Canonical layer stages for plotting (using get_canonical_ordered_stages): {canonical_ordered_plot_names}")
@@ -666,7 +634,7 @@ def run_all_experiments(s: ExperimentSettings):
             final_aggregated_df,
             s,
             MODEL_CONFIGURATIONS_TO_RUN,
-            canonical_ordered_plot_names, 
+            canonical_ordered_plot_names, # Pass the full list; filtering happens inside
             current_run_activation
         )
         
@@ -684,9 +652,7 @@ if __name__ == "__main__":
     SETTINGS.QUICK_TEST_MODE = False
     SETTINGS.DEBUG_VERBOSE = False 
     SETTINGS.dataset_name = "MNIST"
-    SETTINGS.default_activation_name = "ReLU" 
-    SETTINGS.mlp_hidden_layers = [512, 512, 512]
-    SETTINGS.num_epochs = 15
+    SETTINGS.default_activation_name = "ReLU" # Try "Tanh" or "Sigmoid" as well
 
     SETTINGS.__post_init__()
     run_all_experiments(SETTINGS)
