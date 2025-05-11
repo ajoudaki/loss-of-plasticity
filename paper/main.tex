@@ -31,6 +31,10 @@
 \newcommand{\giulia}[1]{{\color{ForestGreen}\textbf{Giulia:} #1}}
 %\newcommand{\giulia}[1]{}
 
+\usepackage[textsize=tiny]{todonotes}
+% \usepackage{colortbl}
+
+\newcommand{\mf}[1]{\todo[color=orange!30,size=\tiny]{MF: #1}}
 
 %%%% Theorem environments
 \newtheorem{definition}{Definition}[section]
@@ -38,6 +42,7 @@
 \newtheorem{proposition}{Proposition}[section]
 \newtheorem{corollary}{Corollary}[section]
 \newtheorem{remark}{Remark}[section]
+
 
 \title{Barriers for Learning in an Evolving World: \\a Mathematical Understanding of Loss of Plasticity}
 
@@ -74,7 +79,7 @@
 
 \section{Introduction}
 
-The extraordinary success of back-propagation in training deep neural networks often relies on two implicit, yet critical, assumptions:
+The extraordinary success of back-propagation in training deep neural networks often relies on two implicit, yet critical, assumptions: \mf{Or even maybe removing the bullet format and write plainly. Two indentation at the bending of intro and in the first page of paper may not look very good.}
 \begin{enumerate}
     \item \textbf{Stationarity.} The data distribution encountered during training is assumed to be identical, or very similar, to the distribution faced during deployment. Consequently, adaptation after the initial training phase is often minimal or absent.
     \item \textbf{One-shot randomness.} Diversity and the potential for exploration are primarily introduced through a single random initialization of the network's parameters. Subsequent training involves specialization, but the initial source of variability is gradually overwritten or ``forgotten'' by the optimization process.
@@ -190,9 +195,12 @@ This mechanism provides a clear pathway to plasticity loss where parts of the ne
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.45\linewidth]{paper/images/dead_frac_mlp.png}
-    \includegraphics[width=0.45\linewidth]{paper/images/dead_frac_cnn.png}
-    \caption{(Placeholder figure, not final) No normalization and no dropout. The Accuracy is plotted as a rolling average, with window 20. +resnet and ViT will be added.}
+    \includegraphics[width=0.4\linewidth]{paper/images/dead_frac_mlp.png}
+    \includegraphics[width=0.4\linewidth]{paper/images/dead_frac_cnn.png}
+    \includegraphics[width=0.4\linewidth]{paper/images/dead_frac_resnet.png}
+    \includegraphics[width=0.4\linewidth]{paper/images/sat_frac_vit.png}
+    
+    \caption{(Placeholder figure, not final) No normalization and no dropout. The Accuracy is plotted as a rolling average, with window 20. For ViT we use layernorm.}
     \label{fig:DeadReLUs-LoP}
 \end{figure}
 
@@ -287,16 +295,18 @@ The affine subspace identified in Proposition~\ref{prop:cloned} acts as a stable
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.33\linewidth]{paper/images/mlp_dup_frac.png}\includegraphics[width=0.33\linewidth]{paper/images/cnn_dup_frac.png}
-    \includegraphics[width=0.33\linewidth]{paper/images/resnet_dup_frac.png}
-    \caption{(Placeholder figure, not final) No normalization and no dropout. The colours correspond to training steps (binned for convenienc). This figure shows the emergence of duplicate units during training, and their relation with the training performance.}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_dup_frac.png}\includegraphics[width=0.24\linewidth]{paper/images/cnn_dup_frac.png}
+    \includegraphics[width=0.24\linewidth]{paper/images/resnet_dup_frac.png}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_dup_frac.png}
+    \caption{(Placeholder figure, not final) No normalization (except layer for vit) and no dropout. The colours correspond to training steps (binned for convenienc). This figure shows the emergence of duplicate units during training, and their relation with the training performance.}
     \label{fig:dupfrac-LoP}
 \end{figure}
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.33\linewidth]{paper/images/mlp_stable_rank.png}\includegraphics[width=0.33\linewidth]{paper/images/cnn_stable_rank.png}
-    \includegraphics[width=0.33\linewidth]{paper/images/resnet_stable_rank.png}
-    \caption{(Placeholder figure, not final) No normalization and no dropout. The colours correspond to training steps (binned for convenienc). This figure shows the evolution of the features stable rank during training, and their relation with the training performance.}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_stable_rank.png}\includegraphics[width=0.24\linewidth]{paper/images/cnn_stable_rank.png}
+    \includegraphics[width=0.24\linewidth]{paper/images/resnet_stable_rank.png}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_stable_rank.png}
+    \caption{(Placeholder figure, not final) No normalization (except layer for vit) and no dropout. The colours correspond to training steps (binned for convenienc). This figure shows the evolution of the features stable rank during training, and their relation with the training performance.}
     \label{fig:dupfrac-LoP}
 \end{figure}
 \section{Mitigating and Recovering Plasticity}
@@ -318,6 +328,35 @@ Let $f:\R\to\R$ be non-linear activation that is not a bounded degree polynomial
 The proof (Appendix~\ref{app:proofs}) leverages the Hermite polynomial expansion of the activation function $f$ \cite{erdelyi1953higher} and Mehler's formula for the expectation of products of Hermite polynomials of correlated Gaussian variables \cite{mehler1866ueber, erdelyi1953higher}. Since a non-polynomial function has infinitely many non-zero Hermite coefficients, the resulting covariance matrix becomes a sum of positive semidefinite matrices (Hadamard powers of $\Sigma$), which generally results in a positive definite (full rank) matrix unless the underlying Gaussian variables $z_i$ lack diversity.
 
 
+While Proposition~\ref{prop:rank} establishes that non-linear activation functions are key to recovering rank from rank-deficient pre-activations under Gaussian input assumptions, the *effective degree* of this nonlinearity in practice is critically dependent on the statistical properties (e.g., mean, variance, and range) of the actual inputs the activation function receives. If pre-activations fall into regions where the function behaves linearly (e.g., Tanh for small inputs) or is saturated (e.g., Tanh for very large inputs, or ReLU for all-negative inputs), its ability to expand representational rank is severely diminished. This occurs even if the activation function is globally non-linear. The following empirical simulations illustrate this critical dependency and demonstrate how controlling input statistics, for instance via normalization, can ensure activations operate in their beneficial non-linear regimes. For these simulations, we consider pre-activations $z \in \R^{d}$ that are synthetically generated to be low-rank; specifically, $z$ has an effective rank of $K_{\text{rank}}=5$ within a $d_{\text{full}}=20$ dimensional space.
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.7\linewidth]{figures/theory_tanh_az_rank.pdf}
+    \caption{Impact of input scaling on the effective rank of post-activations for $h = \tanh(az)$. Pre-activations $z$ are rank-deficient (initial effective rank 5 in $d_{\text{full}}=20$ dimensions). \textbf{Left:} Normalized eigenvalue spectra of the covariance matrix $\mathrm{Cov}(h)$. \textbf{Right:} Effective rank of $\mathrm{Cov}(h)$ as a function of the scaling factor $a$. For very small $a$, $\tanh(az) \approx az$, causing the activation to act linearly and leading to minimal rank increase. As $a$ increases, the non-linearity becomes more pronounced, significantly improving rank recovery. For very large $a$, $\tanh(az)$ approaches $\mathrm{sign}(z)$, a different non-linear function that can also yield high rank.}
+    \label{fig:theory_tanh_az_rank}
+\end{figure}
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.7\linewidth]{figures/theory_relu_zb_rank.pdf}
+    \caption{Impact of input shifting on the effective rank of post-activations for $h = \mathrm{ReLU}(z+b)$. Pre-activations $z$ are rank-deficient (initial effective rank 5 in $d_{\text{full}}=20$ dimensions). \textbf{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$. \textbf{Right:} Effective rank of $\mathrm{Cov}(h)$ versus the shift $b$. If $b$ is large and positive (such that $z+b > 0$ for most inputs), $\mathrm{ReLU}(z+b) \approx z+b$, an affine function, which limits rank recovery. Conversely, if $b$ is large and negative, most inputs result in zero activation, causing rank collapse. An optimal range for $b$ (around zero for zero-mean $z$) allows ReLU to operate effectively as a non-linear function, maximizing rank expansion from the low-rank input.}
+    \label{fig:theory_relu_zb_rank}
+\end{figure}
+
+Figures~\ref{fig:theory_tanh_az_rank} and \ref{fig:theory_relu_zb_rank} clearly illustrate that without appropriate scaling or centering, pre-activations can drive common activation functions like Tanh and ReLU into operating regimes where their effective non-linearity is weak. In such regimes, their capacity to recover or expand the rank of representations is compromised, potentially exacerbating issues like loss of plasticity if hidden representations become increasingly rank-deficient over time. This underscores the critical importance of controlling pre-activation statistics throughout a network and during training. Techniques like Batch Normalization are designed precisely for this purpose: by standardizing input statistics, they can guide pre-activations into the more effective, non-linear operational zones of activation functions. Figure~\ref{fig:theory_joint_norm_activation_rank} empirically demonstrates this synergistic effect.
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/theory_joint_norm_activation_rank.pdf} 
+    \caption{Synergistic effect of Batch Normalization (BN) and activation functions (ReLU and Tanh) on rank recovery from perturbed inputs. Initial pre-activations (effective rank 5 in $d_{\text{full}}=20$ dimensions) are first perturbed to $z_{\text{pert}}$ via per-feature random scaling and shifting, potentially pushing them into suboptimal operating regimes for the activations. The plots display normalized eigenvalue spectra for the covariance of: (i) the perturbed pre-activations $z_{\text{pert}}$ (blue, labeled 'Pre-Act'), (ii) the result of applying the activation function directly to $z_{\text{pert}}$ (orange, 'Direct'), and (iii) the result of applying the activation function after $z_{\text{pert}}$ has been normalized by BN (green, 'BN+Act'). Applying BN before the activation function (green lines) consistently restores or significantly enhances the effective rank of the representations. This is particularly evident when direct application of the activation to the perturbed inputs (orange lines) leads to rank collapse or poor recovery, highlighting BN's role in maintaining effective non-linearity.}
+    \label{fig:theory_joint_norm_activation_rank}
+\end{figure}
+
+The insights from Proposition~\ref{prop:rank}, corroborated by these empirical illustrations (Figures~\ref{fig:theory_tanh_az_rank}--\ref{fig:theory_joint_norm_activation_rank}), provide a strong basis for understanding the utility of certain architectural choices and training techniques, which we discuss next.
+
+
+
 \giulia{Here we should discuss the Proposition and its implications. }
 
 \paragraph{Design implications.}
@@ -330,17 +369,20 @@ These techniques, while often motivated by improving optimization speed or stati
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.33\linewidth]{paper/images/mlp_rankandnorm.png}\includegraphics[width=0.33\linewidth]{paper/images/mlp_nonGaussnorm.png}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_rankandnorm.png}\includegraphics[width=0.24\linewidth]{paper/images/mlp_nonGaussnorm.png}
+    \includegraphics[width=0.24\linewidth]{paper/images/cnn_rankandnorm.png}\includegraphics[width=0.24\linewidth]{paper/images/cnn_nonGaussnorm.png}
+
+    \includegraphics[width=0.24\linewidth]{paper/images/resnet_rankandnorm.png}\includegraphics[width=0.24\linewidth]{paper/images/resnet_nonGaussnorm.png}
+\includegraphics[width=0.24\linewidth]{paper/images/vit_rankandnorm.png}\includegraphics[width=0.24\linewidth]{paper/images/vit_nonGaussnorm.png}
     
-    \caption{(Placeholder figure, not final) Effect of normalization on Effective Rank and Gaussianity. Dropout is 0.}
+    \caption{(Placeholder figure, not final) Effect of normalization on Effective Rank and Gaussianity. Dropout is 0. (Warning: The colours in different architectures do not have the same meaning)}
     \label{fig:norm-rank-nG}
 \end{figure}
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.33\linewidth]{paper/images/mlp_rankanddropout.png}
-    
-    \caption{(Placeholder figure, not final) Effect of dropout on Effective Rank. No normalization applied.}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_rankanddropout.png}    \includegraphics[width=0.24\linewidth]{paper/images/cnn_rankanddropout.png}\includegraphics[width=0.24\linewidth]{paper/images/resnet_rankanddropout.png}\includegraphics[width=0.24\linewidth]{paper/images/vit_rankanddropout.png}
+    \caption{(Placeholder figure, not final) Effect of dropout on Effective Rank. No normalization applied, except layer on vit.}
     \label{fig:dropout-rank}
 \end{figure}
 
@@ -372,8 +414,11 @@ This corollary explains why techniques involving noise injection or periodic re-
 \begin{figure}[h!]
     \centering
     \includegraphics[width=0.33\linewidth]{paper/images/mlp_config_finalperf.png}
+    \includegraphics[width=0.33\linewidth]{paper/images/cnn_config_finalperf.png}
+    \includegraphics[width=0.33\linewidth]{paper/images/resnet_config_finalperf.png}
+\includegraphics[width=0.33\linewidth]{paper/images/vit_config_finalperf.png}
     
-    \caption{(Placeholder figure, not final - this should probably become a table) Summary of final performance dependent on normalization and dropout. The y axis is the train accuracy averaged over time for each run, the standard deviation is over all runs with the same configuration.}
+    \caption{(Placeholder figure, not final - can become a table) Summary of final performance dependent on normalization and dropout. The y axis is the maximum train accuracy reached on each task, averaged over tasks. The standard deviation is over all runs with the same configuration.}
     \label{fig:mlp-config-finalperf}
 \end{figure}
 
@@ -428,32 +473,7 @@ However, potential negative impacts must also be considered. Enabling AI systems
 \bibliography{refs} % Assuming the bib file is named refs.bib
 
 \appendix
-\section{Validation of rank recovery}
-The efficacy of a non-linear activation function, such as $\tanh(x)$, in expanding the dimensionality or rank of feature representations is highly dependent on its operating regime, which is dictated by the scale of its inputs. While it is established that suitable non-linearities can recover the full rank of representations from initially rank-deficient Gaussian features (as discussed in Proposition X.X of our main text), this capability is nuanced by practical considerations of input scaling.
 
-As illustrated in Figure~\ref{fig:eigenvalue_impact_activation} and Figure~\ref{fig:eigenvalue_impact_scaling}, the behavior of the $\tanh(x)$ activation changes drastically with input magnitude.
-When pre-activations are very small (e.g., scaled by $s=0.05$), $\tanh(x)$ approximates a linear function ($f(x) \approx x$). Consequently, the output covariance spectrum closely mirrors the input's rank-deficient structure, showing minimal increase in either SVD threshold rank or effective rank. This highlights that merely employing a differentiable non-linearity is insufficient if its inputs do not engage its non-linear characteristics.
-Conversely, if pre-activations are appropriately scaled (e.g., $s=1.5$), pushing inputs into the genuinely non-linear region of $\tanh(x)$ where its curvature is significant, substantial rank recovery is observed. The output covariance spectrum shows all $d_{full}$ eigenvalues becoming substantial, and both SVD and effective ranks approach the full dimensionality $d_{full}$. However, excessive input scaling (e.g., $s=10.0$) leading to saturation of $\tanh(x)$ (where $f(x) \approx \pm 1$) can again limit the extent of rank recovery. While the SVD rank might become full, the distribution of eigenvalues (and thus the effective rank) may not be as rich as with medium scaling, as most information is squashed to the saturated values.
-
-This underscores the importance of input normalization. When inputs are first standardized to have approximately zero mean and unit variance for each feature (simulating the effect of a Batch Normalization layer) before applying $\tanh(x)$, the activation consistently operates in an effective non-linear range. As seen in Figure~\ref{fig:eigenvalue_impact_scaling} ("Output, Input: Normalized"), this also leads to robust rank recovery. Therefore, the combination of input normalization and a non-linear activation is crucial for ensuring the activation remains `effective,' fully leveraging its capacity to diversify features and recover representational rank. This synergy is vital for learning complex functions and maintaining model plasticity in deeper networks, preventing premature convergence to lower-dimensional subspaces.
-
-
-\begin{figure}[htbp]
-    \centering
-    % Actual command to include the figure generated by the Python script:
-    \includegraphics[width=0.95\textwidth]{paper/images/theory.png}
-    \caption{}
-    \label{fig:eigenvalue_impact_activation}
-\end{figure}
-
-
-\begin{figure}[htbp]
-    \centering
-    % Actual command to include the figure generated by the Python script:
-    \includegraphics[width=0.95\textwidth]{paper/images/theory2.png}
-    \caption{}
-    \label{fig:eigenvalue_impact_scaling}
-\end{figure}
 
 
 \section{Proofs}
