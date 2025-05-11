@@ -18,7 +18,9 @@
 \usepackage{enumitem}
 \usepackage{geometry}
 \usepackage{tikz}
+\usepackage{graphicx}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
+\graphicspath{{./POC}}
 
 
 
@@ -107,7 +109,7 @@ Let $\theta\in\Theta\subseteq\R^p$ represent the parameters of a neural network.
     \frac{d\theta(t)}{dt} \;=\; -\nabla_\theta\Loss\bigl(\theta(t)\bigr).
     \label{eq:grad_flow}
 \end{equation}
-This perspective allows us to analyze the trajectory of parameters $\theta(t)$ in the parameter space $\Theta$ as driven by the negative gradient of the loss landscape \cite{saxe2014exact}.
+This perspective allows us to analyze the trajectory of parameters $\theta(t)$ in the parameter space $\Theta$ as driven by the negative gradient in the loss landscape \cite{saxe2014exact}.
 
 We introduce the concept of a loss of plasticity manifold to formalize the idea of gradient trajectories becoming trapped in lower-dimensional subspaces, thereby restricting future learning capacity.
 
@@ -316,7 +318,7 @@ Having identified mechanisms leading to plasticity loss, we now consider strateg
 
 \giulia{Personal opinion: I think this section should be restructured. In particular, I would start with dropout and continual backprop, which both inject noise during the optimization process, with the result of de-correlating features. Then I would discuss separately the less obvious case of Gaussian features, and show that Batch Normalization indeed achieves this to some extent.}
 
-\subsection{Rank Preservation via Nonlinearities and Gaussianity}
+\subsection{Rank recovery via nonlinear activations}
 
 One way plasticity is lost is through the collapse of representational diversity, manifesting as low-rank feature spaces (as potentially induced by cloned units or other dynamics). Maintaining higher-rank representations could thus preserve plasticity. Certain architectural choices and properties of activation functions can promote this.
 
@@ -327,34 +329,41 @@ Let $f:\R\to\R$ be non-linear activation that is not a bounded degree polynomial
 
 The proof (Appendix~\ref{app:proofs}) leverages the Hermite polynomial expansion of the activation function $f$ \cite{erdelyi1953higher} and Mehler's formula for the expectation of products of Hermite polynomials of correlated Gaussian variables \cite{mehler1866ueber, erdelyi1953higher}. Since a non-polynomial function has infinitely many non-zero Hermite coefficients, the resulting covariance matrix becomes a sum of positive semidefinite matrices (Hadamard powers of $\Sigma$), which generally results in a positive definite (full rank) matrix unless the underlying Gaussian variables $z_i$ lack diversity.
 
+% Assuming this follows the discussion of Proposition 3.3 (labeled prop:rank)
+% within \subsection{Rank Preservation via Nonlinearities and Gaussianity}
 
-While Proposition~\ref{prop:rank} establishes that non-linear activation functions are key to recovering rank from rank-deficient pre-activations under Gaussian input assumptions, the *effective degree* of this nonlinearity in practice is critically dependent on the statistical properties (e.g., mean, variance, and range) of the actual inputs the activation function receives. If pre-activations fall into regions where the function behaves linearly (e.g., Tanh for small inputs) or is saturated (e.g., Tanh for very large inputs, or ReLU for all-negative inputs), its ability to expand representational rank is severely diminished. This occurs even if the activation function is globally non-linear. The following empirical simulations illustrate this critical dependency and demonstrate how controlling input statistics, for instance via normalization, can ensure activations operate in their beneficial non-linear regimes. For these simulations, we consider pre-activations $z \in \R^{d}$ that are synthetically generated to be low-rank; specifically, $z$ has an effective rank of $K_{\text{rank}}=5$ within a $d_{\text{full}}=20$ dimensional space.
+While Proposition~\ref{prop:rank} highlights that non-linear activations are key to rank recovery from rank-deficient pre-activations (assuming Gaussian inputs), their \emph{effective nonlinearity} in practice hinges on the input statistics (e.g., mean, variance, range). If pre-activations fall into linear or saturated regimes (e.g., Tanh for small inputs, ReLU for all-positive inputs), the activation's ability to expand rank diminishes, as it behaves like an affine transformation. The following simulations illustrate this dependency and how controlling input statistics, e.g., via normalization, ensures activations operate in beneficial non-linear regimes. We use synthetic low-rank pre-activations $z \in \R^{d}$, having $d_{\text{full}}=20$ dimensions with a hard rank of $5$, and show that Tanh activation is able to improve the conditioning of post-activation eigenvalues, and thereby effective rank of post-activations. In case of ReLU activation, you can see in Figure~\ref{fig:theory_relu_zb_rank}, that if we shift the pre-activations to become all-positive, ReLU behaves like an affine transform and is not able to improve the conditioning. These observations point to the interplay between normalizaion and activations, in that, normalization layers ensure that activations remain effectively non-linear, thereby can improve rank of pre-activations. 
 
 \begin{figure}[ht!]
     \centering
-    \includegraphics[width=0.7\linewidth]{figures/theory_tanh_az_rank.pdf}
-    \caption{Impact of input scaling on the effective rank of post-activations for $h = \tanh(az)$. Pre-activations $z$ are rank-deficient (initial effective rank 5 in $d_{\text{full}}=20$ dimensions). \textbf{Left:} Normalized eigenvalue spectra of the covariance matrix $\mathrm{Cov}(h)$. \textbf{Right:} Effective rank of $\mathrm{Cov}(h)$ as a function of the scaling factor $a$. For very small $a$, $\tanh(az) \approx az$, causing the activation to act linearly and leading to minimal rank increase. As $a$ increases, the non-linearity becomes more pronounced, significantly improving rank recovery. For very large $a$, $\tanh(az)$ approaches $\mathrm{sign}(z)$, a different non-linear function that can also yield high rank.}
+    \includegraphics[width=0.7\linewidth]{figures/theory_tanh_az_rank.pdf} % Assuming image is in figures/
+    \caption{Effect of input scaling on post-activation effective rank for $h = \tanh(az)$, with rank-deficient $z$ (initial ER=5, $d_{\text{full}}=20$). \textbf{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$. \textbf{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scaling $a$. Small $a$ leads to linear behavior ($\tanh(az) \approx az$) and minimal rank increase. Appropriate $a$ enhances non-linearity and rank recovery. Very large $a$ makes $\tanh(az) \approx \mathrm{sign}(z)$, also yielding high rank.}
     \label{fig:theory_tanh_az_rank}
 \end{figure}
 
-\begin{figure}[ht!]
-    \centering
-    \includegraphics[width=0.7\linewidth]{figures/theory_relu_zb_rank.pdf}
-    \caption{Impact of input shifting on the effective rank of post-activations for $h = \mathrm{ReLU}(z+b)$. Pre-activations $z$ are rank-deficient (initial effective rank 5 in $d_{\text{full}}=20$ dimensions). \textbf{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$. \textbf{Right:} Effective rank of $\mathrm{Cov}(h)$ versus the shift $b$. If $b$ is large and positive (such that $z+b > 0$ for most inputs), $\mathrm{ReLU}(z+b) \approx z+b$, an affine function, which limits rank recovery. Conversely, if $b$ is large and negative, most inputs result in zero activation, causing rank collapse. An optimal range for $b$ (around zero for zero-mean $z$) allows ReLU to operate effectively as a non-linear function, maximizing rank expansion from the low-rank input.}
-    \label{fig:theory_relu_zb_rank}
-\end{figure}
+% In Section 4.1, after discussion of Prop 4.1, Figure 5, and Appendix A synthetic figs:
 
-Figures~\ref{fig:theory_tanh_az_rank} and \ref{fig:theory_relu_zb_rank} clearly illustrate that without appropriate scaling or centering, pre-activations can drive common activation functions like Tanh and ReLU into operating regimes where their effective non-linearity is weak. In such regimes, their capacity to recover or expand the rank of representations is compromised, potentially exacerbating issues like loss of plasticity if hidden representations become increasingly rank-deficient over time. This underscores the critical importance of controlling pre-activation statistics throughout a network and during training. Techniques like Batch Normalization are designed precisely for this purpose: by standardizing input statistics, they can guide pre-activations into the more effective, non-linear operational zones of activation functions. Figure~\ref{fig:theory_joint_norm_activation_rank} empirically demonstrates this synergistic effect.
+These theoretical considerations and synthetic experiments (Figure~\ref{fig:theory_tanh_az_rank}, and Figures~\ref{fig:theory_relu_zb_rank}, \ref{fig:theory_joint_norm_activation_rank} in Appendix~\ref{app:rank_validation_appendix_label}) highlight the importance of maintaining pre-activations within the effective non-linear range of activation functions for rank recovery. 
+To demonstrate this in a practical deep learning context, we empirically investigate the progression of effective rank in Multi-Layer Perceptrons (MLPs) trained on the MNIST dataset. Figure~\ref{fig:empirical_rank_progression} compares models utilizing ReLU activations with no normalization, Batch Normalization, and Layer Normalization across training epochs. Additional empirical results, including the evolution of other metrics like frozen and duplicate units, can be found in Appendix~\ref{app:additional_empirical_evidence}.
 
 \begin{figure}[ht!]
     \centering
-    \includegraphics[width=0.9\linewidth]{figures/theory_joint_norm_activation_rank.pdf} 
-    \caption{Synergistic effect of Batch Normalization (BN) and activation functions (ReLU and Tanh) on rank recovery from perturbed inputs. Initial pre-activations (effective rank 5 in $d_{\text{full}}=20$ dimensions) are first perturbed to $z_{\text{pert}}$ via per-feature random scaling and shifting, potentially pushing them into suboptimal operating regimes for the activations. The plots display normalized eigenvalue spectra for the covariance of: (i) the perturbed pre-activations $z_{\text{pert}}$ (blue, labeled 'Pre-Act'), (ii) the result of applying the activation function directly to $z_{\text{pert}}$ (orange, 'Direct'), and (iii) the result of applying the activation function after $z_{\text{pert}}$ has been normalized by BN (green, 'BN+Act'). Applying BN before the activation function (green lines) consistently restores or significantly enhances the effective rank of the representations. This is particularly evident when direct application of the activation to the perturbed inputs (orange lines) leads to rank collapse or poor recovery, highlighting BN's role in maintaining effective non-linearity.}
-    \label{fig:theory_joint_norm_activation_rank}
+    % Ensure this figure path and name are correct, e.g., figures/empirical_rank_progression_relu_mnist.pdf
+    % Adjust width as needed; \textwidth might be suitable for a preprint single-column format.
+    \includegraphics[width=\textwidth]{figures/empirical_rank_progression_relu_mnist.pdf} 
+    \caption{Empirical effective rank progression in an MLP trained on MNIST with ReLU activations. Subplots compare models with no normalization (left panel), Batch Normalization (center panel), and Layer Normalization (right panel). Lines within each subplot show the effective rank across network layers at different epochs (indicated by the color bar, typically progressing from early (e.g., dark blue/purple) to later (e.g., yellow/light green) epochs). Normalization layers, particularly Batch Normalization, generally help maintain a higher and more stable effective rank throughout the network and across training epochs. This suggests they assist non-linear activations in preserving or increasing representational diversity by ensuring pre-activations operate in a regime conducive to non-linear behavior.}
+    \label{fig:empirical_rank_progression}
 \end{figure}
 
-The insights from Proposition~\ref{prop:rank}, corroborated by these empirical illustrations (Figures~\ref{fig:theory_tanh_az_rank}--\ref{fig:theory_joint_norm_activation_rank}), provide a strong basis for understanding the utility of certain architectural choices and training techniques, which we discuss next.
+Figure~\ref{fig:empirical_rank_progression} illustrates that non-linear activations inherently contribute to maintaining feature diversity; even the model without normalization (left panel) shows non-trivial effective rank across layers, a testament to the rank-expanding capability of the ReLU activation itself when inputs are not entirely collapsed or saturated. However, this model can experience a more pronounced decrease in effective rank in deeper layers or as training progresses compared to its normalized counterparts. Both Batch Normalization (center panel) and Layer Normalization (right panel) generally sustain a higher effective rank across the network over more epochs. This empirical evidence supports the hypothesis that while non-linear activations are the primary drivers of rank recovery, normalization techniques significantly facilitate this process. They achieve this by conditioning the inputs to these activations, likely preventing them from operating in saturated or overly linear regimes where their rank-expanding capabilities are diminished.
 
+% Then, transition to "Design implications."
+% \paragraph{Design implications.}
+% These findings underscore the role of specific design choices in promoting plasticity by preserving representational rank:
+% \begin{itemize}
+%     \item \textbf{Batch Normalization (BatchNorm):} % ... (current text can follow)
+% % ...
+% \end{itemize}
 
 
 \giulia{Here we should discuss the Proposition and its implications. }
@@ -473,6 +482,27 @@ However, potential negative impacts must also be considered. Enabling AI systems
 \bibliography{refs} % Assuming the bib file is named refs.bib
 
 \appendix
+
+\section{Rank recovery: validations }
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.7\linewidth]{figures/theory_relu_zb_rank.pdf} % Assuming image is in figures/
+    \caption{Effect of input shifting on post-activation effective rank for $h = \mathrm{ReLU}(z+b)$, with rank-deficient $z$ (initial ER=5, $d_{\text{full}}=20$). \textbf{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$. \textbf{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. shift $b$. Large positive $b$ (making $z+b > 0$) results in affine behavior ($\mathrm{ReLU}(z+b) \approx z+b$), limiting rank recovery. Large negative $b$ causes rank collapse (most outputs are zero). An optimal $b$ (near zero for zero-mean $z$) maximizes non-linear effectiveness and rank expansion.}
+    \label{fig:theory_relu_zb_rank}
+\end{figure}
+
+Figures~\ref{fig:theory_tanh_az_rank} and \ref{fig:theory_relu_zb_rank} show that inappropriate pre-activation scaling or centering can force Tanh and ReLU into regimes of weak effective non-linearity. This compromises their rank recovery capacity, potentially worsening plasticity loss if representations become increasingly rank-deficient. Controlling pre-activation statistics is thus crucial. Techniques like Batch Normalization (BN) standardize these statistics, guiding activations into their effective non-linear zones, as demonstrated in Figure~\ref{fig:theory_joint_norm_activation_rank}.
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.7\linewidth]{figures/theory_joint_norm_activation_rank.pdf} % Assuming image is in figures/
+    \caption{Synergy of Batch Normalization (BN) with ReLU and Tanh for rank recovery from perturbed inputs $z_{\text{pert}}$ (initial ER=5, $d_{\text{full}}=20$, then per-feature random scaling/shifting). Plots show normalized eigenvalue spectra for $\mathrm{Cov}(\cdot)$ of: (i) $z_{\text{pert}}$ (blue, 'Pre-Act'), (ii) activation on $z_{\text{pert}}$ (orange, 'Direct'), (iii) activation on $\text{BN}(z_{\text{pert}})$ (green, 'BN+Act'). BN before activation (green) consistently restores or enhances effective rank, countering detrimental effects of input perturbations and highlighting BN's role in maintaining effective non-linearity.}
+    \label{fig:theory_joint_norm_activation_rank}
+\end{figure}
+
+The insights from Proposition~\ref{prop:rank}, supported by these empirical illustrations (Figures~\ref{fig:theory_tanh_az_rank}--\ref{fig:theory_joint_norm_activation_rank}), motivate specific architectural choices and training techniques, discussed next.
+
 
 
 
