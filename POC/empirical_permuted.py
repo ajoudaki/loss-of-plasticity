@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 import os
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Set # NEW: Added Tuple, Set
 
 # --- Settings & Configuration ---
 @dataclass
@@ -22,7 +22,7 @@ class ExperimentSettings:
     SEED: int = 42
 
     # Experimental parameters
-    experiment_type: str = "PermutedMNIST" # "StandardMNIST" or "PermutedMNIST"
+    experiment_type: str = "Permuted" # "Standard" or "Permuted"
     dataset_name: str = "MNIST"
     
     # For StandardMNIST
@@ -34,7 +34,7 @@ class ExperimentSettings:
     epochs_per_task: int = 15 # Epochs to train on each task (original and each permuted)
 
     log_metrics_every_n_epochs: int = 1 # Used within each task for standard, or as a placeholder
-    mlp_hidden_layers: List[int] = field(default_factory=lambda: [256, 256, 256,256]) # Hidden layer sizes
+    mlp_hidden_layers: List[int] = field(default_factory=lambda: [128,64]) # Hidden layer sizes
     default_activation_name: str = "ReLU"
 
     # Training hyperparameters
@@ -58,7 +58,6 @@ class ExperimentSettings:
     # Plotting settings
     FONT_FAMILY: str = 'serif'
     FONT_SIZE_BASE: int = 8
-    # ... (other plotting font factors remain same)
     TITLE_FONT_SIZE_FACTOR: float = 1.1; LABEL_FONT_SIZE_FACTOR: float = 1.0
     TICK_FONT_SIZE_FACTOR: float = 0.9; LEGEND_FONT_SIZE_FACTOR: float = 0.9; FIG_DPI: int = 300
 
@@ -121,8 +120,6 @@ os.makedirs(SETTINGS.FIGURE_DIR, exist_ok=True)
 torch.manual_seed(SETTINGS.SEED); np.random.seed(SETTINGS.SEED)
 
 # --- Metric Calculation Functions ---
-# compute_effective_rank_empirical, compute_frozen_stats, compute_duplicate_neurons_stats
-# (Unchanged from previous version, ensure they use SETTINGS for thresholds)
 def compute_effective_rank_empirical(activations_batch_cpu, stage_name_for_debug=""):
     if activations_batch_cpu.ndim == 1: return 1.0 if activations_batch_cpu.shape[0] > 1 else 0.0
     if activations_batch_cpu.shape[1] == 0: return 0.0;  # No features
@@ -154,11 +151,12 @@ def compute_effective_rank_empirical(activations_batch_cpu, stage_name_for_debug
         print(f"  [ER Debug {stage_name_for_debug}] Unusual ER: {er_val:.2f}, Max: {activations_batch_filtered.shape[1]}, SumS: {sum_s:.2e}")
     return min(er_val, activations_batch_filtered.shape[1])
 
-def compute_frozen_stats(pre_activations_batch_cpu: torch.Tensor, activation_type_str: str, s: ExperimentSettings, stage_name_for_debug: str = "") -> float:
-    if pre_activations_batch_cpu.numel() == 0 or pre_activations_batch_cpu.shape[1] == 0: return 0.0
+# MODIFIED: To return indices of frozen features
+def compute_frozen_stats(pre_activations_batch_cpu: torch.Tensor, activation_type_str: str, s: ExperimentSettings, stage_name_for_debug: str = "") -> Tuple[float, Set[int]]:
+    if pre_activations_batch_cpu.numel() == 0 or pre_activations_batch_cpu.shape[1] == 0: return 0.0, set()
     if pre_activations_batch_cpu.shape[0] <= 1: 
         if s.DEBUG_VERBOSE: print(f"  [Frozen Debug {stage_name_for_debug}] Not enough samples ({pre_activations_batch_cpu.shape[0]}) for batch-frozen def.")
-        return 0.0 
+        return 0.0, set()
     frozen_map_per_instance = torch.zeros_like(pre_activations_batch_cpu, dtype=torch.bool)
     act_str_lower = activation_type_str.lower()
     if act_str_lower == "relu": frozen_map_per_instance = pre_activations_batch_cpu <= s.frozen_relu_threshold
@@ -166,32 +164,63 @@ def compute_frozen_stats(pre_activations_batch_cpu: torch.Tensor, activation_typ
     elif act_str_lower == "sigmoid": sig_x = torch.sigmoid(pre_activations_batch_cpu); derivative = sig_x * (1.0 - sig_x); frozen_map_per_instance = derivative < s.frozen_sigmoid_deriv_threshold
     else: 
         if s.DEBUG_VERBOSE: print(f"  [Frozen Debug {stage_name_for_debug}] Frozen stats NA for {act_str_lower}, ret 0.")
-        return 0.0 
+        return 0.0, set()
     fraction_frozen_per_feature = frozen_map_per_instance.float().mean(dim=0)
-    batch_frozen_features_mask = fraction_frozen_per_feature >= s.frozen_feature_batch_threshold # Use '>=' to include the threshold itself
+    batch_frozen_features_mask = fraction_frozen_per_feature >= s.frozen_feature_batch_threshold 
     perc_batch_frozen = batch_frozen_features_mask.float().mean().item() * 100.0 if batch_frozen_features_mask.numel() > 0 else 0.0
+    
+    batch_frozen_indices = set(torch.where(batch_frozen_features_mask)[0].tolist()) # NEW: Get indices
+
     if s.DEBUG_VERBOSE: 
         print(f"  [Frozen Debug {stage_name_for_debug}] Act: {act_str_lower}, InShape: {pre_activations_batch_cpu.shape}, LowDerivInstances: {frozen_map_per_instance.sum().item()}/{frozen_map_per_instance.numel()}, BatchFrozenFeats (>{s.frozen_feature_batch_threshold*100:.0f}%): {batch_frozen_features_mask.sum().item()}/{batch_frozen_features_mask.numel()}, PercBatchFrozen: {perc_batch_frozen:.2f}%")
-    return perc_batch_frozen
+    return perc_batch_frozen, batch_frozen_indices
 
-def compute_duplicate_neurons_stats(activations_batch_cpu, s: ExperimentSettings, stage_name_for_debug=""):
-    if activations_batch_cpu.ndim < 2 or activations_batch_cpu.shape[1] < 2: return 0.0
-    std_devs = torch.std(activations_batch_cpu, dim=0); valid_features_mask = std_devs > s.duplicate_min_std_dev
+# MODIFIED: To return indices of duplicate pairs
+def compute_duplicate_neurons_stats(activations_batch_cpu: torch.Tensor, s: ExperimentSettings, stage_name_for_debug: str = "") -> Tuple[float, Set[Tuple[int, int]]]:
+    if activations_batch_cpu.ndim < 2 or activations_batch_cpu.shape[1] < 2: return 0.0, set()
+    
+    original_indices = torch.arange(activations_batch_cpu.shape[1])
+    std_devs = torch.std(activations_batch_cpu, dim=0)
+    valid_features_mask = std_devs > s.duplicate_min_std_dev
+    
     if valid_features_mask.sum() < 2:
         if s.DEBUG_VERBOSE: print(f"  [Duplicate Debug {stage_name_for_debug}] Not enough variant features ({valid_features_mask.sum().item()}). Orig: {activations_batch_cpu.shape[1]}")
-        return 0.0
-    activations_valid = activations_batch_cpu[:, valid_features_mask]; num_valid_features = activations_valid.shape[1]
+        return 0.0, set()
+        
+    activations_valid = activations_batch_cpu[:, valid_features_mask]
+    valid_original_indices_map = original_indices[valid_features_mask] # Map local valid indices to original
+    num_valid_features = activations_valid.shape[1]
+
     try:
         corr_matrix = torch.corrcoef(activations_valid.T) 
         if torch.isnan(corr_matrix).any(): corr_matrix = torch.nan_to_num(corr_matrix, nan=0.0)
     except RuntimeError as e:
         if s.DEBUG_VERBOSE: print(f"  [Duplicate Debug {stage_name_for_debug}] Corrcoef RuntimeError: {e}. Valid feats: {num_valid_features}")
-        return 0.0
-    abs_corr_matrix = torch.abs(corr_matrix); abs_corr_matrix.fill_diagonal_(0) 
-    is_duplicate_neuron = torch.any(abs_corr_matrix > s.duplicate_corr_threshold, dim=1)
-    perc = is_duplicate_neuron.float().mean().item() * 100.0
-    if s.DEBUG_VERBOSE: print(f"  [Duplicate Debug {stage_name_for_debug}] InShape: {activations_batch_cpu.shape}, ValidFeats: {num_valid_features}, DupFound: {is_duplicate_neuron.sum().item()}, Perc: {perc:.2f}%")
-    return perc
+        return 0.0, set()
+        
+    abs_corr_matrix = torch.abs(corr_matrix)
+    # Find pairs above threshold, excluding diagonal and redundant pairs
+    upper_tri_highly_corr = torch.triu(abs_corr_matrix > s.duplicate_corr_threshold, diagonal=1)
+    
+    duplicate_local_indices_rows, duplicate_local_indices_cols = torch.where(upper_tri_highly_corr)
+    
+    duplicate_original_pairs: Set[Tuple[int, int]] = set()
+    for r_local, c_local in zip(duplicate_local_indices_rows.tolist(), duplicate_local_indices_cols.tolist()):
+        orig_idx1 = valid_original_indices_map[r_local].item()
+        orig_idx2 = valid_original_indices_map[c_local].item()
+        duplicate_original_pairs.add(tuple(sorted((orig_idx1, orig_idx2))))
+
+    # To calculate percentage based on unique neurons involved in duplication:
+    involved_in_duplication_mask = torch.zeros(num_valid_features, dtype=torch.bool)
+    if duplicate_local_indices_rows.numel() > 0:
+      involved_in_duplication_mask[duplicate_local_indices_rows] = True
+      involved_in_duplication_mask[duplicate_local_indices_cols] = True
+    
+    perc = involved_in_duplication_mask.float().mean().item() * 100.0 if num_valid_features > 0 else 0.0
+    
+    if s.DEBUG_VERBOSE: print(f"  [Duplicate Debug {stage_name_for_debug}] InShape: {activations_batch_cpu.shape}, ValidFeats: {num_valid_features}, DupPairsFound: {len(duplicate_original_pairs)}, PercInvolved: {perc:.2f}%")
+    return perc, duplicate_original_pairs
+
 
 def get_activation_fn_and_name(activation_name_str: str): # Unchanged
     name_lower = activation_name_str.lower()
@@ -201,7 +230,6 @@ def get_activation_fn_and_name(activation_name_str: str): # Unchanged
     else: raise ValueError(f"Unsupported activation: {activation_name_str}")
 
 # --- Model Definition ---
-# MLPBlock and ConfigurableMLP classes remain unchanged from the previous refactored version.
 class MLPBlock(nn.Module): # From previous version
     def __init__(self, in_dim: int, out_dim: int, norm_type: Optional[str], 
                  activation_fn_instance: nn.Module, activation_name: str, 
@@ -260,12 +288,8 @@ class ConfigurableMLP(nn.Module): # From previous version
 
 # --- Data Utilities & Permutation Logic ---
 def get_pixel_permutation(s: ExperimentSettings, task_id: int, num_pixels: int) -> Optional[torch.Tensor]:
-    if task_id == 0: # Task 0 is original MNIST, no permutation
-        return None 
-    # For permuted tasks, generate a fixed permutation based on task_id and seed
-    # This ensures the same permutation is used for a given permuted task across runs
-    rng = torch.Generator()
-    rng.manual_seed(s.SEED + task_id) # Different seed for each permuted task
+    if task_id == 0: return None 
+    rng = torch.Generator(); rng.manual_seed(s.SEED + task_id) 
     permutation_indices = torch.randperm(num_pixels, generator=rng)
     return permutation_indices
 
@@ -275,44 +299,27 @@ class PermutedDataset(Dataset):
                  image_shape: Optional[tuple] = None):
         self.dataset = dataset
         self.permutation_indices = permutation_indices
-
-        # Detect image shape if not provided
         if image_shape is None:
             sample_img, _ = dataset[0]
-            self.image_shape = sample_img.shape  # (C, H, W)
-        else:
-            self.image_shape = image_shape
-
+            self.image_shape = sample_img.shape 
+        else: self.image_shape = image_shape
         self.num_pixels = self.image_shape[0] * self.image_shape[1] * self.image_shape[2]
-
         if self.permutation_indices is not None and len(self.permutation_indices) != self.num_pixels:
             raise ValueError(f"Permutation length {len(self.permutation_indices)} does not match num_pixels {self.num_pixels}")
-
-    def __len__(self):
-        return len(self.dataset)
-
+    def __len__(self): return len(self.dataset)
     def __getitem__(self, idx):
-        img, label = self.dataset[idx] # img is (C, H, W) tensor
-
+        img, label = self.dataset[idx] 
         if self.permutation_indices is not None:
-            img_flat = img.view(-1) # Flatten to (C*H*W)
+            img_flat = img.view(-1) 
             img_permuted_flat = img_flat[self.permutation_indices]
-            img = img_permuted_flat.view(self.image_shape) # Reshape back
-
+            img = img_permuted_flat.view(self.image_shape) 
         return img, label
 
 def get_dataset_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_size: int,
-                                     num_workers: int = 2, data_root: str = './data'):
+                                      num_workers: int = 2, data_root: str = './data'):
     os.makedirs(data_root, exist_ok=True)
-
     if s.dataset_name == "MNIST":
-        # Base MNIST transform (normalization is standard)
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
-        ])
-
-        # Load the full MNIST datasets once
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
         try:
             trainset_full_orig = torchvision.datasets.MNIST(root=data_root, train=True, download=True, transform=transform)
             testset_full_orig = torchvision.datasets.MNIST(root=data_root, train=False, download=True, transform=transform)
@@ -320,18 +327,9 @@ def get_dataset_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_
             if s.DEBUG_VERBOSE: print(f"Failed to download/load MNIST: {e}. Trying without download flag.")
             trainset_full_orig = torchvision.datasets.MNIST(root=data_root, train=True, download=False, transform=transform)
             testset_full_orig = torchvision.datasets.MNIST(root=data_root, train=False, download=False, transform=transform)
-
     elif s.dataset_name == "CIFAR10":
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
-        ])
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
-        ])
+        transform_train = transforms.Compose([transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))])
+        transform_test = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))])
         try:
             trainset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=True, download=True, transform=transform_train)
             testset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=False, download=True, transform=transform_test)
@@ -339,13 +337,9 @@ def get_dataset_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_
             if s.DEBUG_VERBOSE: print(f"Failed to download/load CIFAR10: {e}. Trying without download flag.")
             trainset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=True, download=False, transform=transform_train)
             testset_full_orig = torchvision.datasets.CIFAR10(root=data_root, train=False, download=False, transform=transform_test)
-    else:
-        raise ValueError(f"Unsupported dataset: {s.dataset_name}")
+    else: raise ValueError(f"Unsupported dataset: {s.dataset_name}")
 
-    # Get permutation for the current task
-    current_permutation = get_pixel_permutation(s, task_id, s.input_dim) # s.input_dim is num_pixels
-
-    # Wrap with PermutedDataset
+    current_permutation = get_pixel_permutation(s, task_id, s.input_dim)
     trainset_task = PermutedDataset(trainset_full_orig, current_permutation)
     testset_task = PermutedDataset(testset_full_orig, current_permutation)
 
@@ -357,16 +351,13 @@ def get_dataset_dataloaders_for_task(s: ExperimentSettings, task_id: int, batch_
         trainset_final = Subset(trainset_task, train_indices)
         testset_final = Subset(testset_task, val_indices)
         if s.DEBUG_VERBOSE: print(f"  Task {task_id}: USING SUBSET of {s.dataset_name}: {len(trainset_final)} train, {len(testset_final)} val samples.")
-    else:
-        trainset_final, testset_final = trainset_task, testset_task
+    else: trainset_final, testset_final = trainset_task, testset_task
 
     trainloader = DataLoader(trainset_final, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
     testloader = DataLoader(testset_final, batch_size=batch_size*2, shuffle=False, num_workers=num_workers, pin_memory=s.DEVICE.type in ['cuda', 'mps'])
     return trainloader, testloader
 
-
 def get_fixed_eval_batch(dataloader: DataLoader, batch_size: int, device: torch.device, s: ExperimentSettings) -> torch.Tensor:
-    # ... (same as before)
     eval_batch_list = []; num_to_fetch = max(1, batch_size // (dataloader.batch_size or batch_size))
     data_iter = iter(dataloader)
     try:
@@ -380,48 +371,152 @@ def get_fixed_eval_batch(dataloader: DataLoader, batch_size: int, device: torch.
     if s.DEBUG_VERBOSE: print(f"Metric eval batch size: {eval_batch.shape[0]} on {device}.")
     return eval_batch
 
-# --- Metrics Logging ---
-class MetricsLogger: # Adapted for task_id
+# --- Metrics Logging & Persistence Tracking ---
+# NEW: PersistentFeatureTracker class
+@dataclass
+class PersistentFeatureInfo:
+    features: Set[Any] = field(default_factory=set) # Stores indices (int) or pairs (tuple)
+
+class PersistentFeatureTracker:
+    def __init__(self, s: ExperimentSettings):
+        self.settings = s
+        # Key: (model_config_name, layer_name, task_id) -> PersistentFeatureInfo
+        self.frozen_history: Dict[Tuple[str, str, int], PersistentFeatureInfo] = {}
+        self.duplicate_history: Dict[Tuple[str, str, int], PersistentFeatureInfo] = {}
+
+    def record_task_features(self, model_config_name: str, task_id: int,
+                             all_frozen_indices_by_layer: Dict[str, Set[int]],
+                             all_duplicate_pairs_by_layer: Dict[str, Set[Tuple[int, int]]]):
+        for layer_name, indices in all_frozen_indices_by_layer.items():
+            self.frozen_history[(model_config_name, layer_name, task_id)] = PersistentFeatureInfo(features=indices)
+        for layer_name, pairs in all_duplicate_pairs_by_layer.items():
+            # Ensure pairs are sorted for consistent hashing if not already
+            sorted_pairs = {tuple(sorted(p)) for p in pairs}
+            self.duplicate_history[(model_config_name, layer_name, task_id)] = PersistentFeatureInfo(features=sorted_pairs)
+
+    def calculate_persistence_data(self, total_tasks: int, model_configurations_list: List[ModelConfig], ordered_layer_names: List[str]) -> pd.DataFrame:
+        persistence_records = []
+        # Focus on hidden activation layers for persistence analysis
+        relevant_layer_names = [ln for ln in ordered_layer_names if "_Act" in ln and not ln.startswith("Input") and not ln.startswith("Out_")]
+        if not relevant_layer_names and self.settings.DEBUG_VERBOSE:
+            print("[PersistenceTracker] No relevant hidden activation layers found for persistence analysis based on ordered_layer_names.")
+
+
+        for model_cfg in model_configurations_list:
+            model_name = model_cfg.name
+            for layer_name in relevant_layer_names:
+                for prev_task_id in range(total_tasks - 1): # Iterate up to second to last task
+                    current_task_id = prev_task_id + 1
+                    task_transition_label = f"T{prev_task_id}→T{current_task_id}"
+
+                    # Frozen persistence
+                    prev_frozen_info = self.frozen_history.get((model_name, layer_name, prev_task_id))
+                    current_frozen_info = self.frozen_history.get((model_name, layer_name, current_task_id))
+                    frozen_persistence_rate = np.nan
+                    num_init_frozen = 0
+                    num_persisted_frozen = 0
+
+                    if prev_frozen_info and current_frozen_info and prev_frozen_info.features:
+                        num_init_frozen = len(prev_frozen_info.features)
+                        persisted_frozen = prev_frozen_info.features.intersection(current_frozen_info.features)
+                        num_persisted_frozen = len(persisted_frozen)
+                        frozen_persistence_rate = num_persisted_frozen / num_init_frozen if num_init_frozen > 0 else 0.0 # Avoid NaN if num_init is 0, give 0% or 100% if no features? Let's use 0.0. If no features, persistence is vacuously high/low.
+
+                    # Duplicate persistence
+                    prev_duplicate_info = self.duplicate_history.get((model_name, layer_name, prev_task_id))
+                    current_duplicate_info = self.duplicate_history.get((model_name, layer_name, current_task_id))
+                    duplicate_persistence_rate = np.nan
+                    num_init_duplicate = 0
+                    num_persisted_duplicate = 0
+
+                    if prev_duplicate_info and current_duplicate_info and prev_duplicate_info.features:
+                        num_init_duplicate = len(prev_duplicate_info.features)
+                        persisted_duplicate = prev_duplicate_info.features.intersection(current_duplicate_info.features)
+                        num_persisted_duplicate = len(persisted_duplicate)
+                        duplicate_persistence_rate = num_persisted_duplicate / num_init_duplicate if num_init_duplicate > 0 else 0.0
+                    
+                    # Only add record if there's something to report or initial features existed
+                    if num_init_frozen > 0 or num_init_duplicate > 0 or not (np.isnan(frozen_persistence_rate) and np.isnan(duplicate_persistence_rate)):
+                        persistence_records.append({
+                            'model_config': model_name,
+                            'layer_name': layer_name,
+                            'task_transition': task_transition_label,
+                            'task_id_start': prev_task_id, 
+                            'frozen_persistence_rate': frozen_persistence_rate * 100 if not np.isnan(frozen_persistence_rate) else np.nan,
+                            'duplicate_persistence_rate': duplicate_persistence_rate * 100 if not np.isnan(duplicate_persistence_rate) else np.nan,
+                            'num_initial_frozen': num_init_frozen,
+                            'num_persisted_frozen': num_persisted_frozen,
+                            'num_initial_duplicate': num_init_duplicate,
+                            'num_persisted_duplicate': num_persisted_duplicate,
+                        })
+        df = pd.DataFrame(persistence_records)
+        if not df.empty:
+            df = df.sort_values(by=['model_config', 'layer_name', 'task_id_start'])
+        return df
+
+class MetricsLogger:
     def __init__(self, model: ConfigurableMLP, fixed_eval_batch: torch.Tensor, 
                  model_config_name: str, s: ExperimentSettings):
         self.model = model; self.fixed_eval_batch = fixed_eval_batch
         self.model_config_name = model_config_name; self.s = s
 
-    def log_metrics_after_task(self, task_id: int) -> List[Dict[str, Any]]: # Renamed for clarity
+    # MODIFIED: To return collected feature indices for persistence tracking
+    def log_metrics_after_task(self, task_id: int) -> Tuple[List[Dict[str, Any]], Dict[str, Set[int]], Dict[str, Set[Tuple[int, int]]]]:
         self.model.eval(); raw_metrics_for_task: List[Dict[str, Any]] = []
+        
+        # NEW: Dictionaries to store indices for persistence
+        all_frozen_indices_by_layer: Dict[str, Set[int]] = {}
+        all_duplicate_pairs_by_layer: Dict[str, Set[Tuple[int, int]]] = {}
+
         with torch.no_grad(): _, recorded_stages_dict = self.model(self.fixed_eval_batch, record_activations=True)
         
         if self.s.DEBUG_VERBOSE: print(f"\n--- Logging metrics after Task {task_id}, Config: {self.model_config_name} ---")
-        temp_frozen_stats: Dict[str, float] = {}
+        temp_frozen_stats_val: Dict[str, float] = {}
+        temp_frozen_stats_idx: Dict[str, Set[int]] = {} # Store indices from _ActIn to map to _Act
+
         for stage_name, acts_cpu in recorded_stages_dict.items():
             if stage_name is None: continue
-            if stage_name.endswith("_ActIn"):
+            if stage_name.endswith("_ActIn"): # Pre-activations used for frozen stats
                 if self.s.DEBUG_VERBOSE: print(f" Processing for frozen: {stage_name}, shape: {acts_cpu.shape}")
-                perc_frozen = compute_frozen_stats(acts_cpu, self.model.model_activation_name_for_frozen, s=self.s, stage_name_for_debug=stage_name)
-                target_act_out_name = stage_name.replace("_ActIn", "_Act")
-                temp_frozen_stats[target_act_out_name] = perc_frozen
+                perc_frozen, frozen_indices = compute_frozen_stats(acts_cpu, self.model.model_activation_name_for_frozen, s=self.s, stage_name_for_debug=stage_name)
+                target_act_out_name = stage_name.replace("_ActIn", "_Act") # Metrics associated with the output of activation
+                temp_frozen_stats_val[target_act_out_name] = perc_frozen
+                temp_frozen_stats_idx[target_act_out_name] = frozen_indices
+        
         summary_parts = []
         for stage_name, acts_cpu in recorded_stages_dict.items():
-            if stage_name is None or stage_name.endswith("_ActIn"): continue
+            if stage_name is None or stage_name.endswith("_ActIn"): continue # Skip pre-activations here, already processed
+
             if self.s.DEBUG_VERBOSE: print(f" Processing stage for ER/Dup: {stage_name}, shape: {acts_cpu.shape}")
-            eff_rank, perc_duplicates = np.nan, np.nan
+            eff_rank, perc_duplicates, duplicate_pairs = np.nan, np.nan, set()
+            
             if acts_cpu.numel() > 0 and acts_cpu.shape[0] > 1 and acts_cpu.shape[1] > 0:
                 eff_rank = compute_effective_rank_empirical(acts_cpu, stage_name)
-                perc_duplicates = compute_duplicate_neurons_stats(activations_batch_cpu=acts_cpu, s=self.s, stage_name_for_debug=stage_name)
-            current_perc_frozen = temp_frozen_stats.get(stage_name, np.nan)
+                perc_duplicates, duplicate_pairs = compute_duplicate_neurons_stats(activations_batch_cpu=acts_cpu, s=self.s, stage_name_for_debug=stage_name)
+            
+            current_perc_frozen = temp_frozen_stats_val.get(stage_name, np.nan)
+            current_frozen_indices = temp_frozen_stats_idx.get(stage_name, set())
+
+            # Store indices for persistence tracking for relevant layers
+            if "_Act" in stage_name and not stage_name.startswith("Input") and not stage_name.startswith("Out_"): # Focus on hidden activation layers
+                all_frozen_indices_by_layer[stage_name] = current_frozen_indices
+                all_duplicate_pairs_by_layer[stage_name] = duplicate_pairs
+
             raw_metrics_for_task.append({'model_config': self.model_config_name, 
-                                         'task_id': task_id, # Changed from 'epoch'
+                                         'task_id': task_id,
                                          'layer_name': stage_name,
                                          'eff_rank': eff_rank, 'perc_frozen': current_perc_frozen, 
                                          'perc_duplicates': perc_duplicates})
             if "_Act" in stage_name and not np.isnan(eff_rank): summary_parts.append(f"{stage_name.split('_')[0]}ER:{eff_rank:.1f}")
+        
         print(f"Task {task_id} [{self.model_config_name}] Metric Summary (ERs): {' '.join(summary_parts[:4])}...")
-        self.model.train(); return raw_metrics_for_task
+        self.model.train(); 
+        return raw_metrics_for_task, all_frozen_indices_by_layer, all_duplicate_pairs_by_layer
+
 
 # --- Training Functions ---
 def train_model_on_task_epoch(model: nn.Module, train_loader: DataLoader, optimizer: optim.Optimizer, 
                               criterion: nn.Module, device: torch.device, epoch_desc: str) -> float:
-    # Same as train_model_epoch, renamed for clarity in permuted context
     model.train(); total_loss = 0.0
     prog_bar = tqdm(train_loader, desc=epoch_desc, leave=False)
     for inputs, labels in prog_bar:
@@ -431,13 +526,12 @@ def train_model_on_task_epoch(model: nn.Module, train_loader: DataLoader, optimi
         total_loss += loss.item(); prog_bar.set_postfix({'loss': f'{loss.item():.3f}'})
     return total_loss / len(train_loader)
 
-def run_permuted_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings) -> pd.DataFrame:
+# MODIFIED: To include persistence tracking
+def run_permuted_experiment_configuration(model_cfg: ModelConfig, s: ExperimentSettings, persistence_tracker: PersistentFeatureTracker) -> pd.DataFrame: # NEW: pass tracker
     activation_to_run = model_cfg.activation_name if model_cfg.activation_name else s.default_activation_name
     print(f"\n===== Running Permuted Exp: {model_cfg.name} (Act: {activation_to_run}, Data: {s.dataset_name}) =====")
 
     layer_dims = [s.input_dim] + s.mlp_hidden_layers + [s.num_classes]
-
-    # Model is initialized ONCE before all tasks
     model = ConfigurableMLP(layer_dims, activation_to_run, model_cfg.norm_type).to(s.DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=s.learning_rate)
     criterion = nn.CrossEntropyLoss()
@@ -448,20 +542,20 @@ def run_permuted_experiment_configuration(model_cfg: ModelConfig, s: ExperimentS
     for task_id in range(total_tasks):
         print(f"\n--- Starting Task {task_id} ({'Original' if task_id == 0 else f'Permutation {task_id}'}) for {model_cfg.name} ---")
         train_loader_task, val_loader_task = get_dataset_dataloaders_for_task(s, task_id, batch_size=s.batch_size)
-
         fixed_eval_batch_task = get_fixed_eval_batch(val_loader_task, s.eval_batch_size, s.DEVICE, s)
-        metrics_logger = MetricsLogger(model, fixed_eval_batch_task, model_cfg.name, s) # Logger uses current task's eval batch
-
-        # Log metrics BEFORE training on this task (optional, but good for seeing permutation effect)
-        # if s.DEBUG_VERBOSE and task_id > 0 : # After first task, before training on permuted
-        #    all_metrics_data_raw.extend(metrics_logger.log_metrics_after_task(task_id, "BeforeTrain"))
+        metrics_logger = MetricsLogger(model, fixed_eval_batch_task, model_cfg.name, s)
 
         for epoch_in_task in range(s.epochs_per_task):
             epoch_desc = f"Task {task_id} - E{epoch_in_task+1}/{s.epochs_per_task} [{model_cfg.name}]"
             train_model_on_task_epoch(model, train_loader_task, optimizer, criterion, s.DEVICE, epoch_desc)
 
-        # Log metrics AFTER training on this task
-        all_metrics_data_raw.extend(metrics_logger.log_metrics_after_task(task_id))
+        # Log metrics AFTER training on this task & collect indices for persistence
+        # MODIFIED: to get indices from logger
+        raw_task_metrics, frozen_indices_task, duplicate_pairs_task = metrics_logger.log_metrics_after_task(task_id)
+        all_metrics_data_raw.extend(raw_task_metrics)
+        
+        # NEW: Record features for persistence
+        persistence_tracker.record_task_features(model_cfg.name, task_id, frozen_indices_task, duplicate_pairs_task)
 
     df_raw = pd.DataFrame(all_metrics_data_raw)
     if s.DEBUG_VERBOSE and not df_raw.empty:
@@ -470,35 +564,30 @@ def run_permuted_experiment_configuration(model_cfg: ModelConfig, s: ExperimentS
         print(f"Saved Permuted RAW unaggregated metrics to {raw_csv_path}")
 
     if not df_raw.empty:
-        # Group by task_id now instead of epoch
         final_df = df_raw.groupby(['model_config', 'task_id', 'layer_name'], as_index=False).agg(
-             lambda x: x.dropna().unique()[0] if len(x.dropna().unique()) > 0 else np.nan
+             lambda x: x.dropna().unique()[0] if len(x.dropna().unique()) > 0 and pd.api.types.is_scalar(x.dropna().unique()[0]) else (x.dropna().unique().tolist() if len(x.dropna().unique()) > 0 else np.nan)
         ).dropna(subset=['eff_rank', 'perc_frozen', 'perc_duplicates'], how='all')
         return final_df
     else: return pd.DataFrame()
 
-# --- Plotting Function for Permuted MNIST ---
+# --- Plotting Functions ---
 def plot_permuted_task_metrics_figure(final_metrics_df: pd.DataFrame, 
                                       current_activation_name: str, 
                                       ordered_layer_names_for_plot: List[str], 
                                       model_configurations_list: List[ModelConfig], 
                                       s: ExperimentSettings): 
     if final_metrics_df.empty: print("No permuted metrics to plot."); return
-    
-    # unique_epochs becomes unique_task_ids
     unique_task_ids = sorted(final_metrics_df['task_id'].dropna().unique())
     if not unique_task_ids: print("No task_ids in data for plotting."); return
     
-    # Plot all tasks
     tasks_to_plot = unique_task_ids 
     num_task_subplots = len(tasks_to_plot)
 
     fig, axs = plt.subplots(3, num_task_subplots, 
-                            figsize=(2.8 * num_task_subplots, 6.5), # Adjust width based on num tasks
-                            sharex='col', sharey='row') # Share Y for ER, Frozen, Dup separately
+                            figsize=(2.8 * num_task_subplots, 6.5), 
+                            sharex='col', sharey='row') 
     if num_task_subplots == 1: axs = axs.reshape(3, 1) if axs.ndim == 1 else axs
     elif num_task_subplots == 0: print("No tasks to plot."); return
-
 
     config_colors = {"MLP NoNorm": "black", "MLP BatchNorm": "dodgerblue", "MLP LayerNorm": "red"}
     layer_name_to_idx = {name: i for i, name in enumerate(ordered_layer_names_for_plot)}
@@ -509,7 +598,7 @@ def plot_permuted_task_metrics_figure(final_metrics_df: pd.DataFrame,
         
         task_label = f"Task {int(task_id_val)}"
         if task_id_val == 0 and s.num_initial_tasks > 0: task_label += " (Orig.)"
-        elif task_id_val > 0 : task_label += f" (Perm. {int(task_id_val)})"
+        elif task_id_val > 0 : task_label += f" (Perm. {int(task_id_val - s.num_initial_tasks + 1)})" # Adjust perm label
 
         ax_er.set_title(task_label, fontsize=plt.rcParams['axes.titlesize'])
 
@@ -522,7 +611,7 @@ def plot_permuted_task_metrics_figure(final_metrics_df: pd.DataFrame,
             
             er_data = plot_data_for_config.dropna(subset=['eff_rank'])
             if not er_data.empty: ax_er.plot(er_data['plot_x_idx'], er_data['eff_rank'], color=color, linestyle='-', marker='o', markersize=2.5, label=config_name_key if col_idx==0 else None)
-            frozen_data = plot_data_for_config[plot_data_for_config['layer_name'].str.contains("_Act", na=False)].dropna(subset=['perc_frozen'])
+            frozen_data = plot_data_for_config[plot_data_for_config['layer_name'].str.contains("_Act", na=False)].dropna(subset=['perc_frozen']) # Only plot frozen for _Act layers
             if not frozen_data.empty: ax_fr.plot(frozen_data['plot_x_idx'], frozen_data['perc_frozen'], color=color, linestyle='--', marker='x', markersize=3, label=config_name_key if col_idx==0 else None)
             dup_data = plot_data_for_config.dropna(subset=['perc_duplicates'])
             if not dup_data.empty: ax_dp.plot(dup_data['plot_x_idx'], dup_data['perc_duplicates'], color=color, linestyle=':', marker='s', markersize=2.5, label=config_name_key if col_idx==0 else None)
@@ -531,20 +620,20 @@ def plot_permuted_task_metrics_figure(final_metrics_df: pd.DataFrame,
             ax_er.set_ylabel("Eff. Rank"); ax_fr.set_ylabel("% Frozen"); ax_dp.set_ylabel("% Duplicate")
             for ax_row in [ax_er, ax_fr, ax_dp]: ax_row.legend(loc='best')
         
-        for ax_row_idx in range(3): # Share Y limits for each metric row
-            all_vals_in_row = final_metrics_df[final_metrics_df['task_id'].isin(tasks_to_plot)]
-            metric_col = ['eff_rank', 'perc_frozen', 'perc_duplicates'][ax_row_idx]
-            relevant_vals = all_vals_in_row[metric_col].dropna()
-            if not relevant_vals.empty:
-                min_val, max_val = relevant_vals.min(), relevant_vals.max()
-                padding = (max_val - min_val) * 0.05 if (max_val - min_val) > 0 else 1
-                current_ax = axs[ax_row_idx, col_idx]
-                if metric_col == 'eff_rank': current_ax.set_ylim(bottom=0, top=max_val + padding if max_val > 0 else 10)
-                else: current_ax.set_ylim(0, 100 + padding if metric_col != 'eff_rank' and max_val > 90 else max(10, max_val + padding))
+        # Dynamic Y-axis scaling for each metric, applied per column if not sharing Y globally
+        for ax_row_idx_local, metric_col_local in enumerate(['eff_rank', 'perc_frozen', 'perc_duplicates']):
+            current_ax_local = axs[ax_row_idx_local, col_idx]
+            relevant_vals_local = task_data[metric_col_local].dropna() # Values for this task only
+            if not relevant_vals_local.empty:
+                min_val_l, max_val_l = relevant_vals_local.min(), relevant_vals_local.max()
+                padding_l = (max_val_l - min_val_l) * 0.05 if (max_val_l - min_val_l) > 0 else 1
+                if metric_col_local == 'eff_rank': current_ax_local.set_ylim(bottom=0, top=max_val_l + padding_l if max_val_l > 0 else 10)
+                else: current_ax_local.set_ylim(0, 100 + padding_l if metric_col_local != 'eff_rank' and max_val_l > 90 else max(10, max_val_l + padding_l))
+            elif metric_col_local == 'eff_rank': current_ax_local.set_ylim(bottom=0, top=10) # Default if no data
+            else: current_ax_local.set_ylim(0,100)
 
 
         for ax_row in [ax_er, ax_fr, ax_dp]: ax_row.grid(True, linestyle=':', alpha=0.6)
-        # ax_er.set_ylim(bottom=0); ax_fr.set_ylim(0, 100); ax_dp.set_ylim(0, 100) # Set dynamic Y instead
         
         ax_dp.set_xticks(list(layer_name_to_idx.values()))
         xticklabels_short = [name.replace("_Lin", "L").replace("_Nrm", "N").replace("_ActIn","Pre").replace("_Act", "A").replace("Out_Logits","Out") for name in ordered_layer_names_for_plot]
@@ -553,8 +642,79 @@ def plot_permuted_task_metrics_figure(final_metrics_df: pd.DataFrame,
     
     fig.suptitle(f"Permuted MNIST Analysis ({s.dataset_name}, Activation: {current_activation_name.upper()})", fontsize=plt.rcParams['figure.titlesize'])
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    save_path = os.path.join(s.FIGURE_DIR, f"permuted_mnist_metrics_{current_activation_name}_{s.dataset_name}.pdf")
+    save_path = os.path.join(s.FIGURE_DIR, f"permuted_metrics_summary_{current_activation_name}_{s.dataset_name}.pdf")
     plt.savefig(save_path); print(f"Saved: {save_path}"); plt.show()
+
+# NEW: Plotting function for feature persistence
+def plot_feature_persistence_figure(persistence_df: pd.DataFrame, s: ExperimentSettings, current_activation_name: str):
+    if persistence_df.empty:
+        print("Persistence DataFrame is empty. No persistence plot will be generated.")
+        return
+
+    # Aggregate by averaging over relevant hidden layers for each model_config and task_transition
+    # Relevant layers are already implicitly handled if calculate_persistence_data only includes them.
+    # If not, filter here: e.g. persistence_df = persistence_df[persistence_df['layer_name'].str.contains("_Act")]
+    
+    # We want one line per model_config, so group by model_config and task_transition, then average rates.
+    # Ensure task_transition is categorical for correct plot ordering.
+    df_agg = persistence_df.groupby(['model_config', 'task_transition', 'task_id_start'], as_index=False).agg(
+        avg_frozen_persistence_rate=('frozen_persistence_rate', 'mean'),
+        avg_duplicate_persistence_rate=('duplicate_persistence_rate', 'mean'),
+        # For error bars or confidence, one might also calculate 'std' or count
+    ).sort_values(by=['model_config', 'task_id_start']) # Sort by task_id_start to ensure transitions are ordered
+
+    if df_agg.empty:
+        print("Aggregated persistence DataFrame is empty. No plot.")
+        return
+
+    unique_transitions = df_agg['task_transition'].unique() # Already sorted due to task_id_start
+    num_transitions = len(unique_transitions)
+
+    fig, axs = plt.subplots(2, 1, figsize=(max(6, 2.5 * num_transitions), 7), sharex=True) # Adjusted figsize
+    
+    ax_frozen = axs[0]
+    ax_duplicate = axs[1]
+    
+    config_colors = {"MLP NoNorm": "black", "MLP BatchNorm": "dodgerblue", "MLP LayerNorm": "red"}
+    model_configs = df_agg['model_config'].unique()
+
+    for config_name in model_configs:
+        config_data = df_agg[df_agg['model_config'] == config_name]
+        color = config_colors.get(config_name, "grey")
+        
+        # Frozen Persistence Plot
+        ax_frozen.plot(config_data['task_transition'], config_data['avg_frozen_persistence_rate'], 
+                       marker='o', linestyle='-', color=color, label=config_name, markersize=5)
+        
+        # Duplicate Persistence Plot
+        ax_duplicate.plot(config_data['task_transition'], config_data['avg_duplicate_persistence_rate'], 
+                          marker='s', linestyle='--', color=color, label=config_name, markersize=5)
+
+    ax_frozen.set_title('Persistence of Frozen Features Across Tasks', fontsize=plt.rcParams['axes.titlesize'] * 0.9)
+    ax_frozen.set_ylabel('Avg. Persistence Rate (%)')
+    ax_frozen.grid(True, linestyle=':', alpha=0.7)
+    ax_frozen.legend(loc='best')
+    ax_frozen.set_ylim(0, 105)
+
+    ax_duplicate.set_title('Persistence of Duplicate Features Across Tasks', fontsize=plt.rcParams['axes.titlesize'] * 0.9)
+    ax_duplicate.set_ylabel('Avg. Persistence Rate (%)')
+    ax_duplicate.set_xlabel('Task Transition')
+    ax_duplicate.grid(True, linestyle=':', alpha=0.7)
+    ax_duplicate.legend(loc='best')
+    ax_duplicate.set_ylim(0, 105)
+
+    if num_transitions > 3: # Rotate labels if many transitions
+         plt.setp(ax_duplicate.get_xticklabels(), rotation=30, ha="right")
+
+
+    fig.suptitle(f"Feature Persistence ({s.dataset_name}, Act: {current_activation_name.upper()}, Avg over Hidden Layers)", 
+                 fontsize=plt.rcParams['figure.titlesize'])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    save_path = os.path.join(s.FIGURE_DIR, f"feature_persistence_across_tasks_{current_activation_name}_{s.dataset_name}.pdf")
+    plt.savefig(save_path)
+    print(f"Saved persistence plot: {save_path}")
+    plt.show()
 
 
 # --- Main Orchestration ---
@@ -579,61 +739,75 @@ def run_all_experiments(s: ExperimentSettings):
     del sample_model
 
     experiment_runner_fn = None
-    if s.experiment_type == "StandardMNIST":
-        # This part would call the original run_experiment_configuration if it were adapted
-        # For now, focusing on PermutedMNIST
+    if s.experiment_type == "Standard":
         print("StandardMNIST experiment type selected. Ensure run_experiment_configuration is adapted if needed.")
-        # experiment_runner_fn = run_standard_experiment_configuration # Assuming you might have this
-        return # Or raise NotImplementedError
-    elif s.experiment_type == "PermutedMNIST":
+        return 
+    elif s.experiment_type == "Permuted":
         experiment_runner_fn = run_permuted_experiment_configuration
     else:
         raise ValueError(f"Unknown experiment_type: {s.experiment_type}")
 
+    # NEW: Initialize persistence tracker here, once for all configs if sharing, or per config
+    # For this setup, it's easier to pass it into the runner function which uses it per config.
+    # The tracker itself stores by model_config_name.
+    global_persistence_tracker = PersistentFeatureTracker(s)
+
+
     for model_config_obj in MODEL_CONFIGURATIONS_TO_RUN:
         model_config_obj.activation_name = current_run_activation 
-        df_for_config = experiment_runner_fn(model_cfg=model_config_obj, s=s) # type: ignore
+        # MODIFIED: Pass persistence_tracker to the runner
+        df_for_config = experiment_runner_fn(model_cfg=model_config_obj, s=s, persistence_tracker=global_persistence_tracker) # type: ignore
         if not df_for_config.empty:
             all_experiments_dfs.append(df_for_config)
 
-    if not all_experiments_dfs: print("No data collected. Exiting."); return
+    if not all_experiments_dfs: print("No data collected for standard metrics. Exiting."); return
     
     final_aggregated_df = pd.concat(all_experiments_dfs, ignore_index=True)
-    if final_aggregated_df.empty: print("Aggregated DataFrame empty. No plot/save."); return
+    if final_aggregated_df.empty: print("Aggregated DataFrame empty. No standard plot/save."); return
 
     data_save_path = os.path.join(s.FIGURE_DIR, f"{s.experiment_type.lower()}_metrics_AGGREGATED_{current_run_activation}_{s.dataset_name}.csv")
     final_aggregated_df.to_csv(data_save_path, index=False)
-    print(f"Saved final AGGREGATED data to {data_save_path}")
+    print(f"Saved final AGGREGATED data for standard metrics to {data_save_path}")
     
-    if s.experiment_type == "PermutedMNIST":
+    if s.experiment_type == "Permuted":
         plot_permuted_task_metrics_figure(
             final_aggregated_df, current_run_activation, 
             canonical_ordered_plot_names, MODEL_CONFIGURATIONS_TO_RUN, s
         )
-    # Add plotting for StandardMNIST if implemented
-    # elif s.experiment_type == "StandardMNIST":
-    #    plot_all_empirical_metrics_figure(...) # The original plotting function
+        
+        # NEW: Calculate and plot persistence data
+        total_tasks_run = s.num_initial_tasks + s.num_permutation_tasks
+        persistence_df = global_persistence_tracker.calculate_persistence_data(total_tasks_run, MODEL_CONFIGURATIONS_TO_RUN, canonical_ordered_plot_names)
+        if not persistence_df.empty:
+            persistence_data_save_path = os.path.join(s.FIGURE_DIR, f"feature_persistence_AGGREGATED_{current_run_activation}_{s.dataset_name}.csv")
+            persistence_df.to_csv(persistence_data_save_path, index=False)
+            print(f"Saved feature PERSISTENCE data to {persistence_data_save_path}")
+            plot_feature_persistence_figure(persistence_df, s, current_run_activation)
+        else:
+            print("No persistence data generated to plot/save.")
+
 
 if __name__ == "__main__":
     # --- CONFIGURE YOUR EXPERIMENT ---
     SETTINGS.QUICK_TEST_MODE = False  # <--- SET TO False FOR FULL RUN FOR PAPER
     SETTINGS.DEBUG_VERBOSE = False    # <--- SET TO False FOR CLEANER OUTPUT IN FULL RUN
     
-    SETTINGS.experiment_type = "PermutedMNIST" # "StandardMNIST" or "PermutedMNIST"
+    SETTINGS.experiment_type = "Permuted" # "Standard" or "Permuted"
     SETTINGS.dataset_name = "MNIST" 
     SETTINGS.default_activation_name = "ReLU" 
 
     # For PermutedMNIST specific settings (if not overridden by QUICK_TEST_MODE)
-    if not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "PermutedMNIST":
+    if not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "Permuted":
         SETTINGS.num_initial_tasks = 1 # Original MNIST
-        SETTINGS.num_permutation_tasks = 1  # e.g., 4 additional permuted tasks (total 5 tasks)
-        SETTINGS.epochs_per_task = 15     # e.g., 5 epochs on each task
-    elif not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "StandardMNIST":
-        SETTINGS.num_epochs_standard = 15 # As before
+        SETTINGS.mlp_hidden_layers = [512, 512, 512] # Hidden layer sizes
+        # MODIFIED: Increased num_permutation_tasks for more transitions to see persistence
+        SETTINGS.num_permutation_tasks = 20  # e.g., 3 additional permuted tasks (total 4 tasks, 3 transitions) 
+        SETTINGS.epochs_per_task = 1      # e.g., 5 epochs on each task
+    elif not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "Standard":
+        SETTINGS.num_epochs_standard = 5 # As before
 
     SETTINGS.__post_init__() # Re-run post_init to apply QUICK_TEST_MODE or other changes
     
     run_all_experiments(SETTINGS)
     
     print(f"\nAll empirical figures and data processing complete for {SETTINGS.experiment_type} on {SETTINGS.dataset_name} using {SETTINGS.default_activation_name}. Check {SETTINGS.FIGURE_DIR}")
-
