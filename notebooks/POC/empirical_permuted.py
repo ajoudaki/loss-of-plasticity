@@ -31,10 +31,10 @@ class ExperimentSettings:
     # For PermutedMNIST
     num_initial_tasks: int = 1 # Task 0: Original MNIST
     num_permutation_tasks: int = 2 # Number of *additional* permuted tasks
-    epochs_per_task: int = 10 # Epochs to train on each task (original and each permuted)
+    epochs_per_task: int = 15 # Epochs to train on each task (original and each permuted)
 
     log_metrics_every_n_epochs: int = 1 # Used within each task for standard, or as a placeholder
-    mlp_hidden_layers: List[int] = field(default_factory=lambda: [128, 128, 64])
+    mlp_hidden_layers: List[int] = field(default_factory=lambda: [256, 256, 256,256]) # Hidden layer sizes
     default_activation_name: str = "ReLU"
 
     # Training hyperparameters
@@ -626,8 +626,8 @@ if __name__ == "__main__":
     # For PermutedMNIST specific settings (if not overridden by QUICK_TEST_MODE)
     if not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "PermutedMNIST":
         SETTINGS.num_initial_tasks = 1 # Original MNIST
-        SETTINGS.num_permutation_tasks = 4  # e.g., 4 additional permuted tasks (total 5 tasks)
-        SETTINGS.epochs_per_task = 5     # e.g., 5 epochs on each task
+        SETTINGS.num_permutation_tasks = 1  # e.g., 4 additional permuted tasks (total 5 tasks)
+        SETTINGS.epochs_per_task = 15     # e.g., 5 epochs on each task
     elif not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "StandardMNIST":
         SETTINGS.num_epochs_standard = 15 # As before
 
