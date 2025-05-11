@@ -524,8 +524,8 @@ if __name__ == "__main__":
     # --- CONFIGURE YOUR EXPERIMENT ---
     SETTINGS.QUICK_TEST_MODE = False  # <--- SET TO False FOR FULL RUN FOR PAPER
     SETTINGS.DEBUG_VERBOSE = False    # <--- SET TO False FOR CLEANER OUTPUT IN FULL RUN
-    SETTINGS.dataset_name = "CIFAR10" 
-    SETTINGS.default_activation_name = "ReLU" # Or "Tanh", "Sigmoid"
+    SETTINGS.dataset_name = "MNIST" 
+    SETTINGS.default_activation_name = "Tanh" # Or "Tanh", "Sigmoid"
 
     # Example of changing a metric threshold for a specific run:
     # SETTINGS.frozen_feature_batch_threshold = 0.90 
