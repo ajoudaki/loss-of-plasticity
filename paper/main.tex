@@ -76,7 +76,7 @@
 
 % new abstract 
 \begin{abstract}
-    Standard deep learning models excel when trained on stationary datasets but often falter in non-stationary environments where continuous adaptation is crucial. This paradigm struggle is significantly due to the degradation of future learning capacity, a phenomenon termed loss of plasticity (LoP). This work undertakes a first-principles investigation into the mechanisms underlying LoP in gradient-based models. We propose a formal definition of LoP grounded in dynamical systems theory, identifying stable sub-manifolds in the parameter space that act as traps for gradient trajectories. Our analysis details two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or targeted perturbations might prevent or mitigate this plasticity collapse. A core finding of our theoretical framework is the revelation of a fundamental tension: properties widely considered beneficial for generalization in static, two-phase learning regimes, such as the emergence of low-rank representations or inherent simplicity biases, appear to directly contribute to LoP in continual learning scenarios. By mathematically characterizing these barriers, this work pinpoints critical representational properties that hinder continuous learning, providing a clear direction for developing truly adaptive artificial intelligence.
+    Standard deep learning models excel when trained on stationary datasets but often falter in non-stationary environments where continuous adaptation is crucial. This paradigm struggle is significantly due to the degradation of future learning capacity, a phenomenon termed loss of plasticity (LoP). This work undertakes a first-principles investigation into the mechanisms underlying LoP in gradient-based models. We propose a formal definition of LoP grounded in dynamical systems theory, identifying stable sub-manifolds in the parameter space that act as traps for gradient trajectories. Our analysis details two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or targeted perturbations might prevent or mitigate this plasticity collapse. A core finding of our theoretical framework is the revelation of a fundamental tension: properties widely considered beneficial for generalization in static, two-phase  learning regimes \mf{two-phase learning regime may be waugue/undefined at this stage in abstract}, such as the emergence of low-rank representations or inherent simplicity biases, appear to directly contribute to LoP in continual learning scenarios. By mathematically characterizing these barriers, this work pinpoints critical representational properties that hinder continuous learning, providing a clear direction for developing truly adaptive artificial intelligence. \mf{Perhaps adding something like "analysis verified by experiments or numerical results. To emphsize it's not only a theory paper. But don't make it bold.}
 \end{abstract}
 
 \section{Introduction}
@@ -346,12 +346,15 @@ While Proposition~\ref{prop:rank} highlights that non-linear activations are key
 These theoretical considerations and synthetic experiments (Figure~\ref{fig:theory_tanh_az_rank}, and Figures~\ref{fig:theory_relu_zb_rank}, \ref{fig:theory_joint_norm_activation_rank} in Appendix~\ref{app:rank_validation_appendix_label}) highlight the importance of maintaining pre-activations within the effective non-linear range of activation functions for rank recovery. 
 To demonstrate this in a practical deep learning context, we empirically investigate the progression of effective rank in Multi-Layer Perceptrons (MLPs) trained on the MNIST dataset. Figure~\ref{fig:empirical_rank_progression} compares models utilizing ReLU activations with no normalization, Batch Normalization, and Layer Normalization across training epochs. Additional empirical results, including the evolution of other metrics like frozen and duplicate units, can be found in Appendix~\ref{app:additional_empirical_evidence}.
 
+To complement the rank progression analysis in Section~\ref{sec:mitigate} (specifically Figure~\ref{fig:empirical_rank_progression}), Figure~\ref{fig:empirical_all_metrics} provides a broader view of network health metrics for the MLP model trained on MNIST with ReLU activation. This includes the effective rank, percentage of frozen units (pre-activations consistently in the zero-gradient regime of ReLU), and percentage of duplicate units (highly correlated neurons) at selected epochs.
+
+
 \begin{figure}[ht!]
     \centering
     % Ensure this figure path and name are correct, e.g., figures/empirical_rank_progression_relu_mnist.pdf
     % Adjust width as needed; \textwidth might be suitable for a preprint single-column format.
     \includegraphics[width=\textwidth]{figures/empirical_rank_progression_relu_mnist.pdf} 
-    \caption{Empirical effective rank progression in an MLP trained on MNIST with ReLU activations. Subplots compare models with no normalization (left panel), Batch Normalization (center panel), and Layer Normalization (right panel). Lines within each subplot show the effective rank across network layers at different epochs (indicated by the color bar, typically progressing from early (e.g., dark blue/purple) to later (e.g., yellow/light green) epochs). Normalization layers, particularly Batch Normalization, generally help maintain a higher and more stable effective rank throughout the network and across training epochs. This suggests they assist non-linear activations in preserving or increasing representational diversity by ensuring pre-activations operate in a regime conducive to non-linear behavior.}
+    \caption{Empirical effective rank progression in an MLP trained on MNIST with ReLU activations. Subplots compare models with no normalization (left panel), Batch Normalization (center panel), and Layer Normalization (right panel). Lines within each subplot show the effective rank across network layers at different epochs (indicated by the color bar, typically progressing from early (e.g., dark blue/purple) to later (e.g., yellow/light green) epochs).}
     \label{fig:empirical_rank_progression}
 \end{figure}
 
@@ -484,6 +487,7 @@ However, potential negative impacts must also be considered. Enabling AI systems
 \appendix
 
 \section{Rank recovery: validations }
+\label{app:additional_empirical_evidence}
 
 \begin{figure}[ht!]
     \centering
@@ -503,6 +507,17 @@ Figures~\ref{fig:theory_tanh_az_rank} and \ref{fig:theory_relu_zb_rank} show tha
 
 The insights from Proposition~\ref{prop:rank}, supported by these empirical illustrations (Figures~\ref{fig:theory_tanh_az_rank}--\ref{fig:theory_joint_norm_activation_rank}), motivate specific architectural choices and training techniques, discussed next.
 
+
+\begin{figure}[h!]
+    \centering
+    % Ensure this figure path and name are correct, e.g., figures/empirical_all_metrics_relu_mnist.pdf
+    % Adjust width as needed.
+    \includegraphics[width=\textwidth]{figures/empirical_all_metrics_ReLU_MNIST.pdf}
+    \caption{Comprehensive empirical metrics for an MLP with ReLU activation trained on MNIST, comparing no normalization, Batch Normalization, and Layer Normalization (colors used to distinguish configurations, as per legend within plots). Metrics shown are: (Top Row) Effective Rank, (Middle Row) Percentage of Frozen ReLU Units, and (Bottom Row) Percentage of Duplicate Units. Each column of subplots represents a different training epoch (e.g., early, mid, and late training stages from left to right). Normalization, especially BatchNorm, not only helps maintain higher effective rank (consistent with Figure~\ref{fig:empirical_rank_progression}) but also tends to reduce the percentage of frozen units and duplicate units, particularly in later epochs. This further indicates healthier network dynamics and preserved potential for plasticity when activations are operating in well-conditioned regimes.}
+    \label{fig:empirical_all_metrics}
+\end{figure}
+
+The trends observed in Figure~\ref{fig:empirical_all_metrics} for effective rank (top row) align with the more detailed epoch-wise progression shown in Figure~\ref{fig:empirical_rank_progression} in the main text. Furthermore, the use of normalization, particularly Batch Normalization, often correlates with a lower percentage of frozen ReLU units (middle row) and duplicate neurons (bottom row) as training progresses. This suggests that by maintaining better-conditioned inputs to activations, normalization not only aids in rank preservation but also mitigates other symptoms associated with the loss of plasticity, such as unit saturation and representational redundancy. These observations further strengthen the argument that architectural choices promoting effective non-linear operation are crucial for sustained learning.
 
 
 
