@@ -1,0 +1,70 @@
+# Hydra configuration for the Bit Flipping Experiment
+
+# Logging defaults
+logging:
+  summary: true
+  wandb_entity: "loss-of-plasticity"
+  wandb_run_name: 
+
+# Execution mode
+use_wandb: true
+wandb_project: "continual-learning-experiments"
+wandb_tags: []
+dryrun: false
+
+# Hydra-specific configuration
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num} # Provide default for single runs
+
+# Model specific parameters
+model:
+  name: "BitFlipper"
+  m: 20                     # Number of input bits (excluding bias)
+  f: 15                     # Number of flipping bits
+  hidden_size_target: 100   # Number of hidden units in the target network
+  hidden_size_learner: 5    # Number of hidden units in the learning network
+  beta: 0.7                 # Parameter for LTU threshold calculation (target network)
+  activation: 'relu'        # Activation function for the learning network
+
+dataset: 
+  name: slowlychangingregression
+
+
+# Training specific parameters
+training:
+  seed: 42
+  device: "cpu"             # "cuda" or "cpu"
+  T: 10000                  # Duration between bit flips
+  n_examples: 3000000       # Total number of examples
+  bin_size: 20000           # Number of examples per bin for error calculation
+  continual_backprop: false # Whether to use Continual Backpropagation
+  rho: 1e-4                  # Replacement rate for Continual Backpropagation (proportion of eligible neurons)
+  maturity_threshold: 100   # Maturity threshold for Continual Backpropagation (steps)
+  cbp_decay_rate: 0.99      # Decay rate for utility and activation averages in CBP
+  cbp_replacement_interval: 1000 # How often to consider replacing neurons in CBP (steps)
+  use_shrink_perturb: false # Whether to use Shrink-and-Perturb
+  noise_variance: 0.0       # Variance of the noise for Shrink-and-Perturb
+  save_model: false         # Whether to save the final learner model
+  training_type: continual
+
+# Optimizer specific parameters
+optimizer:
+  step_size: 0.01
+  use_adam: false
+  weight_decay: 0.
+
+# Metrics - Add any specific metrics parameters if needed for analyze_callback
+metrics:
+  fixed_batch_size: 128
+  dead_threshold: 0.95       # Fraction of zero activations for a neuron to be considered dead
+  corr_threshold: 0.98       # Correlation cutoff for duplicate neuron detection
+  saturation_threshold: 0.05 # Gradient magnitude ratio for saturated neuron detection
+  saturation_percentage: 0.8 # Percentage of samples required for a neuron to be considered saturated
+  gaussianity_method: "shapiro" # "shapiro", "ks", "anderson", "kurtosis"
+  log_histograms: True       # Whether to prepare histograms of activation statistics for W&B
