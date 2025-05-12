@@ -14,7 +14,7 @@ from ..config.utils import create_optimizer
 from ..utils.cloning import expand_model, create_cloned_model, test_activation_cloning
 
 
-def train_cloning_experiment(original_model, 
+def train_cloning_experiment(base_model, 
                            dataloaders, 
                            cfg: DictConfig, 
                            device='cpu'):
@@ -25,7 +25,7 @@ def train_cloning_experiment(original_model,
     neurons/channels, and studies their behavior compared to the original model.
     
     Args:
-        original_model: The original neural network model (will be trained first)
+        base_model: The original neural network model (will be trained first)
         dataloaders: Dictionary with train/val/test dataloaders (using first task only)
         cfg: Hydra configuration object
         device: Device to train on
@@ -56,7 +56,7 @@ def train_cloning_experiment(original_model,
     monitors = []
     
     # Start with the base model
-    base_model = original_model
+    base_model = base_model
     base_optimizer = create_optimizer(base_model, cfg)
     base_criterion = nn.CrossEntropyLoss()
     
@@ -340,7 +340,7 @@ def train_cloning_experiment(original_model,
         start_time = time.time()
         for epoch in range(1, cfg.training.epochs_per_expansion + 1):
             # Train original model if tracking is enabled
-            if cfg.training.track_original:
+            if cfg.training.track_base:
                 orig_train_loss, orig_train_acc = train_epoch(
                     current_model, train_loader, base_criterion, base_optimizer, device
                 )
@@ -378,7 +378,7 @@ def train_cloning_experiment(original_model,
                 if fixed_train_batch is not None:
                     # Reset monitors
                     cloned_monitor.clear_data()
-                    if cfg.training.track_original:
+                    if cfg.training.track_base:
                         base_monitor.clear_data()
                     
                     # Compute metrics for cloned model
@@ -391,7 +391,7 @@ def train_cloning_experiment(original_model,
                     )
                     
                     # Compute metrics for original model if tracking
-                    if cfg.training.track_original:
+                    if cfg.training.track_base:
                         compute_and_store_metrics(
                             current_model, 
                             base_monitor, 
@@ -443,12 +443,12 @@ def train_cloning_experiment(original_model,
                     "val_acc": exp_val_acc
                 }
                 
-                if cfg.training.track_original:
+                if cfg.training.track_base:
                     log_data.update({
-                        "original_train_loss": orig_train_loss,
-                        "original_train_acc": orig_train_acc,
-                        "original_val_loss": orig_val_loss,
-                        "original_val_acc": orig_val_acc
+                        "base_train_loss": orig_train_loss,
+                        "base_train_acc": orig_train_acc,
+                        "base_val_loss": orig_val_loss,
+                        "base_val_acc": orig_val_acc
                     })
                 
                 wandb.log(log_data)
@@ -460,7 +460,7 @@ def train_cloning_experiment(original_model,
                   f'Val Loss: {exp_val_loss:.4f}, Val Acc: {exp_val_acc:.2f}%, '
                   f'Time: {elapsed:.2f}s')
             
-            if cfg.training.track_original:
+            if cfg.training.track_base:
                 print(f'Original model - '
                       f'Train Loss: {orig_train_loss:.4f}, Train Acc: {orig_train_acc:.2f}%, '
                       f'Val Loss: {orig_val_loss:.4f}, Val Acc: {orig_val_acc:.2f}%')
