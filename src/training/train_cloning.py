@@ -11,7 +11,7 @@ from ..utils.monitor import NetworkMonitor
 from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch, create_module_filter
 from ..config.utils import create_optimizer
-from ..utils.cloning import create_cloned_model, test_activation_cloning
+from ..utils.cloning import expand_model, create_cloned_model, test_activation_cloning
 
 
 def train_cloning_experiment(original_model, 
