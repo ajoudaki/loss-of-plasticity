@@ -206,7 +206,7 @@ def train_cloning_experiment(base_model,
     start_time = time.time()
     for epoch in range(1, cfg.training.initial_epochs + 1):
         # Train for one epoch
-        train_loss, train_acc = train_epoch(base_model, train_loader, base_criterion, base_optimizer, device)
+        train_loss, train_acc = train_epoch(base_model, train_loader, base_criterion, base_optimizer, 'base', device)
         
         # Evaluate
         val_loss, val_acc = evaluate_model(base_model, val_loader, base_criterion, device)
@@ -481,7 +481,7 @@ def train_cloning_experiment(base_model,
     return experiment_history
 
 
-def train_epoch(model, dataloader, criterion, optimizer, model_type, device='cpu') -> Tuple[float, float]:
+def train_epoch(model, dataloader, criterion, optimizer, model_type, cfg) -> Tuple[float, float]:
     """Train model for one epoch and return average loss and accuracy."""
     model.train()
     running_loss = 0.0
@@ -490,18 +490,22 @@ def train_epoch(model, dataloader, criterion, optimizer, model_type, device='cpu
     batch_count = 0
     
     for inputs, targets in dataloader:
-        inputs, targets = inputs.to(device), targets.to(device)
+        inputs, targets = inputs.to(cfg.training.device), targets.to(cfg.training.device)
         
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
+        log = {
+            "loss": loss.item(),
+        }
         if isinstance(optimizer, NoisySGD):
-            wandb.log({
-                f"{model_type}_train/noise_scale": optimizer.get_noise_scale(),
-                f"{model_type}_train/noise_decay": optimizer.noise_decay
+            log.update({
+                "noise_scale": optimizer.get_noise_scale(),
+                "noise_decay": optimizer.noise_decay
             })
+        wandb.log({f"{model_type}_train/{k}": v for k, v in log.items()})
         
         running_loss += loss.item()
         _, predicted = outputs.max(1)
