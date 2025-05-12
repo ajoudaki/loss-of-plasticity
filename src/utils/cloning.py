@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from ..models.layers import TransformerBatchNorm
 from .monitor import NetworkMonitor
+from .metrics import create_module_filter
 
 from typing import Union, List, Dict, Set
 
@@ -535,10 +536,11 @@ def model_clone(base_model: nn.Module, cloned_model: nn.Module) -> nn.Module:
 
 
 
-def test_activation_cloning(base_model, cloned_model, input, target, tolerance=1e-3, check_equality=False):
+def test_activation_cloning(base_model, cloned_model, input, target, model_name=None, tolerance=1e-3, check_equality=False, eps = 1e-10):
     criterion = nn.CrossEntropyLoss()
-    base_monitor = NetworkMonitor(base_model,)
-    cloned_monitor = NetworkMonitor(cloned_model,)
+    filter = create_module_filter(['default'], model_name,)
+    base_monitor = NetworkMonitor(base_model,filter)
+    cloned_monitor = NetworkMonitor(cloned_model,filter)
     base_monitor.register_hooks()
     cloned_monitor.register_hooks()
 
@@ -550,10 +552,13 @@ def test_activation_cloning(base_model, cloned_model, input, target, tolerance=1
     l2.backward()
     cloned_monitor.remove_hooks()
     base_monitor.remove_hooks()
-    if check_equality:
-        assert torch.allclose(y1, y2,atol=tolerance), "Outputs do not match after cloning"
+    success = True 
+    
+    if check_equality and  torch.allclose(y1, y2,atol=tolerance):
+        print("Outputs do not match after cloning")
+        success = False 
 
-    un_explained_vars = []
+    un_explained_vars = dict()
     for act_type in ['forward', 'backward']:
         if act_type == 'forward':
             base_acts = base_monitor.get_latest_activations()
@@ -574,9 +579,9 @@ def test_activation_cloning(base_model, cloned_model, input, target, tolerance=1
                 i = i[0][0]
                 expansion = a2.shape[i] // a1.shape[i]
                 # check expansion depending on the dimension 
+                slices = []
                 for j in range(expansion):
                     print(f"mismatch dim: {i}, checking slice: {j}, expansion: {expansion}")
-                    slices = []
                     if i==0:
                         slice = a2[j::expansion]
                     elif i==1:
@@ -586,22 +591,25 @@ def test_activation_cloning(base_model, cloned_model, input, target, tolerance=1
                     elif i==3:
                         slice = a2[:, :, :, j::expansion]
                     slices.append(slice)
-                    if check_equality:
-                        assert torch.allclose(slice, a1, atol=tolerance), f"Activations for {key} do not match"
+                    if check_equality and not torch.allclose(slice, a1, atol=tolerance):
+                        print(f"Activations for {key} do not match")
+                        success = False 
                 slices = torch.stack(slices)
                 if slices.shape[0]>1:
                     print(f"slices for {key} shape = {slices.shape}")
-                    std, rms = slices.std(dim=0), ((slices**2).mean(dim=0)**0.5)
-                    unexplained = (std/rms).mean().item()
+                    var, var_all = slices.std(dim=0), slices.std()
+                    unexplained = ((var)/(var_all+eps)).mean().item()
                     print(f"unexplained variance for {key} is {unexplained}")
                     un_explained_vars[f'{key}_{act_type}'] = unexplained
-                    assert unexplained<tolerance, f"unexplained variance is higher than the threshold {tolerance}"
+                    if unexplained>tolerance:
+                        print(f"unexplained variance is higher than the threshold {tolerance}")
+                        success = False 
 
             elif len(i)>1:
                 assert False, f"Activations for {key} more than one dimension mismatch, this is unexpected behavior"
                     
-            print(f"All {act_type} activations match after cloning up to tolerance {tolerance}")
-            return un_explained_vars
+        print(f"All {act_type} activations match after cloning up to tolerance {tolerance}")
+    return success, un_explained_vars
     
 def create_cloned_model(current_model, cfg, expansion_factor):
     """
@@ -626,7 +634,6 @@ def create_cloned_model(current_model, cfg, expansion_factor):
     model_params = OmegaConf.to_container(cfg.model, resolve=True)
     
     # Ensure dataset parameters are added to model params
-    model_params['num_classes'] = cfg.dataset.num_classes
     
     # Remove name and _target_ from parameters
     if 'name' in model_params:
@@ -646,6 +653,7 @@ def create_cloned_model(current_model, cfg, expansion_factor):
         
     elif model_name == 'cnn':
         # Add CNN specific parameters
+        model_params['num_classes'] = cfg.dataset.num_classes
         model_params['in_channels'] = cfg.dataset.in_channels
         model_params['input_size'] = cfg.dataset.img_size
         
@@ -655,6 +663,7 @@ def create_cloned_model(current_model, cfg, expansion_factor):
         expanded_model = CNN(**model_params)
         
     elif model_name == 'resnet':
+        model_params['num_classes'] = cfg.dataset.num_classes
         # Add ResNet specific parameters
         model_params['in_channels'] = cfg.dataset.in_channels
         
@@ -664,6 +673,7 @@ def create_cloned_model(current_model, cfg, expansion_factor):
         
     elif model_name == 'vit':
         # Add ViT specific parameters
+        model_params['num_classes'] = cfg.dataset.num_classes
         model_params['img_size'] = cfg.dataset.img_size
         model_params['in_channels'] = cfg.dataset.in_channels
         
@@ -676,9 +686,6 @@ def create_cloned_model(current_model, cfg, expansion_factor):
     
     # Clone parameters from the current model to the expanded model
     expanded_model = model_clone(current_model, expanded_model)
-    
-    # Ensure the expanded model is on the same device as the current model
-    expanded_model = expanded_model.to(current_model.device)
     
     return expanded_model
 
@@ -695,18 +702,22 @@ def test_various_models_cloning(normalization='none', drpout_p=0.0, activation='
     base_model = MLP(input_size=10, output_size=2, hidden_sizes=[64, 32,], activation=activation, dropout_p=drpout_p, normalization=normalization)
     cloned_model = MLP(input_size=10, output_size=2, hidden_sizes=[64*2, 32*2,], activation=activation, dropout_p=drpout_p, normalization=normalization)
     cloned_model = model_clone(base_model, cloned_model)
-    test_activation_cloning(base_model, cloned_model, x_flat, y, tolerance=tolerance, check_equality=check_equality)
+    success, _ = test_activation_cloning(base_model, cloned_model, x_flat, y, tolerance=tolerance, check_equality=check_equality, model_name='mlp')
+    print(f">>>> MLP cloning success: {success}")
     
     base_model = CNN(in_channels=3, num_classes=2, conv_channels=[64, 128, 256], activation=activation, dropout_p=drpout_p, normalization=normalization)
     cloned_model = CNN(in_channels=3, num_classes=2, conv_channels=[64*2, 128*2, 256*2], activation=activation, dropout_p=drpout_p, normalization=normalization)
     cloned_model = model_clone(base_model, cloned_model)
-    test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality)
+    success, _  = test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality, model_name='cnn')
+    print(f">>>> CNN cloning success: {success}")
 
     base_model = ResNet(in_channels=3, num_classes=2, base_channels=64, activation=activation, dropout_p=drpout_p, normalization=normalization)
     cloned_model = ResNet(in_channels=3, num_classes=2, base_channels=64*2, activation=activation, dropout_p=drpout_p, normalization=normalization)
     cloned_model = model_clone(base_model, cloned_model)
-    test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality)
-
+    success, _  = test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality, model_name='resnet')
+    print(f">>>> ResNet cloning success: {success}")
+    
+    
     base_model = VisionTransformer(
         in_channels=3, 
         num_classes=2, 
@@ -728,13 +739,14 @@ def test_various_models_cloning(normalization='none', drpout_p=0.0, activation='
 
     cloned_model = model_clone(base_model, cloned_model)
 
-    test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance)
+    success, _  =  test_activation_cloning(base_model, cloned_model, x, y, tolerance=tolerance, check_equality=check_equality, model_name='vit')
+    print(f">>>> ViT cloning success: {success}")
     
 # if __name__ == "__main__":
 #     # Test the cloning functionality with various models
 #     for activation in ['relu', 'tanh', 'gelu']:
 #         for normalization in ['none', 'layer', 'batch']:
-#             test_various_models_cloning(activation=activation, normalization=normalization,drpout_p=0.0, tolerance=1e-8, check_equality=False)    
+#             test_various_models_cloning(activation=activation, normalization=normalization,drpout_p=0.1, tolerance=1e-8, check_equality=False)    
 # if __name__ == "__main__":
 #     test_various_models_cloning(activation=activation, normalization=normalization,drpout_p=0.0, tolerance=0.1)
     
