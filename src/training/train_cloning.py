@@ -21,7 +21,7 @@ def train_cloning_experiment(original_model,
     """
     Train a model using the cloning approach to study the effects of neuron duplication.
     
-    This experiment first trains a base model, then creates expanded versions by cloning
+    This experiment first trains a base model, then creates cloned versions by cloning
     neurons/channels, and studies their behavior compared to the original model.
     
     Args:
@@ -248,29 +248,29 @@ def train_cloning_experiment(original_model,
               f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%, '
               f'Time: {elapsed:.2f}s')
     
-    # === Second stage: Create and train expanded models ===
+    # === Second stage: Create and train cloned models ===
     current_model = base_model
-    current_expansion = 1
+    curr_expansion_factor = 1
     
     for expansion_idx in range(cfg.training.num_expansions):
-        current_expansion *= cfg.training.expansion_factor
+        curr_expansion_factor *= cfg.training.expansion_factor
         
         print(f"\n{'='*60}")
-        print(f"Stage {expansion_idx + 2}: Training {current_expansion}x expanded model "
+        print(f"Stage {expansion_idx + 2}: Training {curr_expansion_factor}x cloned model "
               f"for {cfg.training.epochs_per_expansion} epochs")
         print(f"{'='*60}\n")
         
-        # Create expanded model by cloning the current model
-        expanded_model = create_cloned_model(
+        # Create cloned model by cloning the current model
+        cloned_model = create_cloned_model(
             current_model, 
             cfg, 
             cfg.training.expansion_factor
         ).to(device)
         
         # Test if cloning is successful 
-        train_success, train_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)
+        train_success, train_cloning_r2 = test_activation_cloning(current_model, cloned_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)
         
-        val_success, val_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3, model_name=cfg.model.name)
+        val_success, val_cloning_r2 = test_activation_cloning(current_model, cloned_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3, model_name=cfg.model.name)
         print(f"✓ Epoch {epoch}: Cloning validation successful - activations match between models")
 
 
@@ -280,27 +280,27 @@ def train_cloning_experiment(original_model,
                 "epoch": epoch,
                 "global_epoch": global_epoch,
                 "model_type": cfg.model.name,
-                f"expanded_{current_expansion}x_train/success": float(train_success),
-                f"expanded_{current_expansion}x_train/cloning_r2": sum(train_cloning_r2.values())/len(train_cloning_r2),
-                f"expanded_{current_expansion}x_val/success": float(val_success),
-                f"expanded_{current_expansion}x_val/cloning_r2": sum(val_cloning_r2.values())/len(val_cloning_r2),
+                f"cloned_{curr_expansion_factor}x_train/success": float(train_success),
+                f"cloned_{curr_expansion_factor}x_train/cloning_r2": sum(train_cloning_r2.values())/len(train_cloning_r2),
+                f"cloned_{curr_expansion_factor}x_val/success": float(val_success),
+                f"cloned_{curr_expansion_factor}x_val/cloning_r2": sum(val_cloning_r2.values())/len(val_cloning_r2),
             }
             for k,v in train_cloning_r2.items():
-                similarity_log[f"expanded_{current_expansion}x_train/cloning_r2/{k}"] = v
-                similarity_log[f"expanded_{current_expansion}x_val/cloning_r2/{k}"] = val_cloning_r2[k]
+                similarity_log[f"cloned_{curr_expansion_factor}x_train/cloning_r2/{k}"] = v
+                similarity_log[f"cloned_{curr_expansion_factor}x_val/cloning_r2/{k}"] = val_cloning_r2[k]
             wandb.log(similarity_log)
         
-        # Create optimizer for expanded model
-        expanded_optimizer = create_optimizer(expanded_model, cfg)
-        expanded_criterion = nn.CrossEntropyLoss()
+        # Create optimizer for cloned model
+        cloned_optimizer = create_optimizer(cloned_model, cfg)
+        cloned_criterion = nn.CrossEntropyLoss()
         
-        # Create monitor for expanded model
-        expanded_monitor = NetworkMonitor(expanded_model, module_filter)
+        # Create monitor for cloned model
+        cloned_monitor = NetworkMonitor(cloned_model, module_filter)
         
-        # Create history for expanded model
-        expanded_history = {
-            'model_type': f'expanded_{current_expansion}x',
-            'expansion_factor': current_expansion,
+        # Create history for cloned model
+        cloned_history = {
+            'model_type': f'cloned_{curr_expansion_factor}x',
+            'expansion_factor': curr_expansion_factor,
             'epochs': [],
             'train_loss': [],
             'train_acc': [],
@@ -310,33 +310,33 @@ def train_cloning_experiment(original_model,
         }
         
         # Add to lists
-        models.append(expanded_model)
-        optimizers.append(expanded_optimizer)
-        monitors.append(expanded_monitor)
-        experiment_history['models'].append(expanded_history)
+        models.append(cloned_model)
+        optimizers.append(cloned_optimizer)
+        monitors.append(cloned_monitor)
+        experiment_history['models'].append(cloned_history)
         
         # Evaluate initial performance
-        exp_val_loss, exp_val_acc = evaluate_model(expanded_model, val_loader, expanded_criterion, device)
+        exp_val_loss, exp_val_acc = evaluate_model(cloned_model, val_loader, cloned_criterion, device)
         print(f"Initial performance - Val Loss: {exp_val_loss:.4f}, Val Acc: {exp_val_acc:.2f}%")
         
         # Record initial metrics
-        expanded_history['epochs'].append(0)
-        expanded_history['train_loss'].append(0)  # Placeholder
-        expanded_history['train_acc'].append(0)   # Placeholder
-        expanded_history['val_loss'].append(exp_val_loss)
-        expanded_history['val_acc'].append(exp_val_acc)
+        cloned_history['epochs'].append(0)
+        cloned_history['train_loss'].append(0)  # Placeholder
+        cloned_history['train_acc'].append(0)   # Placeholder
+        cloned_history['val_loss'].append(exp_val_loss)
+        cloned_history['val_acc'].append(exp_val_acc)
         
         # Compute initial metrics
         if fixed_train_batch is not None:
             compute_and_store_metrics(
-                expanded_model, 
-                expanded_monitor, 
-                expanded_history, 
+                cloned_model, 
+                cloned_monitor, 
+                cloned_history, 
                 0, 
-                f"expanded_{current_expansion}x_"
+                f"cloned_{curr_expansion_factor}x_"
             )
         
-        # Train the expanded model
+        # Train the cloned model
         start_time = time.time()
         for epoch in range(1, cfg.training.epochs_per_expansion + 1):
             # Train original model if tracking is enabled
@@ -348,24 +348,24 @@ def train_cloning_experiment(original_model,
                     current_model, val_loader, base_criterion, device
                 )
             
-            # Train expanded model
+            # Train cloned model
             exp_train_loss, exp_train_acc = train_epoch(
-                expanded_model, train_loader, expanded_criterion, expanded_optimizer, device
+                cloned_model, train_loader, cloned_criterion, cloned_optimizer, device
             )
             
-            # Evaluate expanded model
+            # Evaluate cloned model
             exp_val_loss, exp_val_acc = evaluate_model(
-                expanded_model, val_loader, expanded_criterion, device
+                cloned_model, val_loader, cloned_criterion, device
             )
             
-            # Record metrics for expanded model
-            expanded_history['epochs'].append(epoch)
-            expanded_history['train_loss'].append(exp_train_loss)
-            expanded_history['train_acc'].append(exp_train_acc)
-            expanded_history['val_loss'].append(exp_val_loss)
-            expanded_history['val_acc'].append(exp_val_acc)
+            # Record metrics for cloned model
+            cloned_history['epochs'].append(epoch)
+            cloned_history['train_loss'].append(exp_train_loss)
+            cloned_history['train_acc'].append(exp_train_acc)
+            cloned_history['val_loss'].append(exp_val_loss)
+            cloned_history['val_acc'].append(exp_val_acc)
             
-            # Global metrics (use expanded model)
+            # Global metrics (use cloned model)
             global_epoch += 1
             experiment_history['global_metrics']['epochs'].append(global_epoch)
             experiment_history['global_metrics']['train_loss'].append(exp_train_loss)
@@ -377,17 +377,17 @@ def train_cloning_experiment(original_model,
             if epoch % cfg.metrics.metrics_frequency == 0 or epoch == cfg.training.epochs_per_expansion:
                 if fixed_train_batch is not None:
                     # Reset monitors
-                    expanded_monitor.clear_data()
+                    cloned_monitor.clear_data()
                     if cfg.training.track_original:
                         base_monitor.clear_data()
                     
-                    # Compute metrics for expanded model
+                    # Compute metrics for cloned model
                     metrics_log = compute_and_store_metrics(
-                        expanded_model, 
-                        expanded_monitor, 
-                        expanded_history, 
+                        cloned_model, 
+                        cloned_monitor, 
+                        cloned_history, 
                         epoch, 
-                        f"expanded_{current_expansion}x_"
+                        f"cloned_{curr_expansion_factor}x_"
                     )
                     
                     # Compute metrics for original model if tracking
@@ -401,9 +401,9 @@ def train_cloning_experiment(original_model,
                         )
                     
                     # Test if cloning is still effective at the end of each epoch
-                    train_success, train_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    train_success, train_cloning_r2 = test_activation_cloning(current_model, cloned_model, fixed_train_batch, fixed_train_targets, model_name=cfg.model.name, tolerance=1e-3)
                     
-                    val_success, val_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    val_success, val_cloning_r2 = test_activation_cloning(current_model, cloned_model, fixed_val_batch, fixed_val_targets, model_name=cfg.model.name, tolerance=1e-3)
                     print(f"✓ Epoch {epoch}: Cloning training set: {train_success} validation success: {val_success} ")
 
 
@@ -412,22 +412,22 @@ def train_cloning_experiment(original_model,
                         similarity_log = {
                             "epoch": epoch,
                             "global_epoch": global_epoch,
-                            "model_type": expanded_history['model_type'],
-                            f"expanded_{current_expansion}x_train/success": float(train_success),
-                            f"expanded_{current_expansion}x_train/cloning_r2": sum(train_cloning_r2.values())/len(train_cloning_r2),
-                            f"expanded_{current_expansion}x_val/success": float(val_success),
-                            f"expanded_{current_expansion}x_val/cloning_r2": sum(val_cloning_r2.values())/len(val_cloning_r2),
+                            "model_type": cloned_history['model_type'],
+                            f"cloned_{curr_expansion_factor}x_train/success": float(train_success),
+                            f"cloned_{curr_expansion_factor}x_train/cloning_r2": sum(train_cloning_r2.values())/len(train_cloning_r2),
+                            f"cloned_{curr_expansion_factor}x_val/success": float(val_success),
+                            f"cloned_{curr_expansion_factor}x_val/cloning_r2": sum(val_cloning_r2.values())/len(val_cloning_r2),
                         }
                         for k,v in train_cloning_r2.items():
-                            similarity_log[f"expanded_{current_expansion}x_train/cloning_r2/{k}"] = v
-                            similarity_log[f"expanded_{current_expansion}x_val/cloning_r2/{k}"] = val_cloning_r2[k]
+                            similarity_log[f"cloned_{curr_expansion_factor}x_train/cloning_r2/{k}"] = v
+                            similarity_log[f"cloned_{curr_expansion_factor}x_val/cloning_r2/{k}"] = val_cloning_r2[k]
                         wandb.log(similarity_log)
 
                         # Store in history
                         metric_key = "cloning_test_success"
-                        if metric_key not in expanded_history['metrics_history']:
-                            expanded_history['metrics_history'][metric_key] = []
-                        expanded_history['metrics_history'][metric_key].append(1.0)
+                        if metric_key not in cloned_history['metrics_history']:
+                            cloned_history['metrics_history'][metric_key] = []
+                        cloned_history['metrics_history'][metric_key].append(1.0)
 
             
             # Log to wandb
@@ -435,8 +435,8 @@ def train_cloning_experiment(original_model,
                 log_data = {
                     "epoch": epoch,
                     "global_epoch": global_epoch,
-                    "model_type": expanded_history['model_type'],
-                    "expansion_factor": current_expansion,
+                    "model_type": cloned_history['model_type'],
+                    "expansion_factor": curr_expansion_factor,
                     "train_loss": exp_train_loss,
                     "train_acc": exp_train_acc,
                     "val_loss": exp_val_loss,
@@ -455,7 +455,7 @@ def train_cloning_experiment(original_model,
             
             # Print progress
             elapsed = time.time() - start_time
-            print(f'Expanded {current_expansion}x model - Epoch {epoch}/{cfg.training.epochs_per_expansion}, '
+            print(f'cloned {curr_expansion_factor}x model - Epoch {epoch}/{cfg.training.epochs_per_expansion}, '
                   f'Train Loss: {exp_train_loss:.4f}, Train Acc: {exp_train_acc:.2f}%, '
                   f'Val Loss: {exp_val_loss:.4f}, Val Acc: {exp_val_acc:.2f}%, '
                   f'Time: {elapsed:.2f}s')
@@ -465,8 +465,8 @@ def train_cloning_experiment(original_model,
                       f'Train Loss: {orig_train_loss:.4f}, Train Acc: {orig_train_acc:.2f}%, '
                       f'Val Loss: {orig_val_loss:.4f}, Val Acc: {orig_val_acc:.2f}%')
         
-        # Use this expanded model as the base for the next expansion
-        current_model = expanded_model
+        # Use this cloned model as the base for the next expansion
+        current_model = cloned_model
     
     return experiment_history
 
