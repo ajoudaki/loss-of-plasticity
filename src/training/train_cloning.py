@@ -342,12 +342,10 @@ def train_cloning_experiment(base_model,
         # Train the cloned model
         start_time = time.time()
         for epoch in range(1, cfg.training.epochs_per_expansion + 1):
-            if cfg.optimizer.name == "noisysgd":
-                cloned_optimizer.reset_scale(cfg.training.noise_scale)
             # Train original model if tracking is enabled
             if cfg.training.track_base:
                 orig_train_loss, orig_train_acc = train_epoch(
-                    current_model, train_loader, base_criterion, base_optimizer, device
+                    current_model, train_loader, base_criterion, base_optimizer, device, 'base'
                 )
                 orig_val_loss, orig_val_acc = evaluate_model(
                     current_model, val_loader, base_criterion, device
@@ -355,7 +353,7 @@ def train_cloning_experiment(base_model,
             
             # Train cloned model
             exp_train_loss, exp_train_acc = train_epoch(
-                cloned_model, train_loader, cloned_criterion, cloned_optimizer, device
+                cloned_model, train_loader, cloned_criterion, cloned_optimizer, device, 'cloned'
             )
             
             # Evaluate cloned model
@@ -483,7 +481,7 @@ def train_cloning_experiment(base_model,
     return experiment_history
 
 
-def train_epoch(model, dataloader, criterion, optimizer, device='cpu') -> Tuple[float, float]:
+def train_epoch(model, dataloader, criterion, optimizer, model_type, device='cpu') -> Tuple[float, float]:
     """Train model for one epoch and return average loss and accuracy."""
     model.train()
     running_loss = 0.0
@@ -501,8 +499,8 @@ def train_epoch(model, dataloader, criterion, optimizer, device='cpu') -> Tuple[
         optimizer.step()
         if isinstance(optimizer, NoisySGD):
             wandb.log({
-                "noise_scale": optimizer.get_noise_scale(),
-                "noise_decay": optimizer.noise_decay
+                f"{model_type}/noise_scale": optimizer.get_noise_scale(),
+                f"{model_type}/noise_decay": optimizer.noise_decay
             })
         
         running_loss += loss.item()
