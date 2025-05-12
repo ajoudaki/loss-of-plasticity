@@ -345,7 +345,7 @@ def train_cloning_experiment(base_model,
             # Train original model if tracking is enabled
             if cfg.training.track_base:
                 orig_train_loss, orig_train_acc = train_epoch(
-                    current_model, train_loader, base_criterion, base_optimizer, device, 'base'
+                    current_model, train_loader, base_criterion, base_optimizer, 'base', device, 
                 )
                 orig_val_loss, orig_val_acc = evaluate_model(
                     current_model, val_loader, base_criterion, device
@@ -353,7 +353,7 @@ def train_cloning_experiment(base_model,
             
             # Train cloned model
             exp_train_loss, exp_train_acc = train_epoch(
-                cloned_model, train_loader, cloned_criterion, cloned_optimizer, device, 'cloned'
+                cloned_model, train_loader, cloned_criterion, cloned_optimizer, 'cloned', device, 
             )
             
             # Evaluate cloned model
@@ -499,8 +499,8 @@ def train_epoch(model, dataloader, criterion, optimizer, model_type, device='cpu
         optimizer.step()
         if isinstance(optimizer, NoisySGD):
             wandb.log({
-                f"{model_type}/noise_scale": optimizer.get_noise_scale(),
-                f"{model_type}/noise_decay": optimizer.noise_decay
+                f"{model_type}_train/noise_scale": optimizer.get_noise_scale(),
+                f"{model_type}_train/noise_decay": optimizer.noise_decay
             })
         
         running_loss += loss.item()
