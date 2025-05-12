@@ -801,8 +801,8 @@ if __name__ == "__main__":
         SETTINGS.num_initial_tasks = 1 # Original MNIST
         SETTINGS.mlp_hidden_layers = [512, 512, 512] # Hidden layer sizes
         # MODIFIED: Increased num_permutation_tasks for more transitions to see persistence
-        SETTINGS.num_permutation_tasks = 20  # e.g., 3 additional permuted tasks (total 4 tasks, 3 transitions) 
-        SETTINGS.epochs_per_task = 1      # e.g., 5 epochs on each task
+        SETTINGS.num_permutation_tasks = 2  # e.g., 3 additional permuted tasks (total 4 tasks, 3 transitions) 
+        SETTINGS.epochs_per_task = 15      # e.g., 5 epochs on each task
     elif not SETTINGS.QUICK_TEST_MODE and SETTINGS.experiment_type == "Standard":
         SETTINGS.num_epochs_standard = 5 # As before
 
