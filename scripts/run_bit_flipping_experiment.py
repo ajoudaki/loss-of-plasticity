@@ -1,3 +1,11 @@
+import sys
+import os
+
+# Add the project root directory to sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,13 +14,25 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import random
 import time
+import wandb
 from typing import List, Tuple, Callable, Dict, Optional
+import hydra
+from omegaconf import DictConfig, OmegaConf
+import os
+import collections
 
-# Set random seeds for reproducibility
-seed = 42
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
+from src.config.utils import get_device, setup_wandb
+from src.utils.metrics import analyze_fixed_batch
+from src.utils.monitor import NetworkMonitor
+
+def set_seed(seed_value):
+    random.seed(seed_value)
+    np.random.seed(seed_value)
+    torch.manual_seed(seed_value)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed_value)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 class LTUActivation(torch.autograd.Function):
     """
@@ -38,21 +58,26 @@ class TargetNetwork(nn.Module):
     Target network with LTU activation as described in the paper.
     This network generates the target outputs for the Slowly-Changing Regression problem.
     """
-    def __init__(self, input_size: int, hidden_size: int, beta: float = 0.7):
+    def __init__(self, input_size: int, hidden_size: int, beta: float, device: torch.device):
         super(TargetNetwork, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.beta = beta
+        self.device = device
         
         # Initialize weights as -1 or 1 as specified in the paper
-        self.weights = torch.randint(0, 2, (hidden_size, input_size)).float() * 2 - 1
-        self.output_weights = torch.randint(0, 2, (1, hidden_size)).float() * 2 - 1
+        self.weights = (torch.randint(0, 2, (hidden_size, input_size), device=self.device).float() * 2 - 1)
+        self.output_weights = (torch.randint(0, 2, (1, hidden_size), device=self.device).float() * 2 - 1)
+        self.output_bias = torch.randint(0, 2, (1, ), dtype=torch.float, device=self.device)*2 - 1
+
         
         # Calculate thresholds for LTU units
-        self.S = torch.sum((self.weights < 0).float(), dim=1)
+        self.S = torch.sum((self.weights[:, :input_size-1] < 0).float(), dim=1) - 0.5*self.weights[:, -1]
         self.thresholds = (input_size * beta) - self.S
     
     def forward(self, x):
+        # Ensure input x is on the same device as the network's weights
+        x = x.to(self.device)
         # First layer with LTU activation
         pre_activation = torch.matmul(x, self.weights.t())
         hidden = torch.zeros_like(pre_activation)
@@ -60,7 +85,7 @@ class TargetNetwork(nn.Module):
             hidden[:, i] = LTUActivation.apply(pre_activation[:, i], self.thresholds[i])
         
         # Output layer (linear)
-        output = torch.matmul(hidden, self.output_weights.t())
+        output = torch.matmul(hidden, self.output_weights.t()) + self.output_bias
         return output
 
 class LearningNetwork(nn.Module):
@@ -103,7 +128,7 @@ class LearningNetwork(nn.Module):
         nn.init.zeros_(self.fc1.bias)
         nn.init.zeros_(self.fc2.bias)
     
-    def forward(self, x):
+    def forward(self, x, return_activation=False):
         # Apply first layer with specified activation
         if self.activation_name == 'relu':
             h = torch.relu(self.fc1(x))
@@ -120,13 +145,15 @@ class LearningNetwork(nn.Module):
         
         # Apply output layer (linear)
         output = self.fc2(h)
-        return output
+        if not return_activation: return output
+        else: return output, h
 
 def generate_bit_flipping_data(
     m: int,
     f: int,
     T: int,
-    n_examples: int
+    n_examples: int,
+    device: torch.device
 ) -> Tuple[torch.Tensor, List[int]]:
     """
     Generate data for the Slowly-Changing Regression problem.
@@ -143,10 +170,10 @@ def generate_bit_flipping_data(
             - List of indices where flips occurred
     """
     # Initialize inputs
-    inputs = torch.zeros(n_examples, m + 1)
+    inputs = torch.zeros(n_examples, m + 1, device=device)
     
     # Initialize the flipping bits (first f bits)
-    flipping_bits = torch.randint(0, 2, (f,)).float()
+    flipping_bits = torch.randint(0, 2, (f,), device=device).float()
     
     # Track where flips occur
     flip_indices = []
@@ -162,142 +189,179 @@ def generate_bit_flipping_data(
         inputs[i, :f] = flipping_bits
         
         # Set the random bits
-        inputs[i, f:m] = torch.randint(0, 2, (m - f,)).float()
+        inputs[i, f:m] = torch.randint(0, 2, (m - f,), device=device).float()
         
         # Set the bias bit (always 1)
         inputs[i, m] = 1.0
     
     return inputs, flip_indices
 
-def run_slowly_changing_regression_experiment(
-    m: int = 21,
-    f: int = 15,
-    hidden_size_target: int = 100,
-    hidden_size_learner: int = 5,
-    T: int = 10000,
-    n_examples: int = 3000000,
-    beta: float = 0.7,
-    activation: str = 'relu',
-    step_size: float = 0.01,
-    bin_size: int = 40000,
-    use_adam: bool = False,
-    weight_decay: float = 0.0,
-    use_shrink_perturb: bool = False,
-    noise_variance: float = 0.0,
-    continual_backprop: bool = False,
-    rho: float = 0.0,
-    maturity_threshold: int = 100,
-):
+
+
+@hydra.main(version_base=None, config_path="../conf", config_name="config_bit_flipping")
+def run_slowly_changing_regression_experiment_with_tracking(cfg: DictConfig) -> dict:
     """
-    Run the Slowly-Changing Regression experiment.
+    Run the Slowly-Changing Regression experiment using Hydra configuration.
     
     Args:
-        m: Number of input bits (excluding bias)
-        f: Number of flipping bits
-        hidden_size_target: Number of hidden units in the target network
-        hidden_size_learner: Number of hidden units in the learning network
-        T: Duration between bit flips
-        n_examples: Total number of examples
-        beta: Parameter for LTU threshold calculation
-        activation: Activation function for the learning network
-        step_size: Learning rate
-        bin_size: Number of examples per bin for error calculation
-        use_adam: Whether to use Adam optimizer
-        weight_decay: L2 regularization coefficient
-        use_shrink_perturb: Whether to use Shrink-and-Perturb
-        noise_variance: Variance of the noise for Shrink-and-Perturb
-        continual_backprop: Whether to use Continual Backpropagation
-        rho: Replacement rate for Continual Backpropagation
-        maturity_threshold: Maturity threshold for Continual Backpropagation
+        cfg: Hydra configuration object (contains _global_ key)
     
     Returns:
         Dictionary containing experiment results
     """
-    # Create target network
-    target_net = TargetNetwork(m + 1, hidden_size_target, beta)
+
+    if hasattr(cfg, '_global'):
+        cfg = cfg._global
+
+    use_wandb = setup_wandb(cfg)
+
+    print(OmegaConf.to_yaml(cfg))
+    set_seed(cfg.training.seed)
+    device = get_device(cfg.training.device)
+    print(f"Using device: {device}")
+
+
+    target_net = TargetNetwork(cfg.model.m + 1, cfg.model.hidden_size_target, cfg.model.beta, device)
+    learning_net = LearningNetwork(cfg.model.m + 1, cfg.model.hidden_size_learner, cfg.model.activation).to(device)
+    monitor = NetworkMonitor(learning_net)
     
-    # Create learning network
-    learning_net = LearningNetwork(m + 1, hidden_size_learner, activation)
-    
-    # Set up optimizer
-    if use_adam:
-        optimizer = optim.Adam(learning_net.parameters(), lr=step_size, weight_decay=weight_decay)
+    if cfg.optimizer.use_adam:
+        optimizer = optim.Adam(learning_net.parameters(), lr=cfg.optimizer.step_size, weight_decay=cfg.optimizer.weight_decay)
     else:
-        optimizer = optim.SGD(learning_net.parameters(), lr=step_size, weight_decay=weight_decay)
+        optimizer = optim.SGD(learning_net.parameters(), lr=cfg.optimizer.step_size, weight_decay=cfg.optimizer.weight_decay)
     
-    # Set up loss function
     criterion = nn.MSELoss()
     
-    # Generate data
     print("Generating data...")
-    inputs, flip_indices = generate_bit_flipping_data(m, f, T, n_examples)
-    
-    # Calculate targets using the target network
+    inputs, flip_indices_np = generate_bit_flipping_data(cfg.model.m, cfg.model.f, cfg.training.T, cfg.training.n_examples, device)
+    # 'inputs' is already on the correct device from generate_bit_flipping_data
+
     with torch.no_grad():
-        targets = target_net(inputs)
-    
-    # Arrays to store results
-    n_bins = n_examples // bin_size
-    squared_errors = np.zeros(n_bins)
-    
-    # Utility tracking for continual backpropagation
-    if continual_backprop:
+        y_target = target_net(inputs) # y_target will be on device as inputs and target_net are
+
+    # For analysis callback
+    fixed_inputs_analysis, fixed_y_target_analysis = None, None
+    if cfg.metrics.fixed_batch_size > 0:
+        indices = torch.randperm(inputs.size(0), device=device)[:cfg.metrics.fixed_batch_size]
+        fixed_inputs_analysis = inputs[indices] # Already on device
+        fixed_y_target_analysis = y_target[indices] # Already on device
+    else:
+        fixed_inputs_analysis = inputs
+        fixed_y_target_analysis = y_target
+
+
+     # Utility tracking for continual backpropagation
+    if cfg.training.continual_backprop:
         # Initialize utility tracking
-        fc1_utility = torch.zeros(hidden_size_learner)
-        fc1_activation_avg = torch.zeros(hidden_size_learner)
-        fc1_age = torch.zeros(hidden_size_learner)
+        fc1_utility = torch.zeros(cfg.model.hidden_size_learner, device=device)
+        fc1_activation_avg = torch.zeros(cfg.model.hidden_size_learner, dtype=torch.long, device=device)
+        fc1_age =  torch.zeros(cfg.model.hidden_size_learner, device=device)
         decay_rate = 0.99  # Decay rate for running averages
-    
-    # Training loop
+
+    # Shrink and Perturb: noise scaling factor if needed
+    if cfg.training.use_shrink_perturb:
+        noise_scale = cfg.training.noise_variance # Direct use, assuming it's standard deviation
+
+    # History and Metrics Storage
+    history = {
+        'global_metrics': {
+            'steps': [],
+            'loss_per_step': []
+        },
+        'binned_mean_squared_errors_log': [], 
+        'flip_indices': flip_indices_np.tolist() if isinstance(flip_indices_np, np.ndarray) else flip_indices_np,
+        'training_metrics_history': collections.defaultdict(lambda: collections.defaultdict(list))
+    }
+
+    # Define analyze_callback
+    def analyze_callback(current_step_idx, completed_bin_idx, metrics_log_dict, model_to_analyze, net_monitor, 
+                         fixed_inputs_for_analysis, fixed_targets_for_analysis, loss_criterion):
+        nonlocal history # Allow modification of the history dict
+        bin_start_step_inclusive = completed_bin_idx * cfg.training.bin_size
+        bin_end_step_exclusive = (completed_bin_idx + 1) * cfg.training.bin_size
+        
+        losses_for_bin = history['global_metrics']['loss_per_step'][bin_start_step_inclusive:bin_end_step_exclusive]
+        
+        mse_for_bin = np.mean(losses_for_bin)
+        history['binned_mean_squared_errors_log'].append(mse_for_bin)
+        print(f"\nBin {completed_bin_idx} Report (step {current_step_idx}): MSE = {mse_for_bin:.6f}") 
+        if metrics_log_dict is not None:
+            metrics_log_dict[f"train/mse_bin"] = mse_for_bin
+            # completed_bin_idx is already added to metrics_log_dict by the caller
+
+        # Call analyze_fixed_batch for more detailed metrics
+        detailed_metrics_output, activations_output, updated_metrics_log_dict = analyze_fixed_batch(
+            model=model_to_analyze,
+            monitor=net_monitor,
+            fixed_batch=fixed_inputs_for_analysis,
+            fixed_targets=fixed_targets_for_analysis,
+            criterion=loss_criterion,
+            dead_threshold=cfg.metrics.dead_threshold,
+            corr_threshold=cfg.metrics.corr_threshold,
+            saturation_threshold=cfg.metrics.saturation_threshold,
+            saturation_percentage=cfg.metrics.saturation_percentage,
+            gaussianity_method=cfg.metrics.gaussianity_method,
+            use_wandb=use_wandb, 
+            log_histograms=cfg.metrics.log_histograms,
+            prefix="train/", 
+            metrics_log=metrics_log_dict, # Pass the existing log dict to be updated
+            device=device,
+            seed=cfg.training.seed
+        )
+        return detailed_metrics_output, activations_output, updated_metrics_log_dict
+
     print("Starting training...")
-    for i in tqdm(range(n_examples)):
-        # Get current example
-        x = inputs[i].unsqueeze(0)
-        y = targets[i].unsqueeze(0)
+    # Training loop (example structure)
+    for i in tqdm(range(cfg.training.n_examples)):
+        x = inputs[i].unsqueeze(0)  # x is already on device
+        y_target_val = y_target[i].unsqueeze(0)  # y_target_val is already on device
+
+        # Forward pass: learning network
+        y_pred = learning_net(x)
         
-        # Forward pass
-        prediction = learning_net(x)
-        loss = criterion(prediction, y)
+        # Compute loss
+        loss = criterion(y_pred, y_target_val)
         
-        # Backward pass
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # Log per-step metrics to history
+        history['global_metrics']['steps'].append(i)
+        history['global_metrics']['loss_per_step'].append(loss.item())
         
-        # Apply shrink-and-perturb if enabled
-        if use_shrink_perturb:
+        # W&B per-step logging for basic loss (moved from end of loop)
+        if use_wandb:
+            wandb.log({"step": i, "train/loss_step": loss.item()}, step=i)
+
+        if cfg.training.use_shrink_perturb:
             with torch.no_grad():
                 for param in learning_net.parameters():
-                    # Add Gaussian noise to the weights
-                    if noise_variance > 0:
-                        param.add_(torch.randn_like(param) * np.sqrt(noise_variance))
+                    if noise_scale > 0:
+                        param.add_(torch.randn_like(param) * np.sqrt(noise_scale))
         
-        # Apply continual backpropagation if enabled
-        if continual_backprop and i > 0:
+
+        if cfg.training.continual_backprop and i > 0:
             with torch.no_grad():
-                # Update age
                 fc1_age += 1
+                # h_fc1 = learning_net.fc1(x)
+                _, h_act = learning_net(x, return_activation=True)
                 
-                # Get activations
-                h = learning_net.fc1(x)
-                if learning_net.activation_name == 'relu':
-                    h_act = torch.relu(h)
-                elif learning_net.activation_name == 'tanh':
-                    h_act = torch.tanh(h)
-                elif learning_net.activation_name == 'sigmoid':
-                    h_act = torch.sigmoid(h)
-                elif learning_net.activation_name == 'leaky_relu':
-                    h_act = torch.nn.functional.leaky_relu(h, negative_slope=0.01)
-                elif learning_net.activation_name == 'elu':
-                    h_act = torch.nn.functional.elu(h)
-                elif learning_net.activation_name == 'swish':
-                    h_act = h * torch.sigmoid(h)
+                # if cfg.model.activation == 'relu': h_act = torch.relu(h_fc1)
+                # elif cfg.model.activation == 'tanh': h_act = torch.tanh(h_fc1)
+                # elif cfg.model.activation == 'sigmoid': h_act = torch.sigmoid(h_fc1)
+                # elif cfg.model.activation == 'leaky_relu': h_act = torch.nn.functional.leaky_relu(h_fc1, negative_slope=0.01)
+                # elif cfg.model.activation == 'elu': h_act = torch.nn.functional.elu(h_fc1)
+                # elif cfg.model.activation == 'swish': h_act = h_fc1 * torch.sigmoid(h_fc1)
+                # else: raise ValueError(f"Unsupported activation for CBP: {cfg.model.activation}")
                 
+
                 # Update running average of activations
                 fc1_activation_avg = decay_rate * fc1_activation_avg + (1 - decay_rate) * h_act.squeeze(0)
                 bias_corrected_avg = fc1_activation_avg / (1 - decay_rate ** fc1_age)
                 
                 # Calculate contribution utility (mean-corrected)
+                # adaptable contribution
                 contribution = torch.abs(h_act.squeeze(0) - bias_corrected_avg) * torch.sum(torch.abs(learning_net.fc2.weight), dim=0)
                 
                 # Calculate adaptation utility (inverse of input weight magnitude)
@@ -309,21 +373,27 @@ def run_slowly_changing_regression_experiment(
                 bias_corrected_utility = fc1_utility / (1 - decay_rate ** fc1_age)
                 
                 # Find units to reinitialize
-                eligible_units = (fc1_age > maturity_threshold).nonzero().squeeze(-1)
-                if len(eligible_units) > 0 and rho > 0:
-                    num_units_to_replace = max(1, int(hidden_size_learner * rho))
+                eligible_units = (fc1_age > cfg.training.maturity_threshold).nonzero().squeeze(-1)
+                if len(eligible_units) > 0 and cfg.training.rho > 0:
+                    num_units_to_replace = max(1, int(cfg.model.hidden_size_learner * cfg.training.rho))
+                    
                     eligible_utilities = bias_corrected_utility[eligible_units]
-                    _, indices = torch.topk(eligible_utilities, min(len(eligible_units), hidden_size_learner), 
-                                           largest=False)
+                    _, indices = torch.topk(eligible_utilities, min(len(eligible_units), cfg.model.hidden_size_learner), largest=False)
+                    
                     units_to_replace = eligible_units[indices[:num_units_to_replace]]
                     
                     if len(units_to_replace) > 0:
                         # Reinitialize input weights
-                        if activation == 'relu':
+                        if cfg.model.activation == 'relu':
                             gain = nn.init.calculate_gain('relu')
                             fan_in = learning_net.fc1.weight.size(1)
                             bound = gain * np.sqrt(3.0 / fan_in)
                             nn.init.uniform_(learning_net.fc1.weight[units_to_replace], -bound, bound)
+                            nn.init.zeros_(learning_net.fc1.bias)
+                            #  Update bias to correct for the removed features and set the outgoing weights and ages to zero
+                            learning_net.fc2.bias += (learning_net.fc2.weight[:, units_to_replace] * \
+                                                bias_corrected_avg[units_to_replace]).sum(dim=1)
+                            learning_net.fc2.weight[:, units_to_replace] = 0
                         elif activation == 'tanh':
                             gain = nn.init.calculate_gain('tanh')
                             fan_in = learning_net.fc1.weight.size(1)
@@ -356,47 +426,38 @@ def run_slowly_changing_regression_experiment(
                         fc1_utility[units_to_replace] = 0
                         fc1_activation_avg[units_to_replace] = 0
                         fc1_age[units_to_replace] = 0
+
+
+        if (i + 1) % cfg.training.bin_size == 0:
+            completed_bin_idx = i // cfg.training.bin_size
+            metrics_for_log = {
+                "step": i,
+                "completed_bin_idx": completed_bin_idx
+            }
+            detailed_metrics, train_act_stats, metrics_log = analyze_callback(current_step_idx=i, 
+                             completed_bin_idx=completed_bin_idx, 
+                             metrics_log_dict=metrics_for_log,
+                             model_to_analyze=learning_net,
+                             net_monitor=monitor,
+                             fixed_inputs_for_analysis=fixed_inputs_analysis,
+                             fixed_targets_for_analysis=fixed_y_target_analysis,
+                             loss_criterion=criterion)
+            
+            # Store metrics in history
+            for layer_name, metrics in detailed_metrics.items():
+                for metric_name, value in metrics.items():
+                    history['training_metrics_history'][layer_name][metric_name].append(value)
+                
+
+            # metrics_log_dict is updated in-place by analyze_fixed_batch if use_wandb=True and metrics_log is provided
+            if use_wandb and metrics_log:
+                wandb.log(metrics_log, step=i) 
         
-        # Calculate squared error for current bin
-        bin_idx = i // bin_size
-        if bin_idx < n_bins:
-            with torch.no_grad():
-                squared_error = (prediction - y).pow(2).item()
-                squared_errors[bin_idx] += squared_error / bin_size
-    
-    return {
-        'squared_errors': squared_errors,
-        'bins': np.arange(n_bins) * bin_size,
-        'flip_indices': flip_indices
-    }
+    if use_wandb:
+        wandb.finish()
 
-def main():
-    # Example usage
-    print("Running Slowly-Changing Regression experiment with ReLU activation")
-    result_relu = run_slowly_changing_regression_experiment(
-        activation='relu',
-        step_size=0.01,
-        n_examples=500000,  # Reduced for faster execution
-        bin_size=10000
-    )
-    
-    # Plot results
-    plt.figure(figsize=(10, 6))
-    plt.plot(result_relu['bins'], result_relu['squared_errors'])
-    plt.xlabel('Example Number')
-    plt.ylabel('Mean Squared Error')
-    plt.title('Slowly-Changing Regression with ReLU Activation')
-    plt.grid(True)
-    
-    # Mark where bit flips occurred
-    for flip_idx in result_relu['flip_indices']:
-        if flip_idx < 500000:  # Only mark flips within the plot range
-            plt.axvline(x=flip_idx, color='r', linestyle='--', alpha=0.3)
-    
-    # plt.savefig('bit_flipping_result.png')
-    plt.show()
-    
-    print("Experiment complete. Results saved to bit_flipping_result.png")
+    return history
 
-if __name__ == "__main__":
-    main()
+
+if __name__ == '__main__':
+    run_slowly_changing_regression_experiment_with_tracking()

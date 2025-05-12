@@ -29,3 +29,5 @@ build/
 # Jupyter Lab
 .ipynb_checkpoints/
 .DS_Store
+
+notebooks/results_plasticity
