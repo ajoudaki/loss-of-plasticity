@@ -159,23 +159,37 @@ def setup_wandb(cfg: DictConfig) -> bool:
     """
     if cfg.use_wandb:
         # Prepare wandb config
-        wandb_config = OmegaConf.to_container(cfg, resolve=True)
+        # Set resolve=False to avoid issues with special Hydra interpolations like hydra.job.num
+        # W&B will log the config with unresolved interpolations as strings, which is acceptable.
+        wandb_config = OmegaConf.to_container(cfg, resolve=False)
         
         # Create a descriptive run name with the requested parameters
         model_name = cfg.model.name
-        dataset_name = cfg.dataset.name
-        training_type = cfg.training.training_type
+        if hasattr(cfg, "dataset"):
+            dataset_name = cfg.dataset.name
+        else:
+            dataset_name = "N/A"
+        
+        if hasattr(cfg, "training"):
+            training_type = cfg.training.training_type
+        else:
+            training_type = "N/A"
         
         # Initialize wandb with optional entity parameter and the created run name
         init_args = {
             "project": cfg.wandb_project,
-            "tags": cfg.wandb_tags + [training_type],
+            "tags": cfg.wandb_tags + [training_type], 
             "config": wandb_config,
         }
-        
+
         # Add entity parameter if it exists
         if hasattr(cfg.logging, "wandb_entity"):
             init_args["entity"] = cfg.logging.wandb_entity
+
+        
+        # Add entity parameter if it exists
+        if hasattr(cfg.logging, "wandb_run_name"):
+            init_args["name"] = cfg.logging.wandb_run_name
             
         wandb.init(**init_args)
         return True
