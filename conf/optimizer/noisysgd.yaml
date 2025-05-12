@@ -1,0 +1,10 @@
+# @package _global_.optimizer
+name: noisysgd
+lr: 0.01
+weight_decay: 0.0
+momentum: 0.9
+dampening: 0.0
+nesterov: false
+noise_scale: 0.01  # Scale of noise relative to gradient norm
+noise_decay: 0.99  # Decay rate for noise scale over time (1.0 = no decay)
+reinit_optimizer: false  # Flag for reinitializing optimizer
