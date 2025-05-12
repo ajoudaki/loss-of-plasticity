@@ -610,6 +610,8 @@ def test_activation_cloning(base_model, cloned_model, input, target, model_name=
                 assert False, f"Activations for {key} more than one dimension mismatch, this is unexpected behavior"
                     
         print(f"All {act_type} activations match after cloning up to tolerance {tolerance}")
+    overall_r2 = sum([r2 for key, r2 in cloning_r2.items() if 'forward' in key])/len(cloning_r2)
+    cloning_r2['mean'] = overall_r2
     return success, cloning_r2
     
 def expand_model(current_model, cfg, expansion_factor):
