@@ -268,9 +268,9 @@ def train_cloning_experiment(original_model,
         ).to(device)
         
         # Test if cloning is successful 
-        train_success, train_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)
+        train_success, train_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)
         
-        val_success, val_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3, model_name=cfg.model.name)
+        val_success, val_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3, model_name=cfg.model.name)
         print(f"✓ Epoch {epoch}: Cloning validation successful - activations match between models")
 
 
@@ -281,13 +281,13 @@ def train_cloning_experiment(original_model,
                 "global_epoch": global_epoch,
                 "model_type": cfg.model.name,
                 f"expanded_{current_expansion}x_train/success": float(train_success),
-                f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                f"expanded_{current_expansion}x_train/cloning_r2": sum(train_cloning_r2.values())/len(train_cloning_r2),
                 f"expanded_{current_expansion}x_val/success": float(val_success),
-                f"expanded_{current_expansion}x_val/unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+                f"expanded_{current_expansion}x_val/cloning_r2": sum(val_cloning_r2.values())/len(val_cloning_r2),
             }
-            for k,v in train_unexplained_var.items():
-                similarity_log[f"expanded_{current_expansion}x_train/unexplained_var/{k}"] = v
-                similarity_log[f"expanded_{current_expansion}x_val/unexplained_var/{k}"] = val_unexplained_var[k]
+            for k,v in train_cloning_r2.items():
+                similarity_log[f"expanded_{current_expansion}x_train/cloning_r2/{k}"] = v
+                similarity_log[f"expanded_{current_expansion}x_val/cloning_r2/{k}"] = val_cloning_r2[k]
             wandb.log(similarity_log)
         
         # Create optimizer for expanded model
@@ -401,9 +401,9 @@ def train_cloning_experiment(original_model,
                         )
                     
                     # Test if cloning is still effective at the end of each epoch
-                    train_success, train_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    train_success, train_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, model_name=cfg.model.name, tolerance=1e-3)
                     
-                    val_success, val_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    val_success, val_cloning_r2 = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, model_name=cfg.model.name, tolerance=1e-3)
                     print(f"✓ Epoch {epoch}: Cloning training set: {train_success} validation success: {val_success} ")
 
 
@@ -414,13 +414,13 @@ def train_cloning_experiment(original_model,
                             "global_epoch": global_epoch,
                             "model_type": expanded_history['model_type'],
                             f"expanded_{current_expansion}x_train/success": float(train_success),
-                            f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                            f"expanded_{current_expansion}x_train/cloning_r2": sum(train_cloning_r2.values())/len(train_cloning_r2),
                             f"expanded_{current_expansion}x_val/success": float(val_success),
-                            f"expanded_{current_expansion}x_val/unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+                            f"expanded_{current_expansion}x_val/cloning_r2": sum(val_cloning_r2.values())/len(val_cloning_r2),
                         }
-                        for k,v in train_unexplained_var.items():
-                            similarity_log[f"expanded_{current_expansion}x_train/unexplained_var/{k}"] = v
-                            similarity_log[f"expanded_{current_expansion}x_val/unexplained_var/{k}"] = val_unexplained_var[k]
+                        for k,v in train_cloning_r2.items():
+                            similarity_log[f"expanded_{current_expansion}x_train/cloning_r2/{k}"] = v
+                            similarity_log[f"expanded_{current_expansion}x_val/cloning_r2/{k}"] = val_cloning_r2[k]
                         wandb.log(similarity_log)
 
                         # Store in history
