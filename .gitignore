@@ -32,5 +32,6 @@ build/
 .ipynb_checkpoints/
 .DS_Store
 
+notebooks/results_plasticity
 # ignore claude generated files 
 **/CLAUDE.md 
