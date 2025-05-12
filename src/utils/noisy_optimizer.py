@@ -34,7 +34,7 @@ class NoisySGD(SGD):
         self.noise_decay = noise_decay
         self.steps = 0
         
-    def reset_scale(self, new_scale: float=None):
+    def reset_scale(self, new_scale: float):
         """
         Resets the noise scale to a new value.
         

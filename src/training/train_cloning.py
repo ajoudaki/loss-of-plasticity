@@ -12,7 +12,7 @@ from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch, create_module_filter
 from ..config.utils import create_optimizer
 from ..utils.cloning import expand_model, create_cloned_model, test_activation_cloning
-
+from ..utils.noisy_optimizer import NoisySGD
 
 def train_cloning_experiment(base_model, 
                            dataloaders, 
@@ -59,6 +59,9 @@ def train_cloning_experiment(base_model,
     base_model = base_model
     base_optimizer = create_optimizer(base_model, cfg)
     base_criterion = nn.CrossEntropyLoss()
+    # base model does not need noise 
+    if cfg.optimizer.name == "noisysgd": 
+        base_optimizer.reset_scale(0)
     
     # Create a filter function for metrics monitoring
     module_filter = create_module_filter(cfg.metrics.monitor_filters, cfg.model.name, cfg)
@@ -339,10 +342,8 @@ def train_cloning_experiment(base_model,
         # Train the cloned model
         start_time = time.time()
         for epoch in range(1, cfg.training.epochs_per_expansion + 1):
-            if cfg.optimizer.name == "noisy_sgd":
-                # Reset noise scale for noisy SGD
+            if cfg.optimizer.name == "noisysgd":
                 cloned_optimizer.reset_scale(cfg.training.noise_scale)
-            
             # Train original model if tracking is enabled
             if cfg.training.track_base:
                 orig_train_loss, orig_train_acc = train_epoch(
@@ -446,8 +447,10 @@ def train_cloning_experiment(base_model,
                     "val_loss": exp_val_loss,
                     "val_acc": exp_val_acc,
                 }
-                if cfg.optimizer.name == "noisy_sgd":
-                    log_data.update({
+                if cfg.optimizer.name == "noisysgd":
+                    wandb.log({
+                        "epoch": epoch,
+                        "global_epoch": global_epoch,
                         "noise_scale": cloned_optimizer.get_noise_scale(),
                         "noise_decay": cloned_optimizer.noise_decay
                     })
@@ -496,6 +499,11 @@ def train_epoch(model, dataloader, criterion, optimizer, device='cpu') -> Tuple[
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
+        if isinstance(optimizer, NoisySGD):
+            wandb.log({
+                "noise_scale": optimizer.get_noise_scale(),
+                "noise_decay": optimizer.noise_decay
+            })
         
         running_loss += loss.item()
         _, predicted = outputs.max(1)
