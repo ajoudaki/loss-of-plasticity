@@ -339,6 +339,10 @@ def train_cloning_experiment(base_model,
         # Train the cloned model
         start_time = time.time()
         for epoch in range(1, cfg.training.epochs_per_expansion + 1):
+            if cfg.optimizer.name == "noisy_sgd":
+                # Reset noise scale for noisy SGD
+                cloned_optimizer.reset_scale(cfg.training.noise_scale)
+            
             # Train original model if tracking is enabled
             if cfg.training.track_base:
                 orig_train_loss, orig_train_acc = train_epoch(
