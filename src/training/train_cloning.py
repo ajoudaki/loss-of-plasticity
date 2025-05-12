@@ -444,8 +444,13 @@ def train_cloning_experiment(base_model,
                     "train_loss": exp_train_loss,
                     "train_acc": exp_train_acc,
                     "val_loss": exp_val_loss,
-                    "val_acc": exp_val_acc
+                    "val_acc": exp_val_acc,
                 }
+                if cfg.optimizer.name == "noisy_sgd":
+                    log_data.update({
+                        "noise_scale": cloned_optimizer.get_noise_scale(),
+                        "noise_decay": cloned_optimizer.noise_decay
+                    })
                 
                 if cfg.training.track_base:
                     log_data.update({
