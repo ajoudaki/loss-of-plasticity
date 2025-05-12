@@ -12,7 +12,7 @@ def setup_path():
     This allows importing modules from the src directory.
     """
     # Get the absolute path of the parent directory (project root)
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     
     # Add to path if not already there
     if project_root not in sys.path:

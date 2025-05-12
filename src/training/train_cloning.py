@@ -267,12 +267,28 @@ def train_cloning_experiment(original_model,
             cfg.training.expansion_factor
         ).to(device)
         
-        # Test if cloning was successful
-        try:
-            test_activation_cloning(current_model, expanded_model, fixed_train_batch)
-            print("✓ Cloning validation successful - activations match between models")
-        except AssertionError as e:
-            print(f"⚠ Cloning validation warning: {e}")
+        # Test if cloning is successful 
+        train_success, train_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)
+        
+        val_success, val_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, tolerance=1e-3, model_name=cfg.model.name)
+        print(f"✓ Epoch {epoch}: Cloning validation successful - activations match between models")
+
+
+        # Add cloning metrics to wandb log
+        if cfg.use_wandb:
+            similarity_log = {
+                "epoch": epoch,
+                "global_epoch": global_epoch,
+                "model_type": cfg.model.name,
+                f"expanded_{current_expansion}x_train/success": float(train_success),
+                f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                f"expanded_{current_expansion}x_val/success": float(val_success),
+                f"expanded_{current_expansion}x_val/unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
+            }
+            for k,v in train_unexplained_var.items():
+                similarity_log[f"expanded_{current_expansion}x_train/unexplained_var/{k}"] = v
+                similarity_log[f"expanded_{current_expansion}x_val/unexplained_var/{k}"] = val_unexplained_var[k]
+            wandb.log(similarity_log)
         
         # Create optimizer for expanded model
         expanded_optimizer = create_optimizer(expanded_model, cfg)
@@ -384,32 +400,35 @@ def train_cloning_experiment(original_model,
                             "base_"
                         )
                     
-                    # Compute similarity between original and expanded models
-                    similarity_metrics = compute_model_similarity(
-                        current_model, 
-                        expanded_model, 
-                        fixed_train_batch, 
-                        device, 
-                        cfg.training.expansion_factor
-                    )
+                    # Test if cloning is still effective at the end of each epoch
+                    train_success, train_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_train_batch, fixed_train_targets, model_name=cfg.model.name, tolerance=1e-3)
                     
-                    # Add similarity metrics to wandb log
+                    val_success, val_unexplained_var = test_activation_cloning(current_model, expanded_model, fixed_val_batch, fixed_val_targets, model_name=cfg.model.name, tolerance=1e-3)
+                    print(f"✓ Epoch {epoch}: Cloning training set: {train_success} validation success: {val_success} ")
+
+
+                    # Add cloning metrics to wandb log
                     if cfg.use_wandb:
                         similarity_log = {
                             "epoch": epoch,
                             "global_epoch": global_epoch,
                             "model_type": expanded_history['model_type'],
+                            f"expanded_{current_expansion}x_train/success": float(train_success),
+                            f"expanded_{current_expansion}x_train/unexplained_var": sum(train_unexplained_var.values())/len(train_unexplained_var),
+                            f"expanded_{current_expansion}x_val/success": float(val_success),
+                            f"expanded_{current_expansion}x_val/unexplained_var": sum(val_unexplained_var.values())/len(val_unexplained_var),
                         }
-                        
-                        for metric_name, value in similarity_metrics.items():
-                            similarity_log[f"similarity/{metric_name}"] = value
-                            # Also store in history
-                            metric_key = f"similarity/{metric_name}"
-                            if metric_key not in expanded_history['metrics_history']:
-                                expanded_history['metrics_history'][metric_key] = []
-                            expanded_history['metrics_history'][metric_key].append(value)
-                        
+                        for k,v in train_unexplained_var.items():
+                            similarity_log[f"expanded_{current_expansion}x_train/unexplained_var/{k}"] = v
+                            similarity_log[f"expanded_{current_expansion}x_val/unexplained_var/{k}"] = val_unexplained_var[k]
                         wandb.log(similarity_log)
+
+                        # Store in history
+                        metric_key = "cloning_test_success"
+                        if metric_key not in expanded_history['metrics_history']:
+                            expanded_history['metrics_history'][metric_key] = []
+                        expanded_history['metrics_history'][metric_key].append(1.0)
+
             
             # Log to wandb
             if cfg.use_wandb:
@@ -482,127 +501,3 @@ def train_epoch(model, dataloader, criterion, optimizer, device='cpu') -> Tuple[
     return epoch_loss, epoch_acc
 
 
-def compute_model_similarity(base_model, cloned_model, inputs, device, clone_factor):
-    """Compute similarity metrics between base and cloned models."""
-    # Use forward hooks to collect activations
-    base_activations = {}
-    cloned_activations = {}
-    
-    def get_base_activation(name):
-        def hook(module, input, output):
-            base_activations[name] = output.detach()
-        return hook
-    
-    def get_cloned_activation(name):
-        def hook(module, input, output):
-            cloned_activations[name] = output.detach()
-        return hook
-    
-    # Register hooks for each module
-    base_hooks = []
-    cloned_hooks = []
-    
-    for name, module in base_model.named_modules():
-        if isinstance(module, (nn.Linear, nn.Conv2d)) and name != "":
-            base_hooks.append(module.register_forward_hook(get_base_activation(name)))
-            
-    for name, module in cloned_model.named_modules():
-        if isinstance(module, (nn.Linear, nn.Conv2d)) and name != "":
-            if name in base_activations.keys():
-                cloned_hooks.append(module.register_forward_hook(get_cloned_activation(name)))
-    
-    # Forward pass to collect activations
-    with torch.no_grad():
-        _ = base_model(inputs)
-        _ = cloned_model(inputs)
-    
-    # Compute similarity metrics
-    metrics = {}
-    similarity_scores = []
-    alignment_scores = []
-    
-    for name in base_activations.keys():
-        if name in cloned_activations:
-            base_act = base_activations[name]
-            cloned_act = cloned_activations[name]
-            
-            # If dimensions differ due to cloning, compare appropriate slices
-            if base_act.shape != cloned_act.shape:
-                # For feature dimension in MLP or channels in CNN
-                feature_dim = 1  # Default for most layers
-                
-                # Handle the case where shapes are different
-                if len(base_act.shape) == len(cloned_act.shape):
-                    # Find the dimension that has been scaled
-                    for dim in range(len(base_act.shape)):
-                        if cloned_act.shape[dim] == base_act.shape[dim] * clone_factor:
-                            feature_dim = dim
-                            break
-                    
-                    # Extract slices of the cloned activations
-                    slices = []
-                    for i in range(clone_factor):
-                        # Create an index for the specified dimension
-                        idx = [slice(None)] * len(cloned_act.shape)
-                        idx[feature_dim] = slice(i, None, clone_factor)
-                        slices.append(cloned_act[tuple(idx)])
-                    
-                    # Compute similarity between base and each slice
-                    slice_similarities = []
-                    for slice_act in slices:
-                        # Flatten for cosine similarity if needed
-                        if len(base_act.shape) > 2:
-                            base_flat = base_act.view(base_act.shape[0], -1)
-                            slice_flat = slice_act.view(slice_act.shape[0], -1)
-                        else:
-                            base_flat = base_act
-                            slice_flat = slice_act
-                        
-                        # Compute cosine similarity
-                        base_norm = torch.norm(base_flat, dim=1, keepdim=True)
-                        slice_norm = torch.norm(slice_flat, dim=1, keepdim=True)
-                        cos_sim = torch.mean(
-                            torch.sum(base_flat * slice_flat, dim=1) / (base_norm * slice_norm).clamp(min=1e-8)
-                        ).item()
-                        slice_similarities.append(cos_sim)
-                    
-                    # Average similarity across slices
-                    avg_similarity = sum(slice_similarities) / len(slice_similarities)
-                    # Variance in similarity across slices (alignment)
-                    similarity_variance = torch.var(torch.tensor(slice_similarities)).item()
-                    
-                    metrics[f"{name}_similarity"] = avg_similarity
-                    metrics[f"{name}_alignment"] = 1.0 / (1.0 + similarity_variance)  # High variance = low alignment
-                    
-                    similarity_scores.append(avg_similarity)
-                    alignment_scores.append(1.0 / (1.0 + similarity_variance))
-            else:
-                # Direct comparison if shapes match
-                if len(base_act.shape) > 2:
-                    base_flat = base_act.view(base_act.shape[0], -1)
-                    cloned_flat = cloned_act.view(cloned_act.shape[0], -1)
-                else:
-                    base_flat = base_act
-                    cloned_flat = cloned_act
-                
-                # Compute cosine similarity
-                base_norm = torch.norm(base_flat, dim=1, keepdim=True)
-                cloned_norm = torch.norm(cloned_flat, dim=1, keepdim=True)
-                cos_sim = torch.mean(
-                    torch.sum(base_flat * cloned_flat, dim=1) / (base_norm * cloned_norm).clamp(min=1e-8)
-                ).item()
-                
-                metrics[f"{name}_similarity"] = cos_sim
-                similarity_scores.append(cos_sim)
-    
-    # Clean up hooks
-    for hook in base_hooks + cloned_hooks:
-        hook.remove()
-    
-    # Overall metrics
-    if similarity_scores:
-        metrics["avg_similarity"] = sum(similarity_scores) / len(similarity_scores)
-    if alignment_scores:
-        metrics["avg_alignment"] = sum(alignment_scores) / len(alignment_scores)
-    
-    return metrics

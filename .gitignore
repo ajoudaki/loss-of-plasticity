@@ -6,6 +6,7 @@ artifacts/
 
 # data
 **/data/
+**/cifar_data/
 **/iframe_figures/
 **/results/
 **/saved_models/
@@ -13,6 +14,7 @@ artifacts/
 **/out/
 **/outputs/
 **/multirun/
+**/*.csv
 
 # Python
 *.pyc
@@ -31,3 +33,5 @@ build/
 .DS_Store
 
 notebooks/results_plasticity
+# ignore claude generated files 
+**/CLAUDE.md 
