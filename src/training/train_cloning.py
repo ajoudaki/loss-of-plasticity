@@ -481,7 +481,7 @@ def train_cloning_experiment(base_model,
     return experiment_history
 
 
-def train_epoch(model, dataloader, criterion, optimizer, model_type, cfg) -> Tuple[float, float]:
+def train_epoch(model, dataloader, criterion, optimizer, model_type, device) -> Tuple[float, float]:
     """Train model for one epoch and return average loss and accuracy."""
     model.train()
     running_loss = 0.0
@@ -490,7 +490,7 @@ def train_epoch(model, dataloader, criterion, optimizer, model_type, cfg) -> Tup
     batch_count = 0
     
     for inputs, targets in dataloader:
-        inputs, targets = inputs.to(cfg.training.device), targets.to(cfg.training.device)
+        inputs, targets = inputs.to(device), targets.to(device)
         
         optimizer.zero_grad()
         outputs = model(inputs)
