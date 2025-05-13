@@ -274,8 +274,7 @@ def run_slowly_changing_regression_experiment_with_tracking(cfg: DictConfig) -> 
     }
 
     # Define analyze_callback
-    def analyze_callback(current_step_idx, completed_bin_idx, metrics_log_dict, model_to_analyze, net_monitor, 
-                         fixed_inputs_for_analysis, fixed_targets_for_analysis, loss_criterion):
+    def analyze_callback(current_step_idx, completed_bin_idx, metrics_log_dict, model_to_analyze, net_monitor, fixed_inputs_for_analysis, fixed_targets_for_analysis, loss_criterion):
         nonlocal history # Allow modification of the history dict
         bin_start_step_inclusive = completed_bin_idx * cfg.training.bin_size
         bin_end_step_exclusive = (completed_bin_idx + 1) * cfg.training.bin_size
@@ -435,7 +434,7 @@ def run_slowly_changing_regression_experiment_with_tracking(cfg: DictConfig) -> 
                 "completed_bin_idx": completed_bin_idx
             }
             detailed_metrics, train_act_stats, metrics_log = analyze_callback(current_step_idx=i, 
-                             completed_bin_idx=completed_bin_idx, 
+            completed_bin_idx=completed_bin_idx, 
                              metrics_log_dict=metrics_for_log,
                              model_to_analyze=learning_net,
                              net_monitor=monitor,
@@ -444,9 +443,9 @@ def run_slowly_changing_regression_experiment_with_tracking(cfg: DictConfig) -> 
                              loss_criterion=criterion)
             
             # Store metrics in history
-            for layer_name, metrics in detailed_metrics.items():
-                for metric_name, value in metrics.items():
-                    history['training_metrics_history'][layer_name][metric_name].append(value)
+            # for layer_name, metrics in detailed_metrics.items():
+            #     for metric_name, value in metrics.items():
+            #         history['training_metrics_history'][layer_name][metric_name].append(value)
                 
 
             # metrics_log_dict is updated in-place by analyze_fixed_batch if use_wandb=True and metrics_log is provided
