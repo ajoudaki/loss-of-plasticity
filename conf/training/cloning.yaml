@@ -4,7 +4,7 @@ training_type: "cloning"
 initial_epochs: 5  # How many epochs to train the base model
 
 # Expansion parameters
-epochs_per_expansion: 10  # How many epochs to train each expanded model
+epochs_per_expansion: 20  # How many epochs to train each expanded model
 expansion_factor: 2  # Factor to expand model size (e.g., 2 = double the size)
 num_expansions: 1  # Number of expansions to perform (1 = just base + 1 expansion)
 
