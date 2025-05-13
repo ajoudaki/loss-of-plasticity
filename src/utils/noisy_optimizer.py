@@ -30,8 +30,26 @@ class NoisySGD(SGD):
                  momentum=0, dampening=0, weight_decay=0, nesterov=False):
         super().__init__(params, lr, momentum, dampening, weight_decay, nesterov)
         self.noise_scale = noise_scale
+        self.current_noise_scale = noise_scale
         self.noise_decay = noise_decay
         self.steps = 0
+        
+    def reset_scale(self, new_scale: float):
+        """
+        Resets the noise scale to a new value.
+        
+        Args:
+            new_scale: The new scale for the noise
+        """
+        if new_scale is not None:
+            self.noise_scale = new_scale
+        else:
+            self.noise_scale = 1
+        self.steps = 0
+        
+    def get_noise_scale(self) -> float:
+        current_noise_scale = self.noise_scale * self.noise_decay ** self.steps 
+        return current_noise_scale
         
     def step(self, closure=None):
         """
@@ -45,7 +63,7 @@ class NoisySGD(SGD):
             loss = closure()
         
         # Calculate current noise scale with decay
-        current_noise_scale = self.noise_scale * (self.noise_decay ** self.steps)
+        current_noise_scale = self.noise_scale * self.noise_decay ** self.steps
         self.steps += 1
         
         for group in self.param_groups:
