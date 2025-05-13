@@ -12,6 +12,8 @@ defaults:
 # Logging defaults
 logging:
   summary: true
+  wandb_entity: "loss-of-plasticity"
+  wandb_run_name: 
 
 # Execution mode
 use_wandb: true
