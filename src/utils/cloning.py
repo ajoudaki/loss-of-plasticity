@@ -558,7 +558,7 @@ def test_activation_cloning(base_model, cloned_model, input, target, model_name=
         print("Outputs do not match after cloning")
         success = False 
 
-    un_explained_vars = dict()
+    cloning_r2 = dict()
     for act_type in ['forward', 'backward']:
         if act_type == 'forward':
             base_acts = base_monitor.get_latest_activations()
@@ -597,21 +597,24 @@ def test_activation_cloning(base_model, cloned_model, input, target, model_name=
                 slices = torch.stack(slices)
                 if slices.shape[0]>1:
                     print(f"slices for {key} shape = {slices.shape}")
-                    var, var_all = slices.std(dim=0), slices.std()
-                    unexplained = ((var)/(var_all+eps)).mean().item()
-                    print(f"unexplained variance for {key} is {unexplained}")
-                    un_explained_vars[f'{key}_{act_type}'] = unexplained
-                    if unexplained>tolerance:
-                        print(f"unexplained variance is higher than the threshold {tolerance}")
+                    var, var_all = slices.std(dim=0), a2.std(dim=i, keepdim=True)
+                    # cloning r2 = 1 - un explained variance
+                    r2 = 1 - ((var)/(var_all+eps)).mean().item()
+                    print(f"r2 score {key} {act_type} activations is {r2}")
+                    cloning_r2[f'{key}_{act_type}'] = r2
+                    if r2<1-tolerance:
+                        print(f"r2 is lower than the threshold: 1-{tolerance}")
                         success = False 
 
             elif len(i)>1:
                 assert False, f"Activations for {key} more than one dimension mismatch, this is unexpected behavior"
                     
         print(f"All {act_type} activations match after cloning up to tolerance {tolerance}")
-    return success, un_explained_vars
+    overall_r2 = sum([r2 for key, r2 in cloning_r2.items() if 'forward' in key])/len(cloning_r2)
+    cloning_r2['mean'] = overall_r2
+    return success, cloning_r2
     
-def create_cloned_model(current_model, cfg, expansion_factor):
+def expand_model(current_model, cfg, expansion_factor):
     """
     Create an expanded model by cloning the current model with an expansion factor.
     
@@ -684,10 +687,16 @@ def create_cloned_model(current_model, cfg, expansion_factor):
     else:
         raise ValueError(f"Unsupported model type for cloning: {model_name}")
     
-    # Clone parameters from the current model to the expanded model
-    expanded_model = model_clone(current_model, expanded_model)
-    
     return expanded_model
+
+
+def create_cloned_model(current_model, cfg, expansion_factor):
+    # Clone parameters from the current model to the expanded model
+    expanded_model = expand_model(current_model, cfg, expansion_factor)
+    expanded_model = model_clone(current_model, expanded_model)
+    return expanded_model
+    
+    
 
 
 def test_various_models_cloning(normalization='none', drpout_p=0.0, activation='relu', tolerance=1e-3,check_equality=False):
