@@ -42,7 +42,7 @@ training:
   device: "cpu"             # "cuda" or "cpu"
   T: 10000                  # Duration between bit flips
   n_examples: 3000000       # Total number of examples
-  bin_size: 20000           # Number of examples per bin for error calculation
+  bin_size: 1000           # Number of examples per bin for error calculation
   continual_backprop: false # Whether to use Continual Backpropagation
   rho: 1e-4                  # Replacement rate for Continual Backpropagation (proportion of eligible neurons)
   maturity_threshold: 100   # Maturity threshold for Continual Backpropagation (steps)
