@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Define arrays for each parameter that varies
-models=("mlp")
+models=("mlp" "cnn" "vit" "resnet")
 normalizations=("batch" "layer" "none")
 dropout_values=("0")
 seeds=("41" "42" "43")
 optimizers=("noisysgd")
-noise_scales=("0" "0.01" "0.02")
+noise_scales=("0.01" "0.02")
 noise_decays=("0" "0.9" "0.99" "0.999")
 learning_rates=("0.01")  # Added learning rate grid
 
