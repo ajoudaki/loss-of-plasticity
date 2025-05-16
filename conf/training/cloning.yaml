@@ -10,6 +10,7 @@ num_expansions: 1  # Number of expansions to perform (1 = just base + 1 expansio
 
 # General parameters
 batch_size: 128
+num_workers: 2
 no_augment: false
 early_stopping_steps: 0
 seed: 42
