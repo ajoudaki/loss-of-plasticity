@@ -70,49 +70,49 @@ def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, num
         train_subset = Subset(current_dataset, train_indices)
         val_subset = Subset(current_dataset, val_indices)
         
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=2)
         
         # Fixed batches for metrics
         fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
         fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
         
-        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=2)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=2)
         
         # For previous tasks (old classes)
-        old_loaders = {}
-        if task_id > 0:
-            old_classes = all_seen_classes - current_classes
-            if old_classes:
-                old_dataset = SubsetDataset(dataset, list(old_classes))
-                old_size = len(old_dataset)
-                old_indices = list(range(old_size))
-                random.shuffle(old_indices)
+        # old_loaders = {}
+        # if task_id > 0:
+        #     old_classes = all_seen_classes - current_classes
+        #     if old_classes:
+        #         old_dataset = SubsetDataset(dataset, list(old_classes))
+        #         old_size = len(old_dataset)
+        #         old_indices = list(range(old_size))
+        #         random.shuffle(old_indices)
                 
-                old_train_size = int((1 - val_split) * old_size)
-                old_train_indices = old_indices[:old_train_size]
-                old_val_indices = old_indices[old_train_size:]
+        #         old_train_size = int((1 - val_split) * old_size)
+        #         old_train_indices = old_indices[:old_train_size]
+        #         old_val_indices = old_indices[old_train_size:]
                 
-                old_train_subset = Subset(old_dataset, old_train_indices)
-                old_val_subset = Subset(old_dataset, old_val_indices)
+        #         old_train_subset = Subset(old_dataset, old_train_indices)
+        #         old_val_subset = Subset(old_dataset, old_val_indices)
                 
-                old_train_loader = DataLoader(old_train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-                old_val_loader = DataLoader(old_val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        #         old_train_loader = DataLoader(old_train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        #         old_val_loader = DataLoader(old_val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
                 
-                # Fixed old batches for metrics
-                fixed_old_train = Subset(old_train_subset, range(min(500, len(old_train_subset))))
-                fixed_old_val = Subset(old_val_subset, range(min(500, len(old_val_subset))))
+        #         # Fixed old batches for metrics
+        #         fixed_old_train = Subset(old_train_subset, range(min(500, len(old_train_subset))))
+        #         fixed_old_val = Subset(old_val_subset, range(min(500, len(old_val_subset))))
                 
-                fixed_old_train_loader = DataLoader(fixed_old_train, batch_size=batch_size, shuffle=False)
-                fixed_old_val_loader = DataLoader(fixed_old_val, batch_size=batch_size, shuffle=False)
+        #         fixed_old_train_loader = DataLoader(fixed_old_train, batch_size=batch_size, shuffle=False)
+        #         fixed_old_val_loader = DataLoader(fixed_old_val, batch_size=batch_size, shuffle=False)
                 
-                old_loaders = {
-                    'train': old_train_loader,
-                    'val': old_val_loader,
-                    'fixed_train': fixed_old_train_loader,
-                    'fixed_val': fixed_old_val_loader
-                }
+        #         old_loaders = {
+        #             'train': old_train_loader,
+        #             'val': old_val_loader,
+        #             'fixed_train': fixed_old_train_loader,
+        #             'fixed_val': fixed_old_val_loader
+        #         }
         
         # Store the dataloaders for this task
         dataloaders[task_id] = {
@@ -123,7 +123,7 @@ def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, num
                 'fixed_val': fixed_val_loader,
                 'classes': classes
             },
-            'old': old_loaders
+            # 'old': old_loaders
         }
         
         # Update the set of all seen classes
@@ -436,15 +436,15 @@ def create_task_dataloaders(
     task_dataloaders = {}
     
     for task_id, (train_subset, val_subset) in enumerate(zip(partitioned_train_datasets, partitioned_val_datasets)):
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers, multiprocessing_context='fork')
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, multiprocessing_context='fork')
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=2)
         
         # Fixed batches for metrics
         fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
         fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
         
-        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size,  num_workers=num_workers, shuffle=False)
-        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size,  num_workers=num_workers, shuffle=False)
+        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size,  num_workers=num_workers, shuffle=False, pin_memory=True, prefetch_factor=2)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size,  num_workers=num_workers, shuffle=False, pin_memory=True, prefetch_factor=2)
         
         task_dataloaders[task_id] = {
             'train': train_loader,
