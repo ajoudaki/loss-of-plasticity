@@ -187,6 +187,7 @@ class TrainingConfig:
     reset: bool = False  # Reset model weights before training on each new task
     seed: int = 42
     device: Optional[str] = None  # 'cuda', 'cpu', or 'mps'
+    compile: bool = False  # Whether to use torch.compile to optimize the model
     # Task configuration (formerly in TaskConfig)
     tasks: int = 10  # Number of tasks
     classes_per_task: int = 2  # Classes per task

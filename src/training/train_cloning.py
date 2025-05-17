@@ -55,6 +55,11 @@ def train_cloning_experiment(base_model,
     histories = []
     monitors = []
     
+    # Compile the base model if requested
+    if cfg.training.compile:
+        print("Compiling base model with torch.compile()...")
+        base_model = torch.compile(base_model)
+    
     # Start with the base model
     base_model = base_model
     base_optimizer = create_optimizer(base_model, cfg)
@@ -269,6 +274,11 @@ def train_cloning_experiment(base_model,
             cfg, 
             cfg.training.expansion_factor
         ).to(device)
+        
+        # Compile the cloned model if requested
+        if cfg.training.compile:
+            print(f"Compiling cloned {curr_expansion_factor}x model with torch.compile()...")
+            cloned_model = torch.compile(cloned_model)
         
         # Test if cloning is successful 
         train_success, train_cloning_r2 = test_activation_cloning(current_model, cloned_model, fixed_train_batch, fixed_train_targets, tolerance=1e-3, model_name=cfg.model.name)

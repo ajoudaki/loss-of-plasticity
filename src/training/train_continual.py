@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import time
 import wandb
@@ -10,6 +11,8 @@ from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch, create_module_filter
 from ..config.utils import create_optimizer
 from ..utils.masked_loss import MaskedCrossEntropy
+
+torch.set_float32_matmul_precision('high')
 
 def train_continual_learning(model, 
                              task_dataloaders, 
@@ -29,6 +32,11 @@ def train_continual_learning(model,
     Returns:
         Dictionary with training history
     """
+    # Compile the model if requested
+    if cfg.training.compile:
+        print("Compiling model with torch.compile()...")
+        model = torch.compile(model)
+    
     # Use standard cross entropy for setup (will be replaced per task)
     criterion = nn.CrossEntropyLoss()
     optimizer = create_optimizer(model, cfg)
@@ -111,7 +119,21 @@ def train_continual_learning(model,
             # Create a new model with the same configuration
             from ..models.model_factory import create_model
             new_model = create_model(cfg).to(device)
-            model.load_state_dict(new_model.state_dict())
+            
+            # If model was compiled, we need to handle it properly
+            if cfg.training.compile:
+                # Get the original uncompiled model (torch.compile wraps the model)
+                if hasattr(model, '_dynamo_orig_callable'):
+                    original_model = model._dynamo_orig_callable
+                else:
+                    # For older versions of PyTorch
+                    original_model = model
+                
+                # Load state dict into the original model
+                original_model.load_state_dict(new_model.state_dict())
+            else:
+                model.load_state_dict(new_model.state_dict())
+                
             del new_model
             print("Reinitialized all model weights for new task")
             # When we reset the model, we should also reset the optimizer

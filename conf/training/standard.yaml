@@ -8,6 +8,7 @@ early_stopping_steps: 0
 reset: false
 seed: 42
 device: null
+compile: false
 
 # Task configurations (merged from task section)
 tasks: null
