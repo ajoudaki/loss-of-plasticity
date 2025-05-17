@@ -164,42 +164,22 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
 
 def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"):
     """
-    Measure the distance to Gaussianity for each neuron's activations.
+    Measure the distance to Gaussianity for each neuron's activations using PyTorch operations.
     
-    This function quantifies how much the distribution of activations for each neuron
-    deviates from a Gaussian (normal) distribution. In many neural network theories,
-    activations that follow Gaussian distributions are considered optimal for information
-    transfer and learning. Significant deviations may indicate issues with network training
-    or specialized feature extraction.
-    
-    The function supports multiple statistical tests to measure non-Gaussianity:
+    This version keeps all computations on the device (GPU/MPS) without transferring to CPU.
     
     Args:
         layer_act: Layer activations tensor of shape [batch_size, n_units]
         sample_size: Maximum number of samples to use for the test (for efficiency)
         seed: Optional random seed for sampling
         method: Method to use for Gaussianity testing:
-                - "shapiro": Shapiro-Wilk test (more accurate for smaller samples)
-                  Returns 1-W where W is in [0,1], higher values mean less Gaussian
-                - "ks": Kolmogorov-Smirnov test against normal distribution
-                  Returns D statistic, higher values mean less Gaussian
-                - "anderson": Anderson-Darling test (more sensitive to tails)
-                  Returns A² statistic normalized by critical value, higher values mean less Gaussian
-                - "kurtosis": Use excess kurtosis as a measure of non-Gaussianity
-                  Returns absolute value of excess kurtosis, 0 = perfectly Gaussian
+                - "shapiro": Approximation of Shapiro-Wilk test using PyTorch
+                - "ks": Approximation of Kolmogorov-Smirnov test
+                - "anderson": Not available in device version, falls back to kurtosis
+                - "kurtosis": Uses excess kurtosis as a measure of non-Gaussianity
     
     Returns:
         A measure of non-Gaussianity (averaged across all neurons in the layer).
-        Higher values indicate greater deviation from Gaussian distribution.
-        The range depends on the method used:
-        - shapiro: [0, 1] where 0 = perfectly Gaussian
-        - ks: [0, 1] where 0 = perfectly Gaussian
-        - anderson: [0, 10] (capped) where 0 = perfectly Gaussian
-        - kurtosis: [0, 10] (capped) where 0 = perfectly Gaussian
-    
-    Example:
-        >>> non_gaussian_score = measure_gaussianity(layer_act, method="kurtosis")
-        >>> print(f"Non-Gaussianity score: {non_gaussian_score:.4f}")
     """
     flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
@@ -208,25 +188,43 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
     if N > sample_size:
         # Use seed if provided, otherwise use the current random state
         if seed is not None:
-            generator = torch.Generator()
+            generator = torch.Generator(device=flattened_act.device)
             generator.manual_seed(seed)
-            idx = torch.randperm(N, generator=generator)[:sample_size]
+            idx = torch.randperm(N, generator=generator, device=flattened_act.device)[:sample_size]
         else:
-            idx = torch.randperm(N)[:sample_size]
+            idx = torch.randperm(N, device=flattened_act.device)[:sample_size]
         flattened_act = flattened_act[idx]
         N = sample_size
     
-    # Convert to numpy for statistical tests
-    act_np = flattened_act.detach().cpu().numpy()
-    
-    if method == "shapiro":
-        # Shapiro-Wilk test - returns W statistic and p-value
-        # Lower W values indicate deviation from normality
-        # We convert to a non-Gaussianity score (1-W) so higher means less Gaussian
+    if method == "kurtosis" or method == "anderson":  # anderson falls back to kurtosis
+        # Use excess kurtosis as a measure of non-Gaussianity
         non_gaussianity = []
         for j in range(D):
             # Calculate standard deviation
-            std_val = np.std(act_np[:, j])
+            std_val = torch.std(flattened_act[:, j])
+            
+            # If std is very small (effectively constant values), skip the statistical test
+            if std_val < 1e-6:
+                # For constant values, consider them maximally non-Gaussian
+                non_gaussianity.append(10.0)
+                continue
+                
+            # Normalize to zero mean and unit variance
+            x = (flattened_act[:, j] - torch.mean(flattened_act[:, j])) / (std_val + 1e-8)
+            
+            # Compute kurtosis: mean((x - mean(x))^4) / std(x)^4 - 3
+            # The -3 makes the kurtosis of a normal distribution = 0
+            mean_x = torch.mean(x)
+            x_centered = x - mean_x
+            kurtosis = torch.mean(x_centered**4) / (torch.mean(x_centered**2)**2) - 3
+            non_gaussianity.append(min(abs(kurtosis.item()), 10.0))  # Cap at 10
+    
+    elif method == "shapiro":
+        # Approximation of Shapiro-Wilk using sorted data and moments
+        non_gaussianity = []
+        for j in range(D):
+            # Calculate standard deviation
+            std_val = torch.std(flattened_act[:, j])
             
             # If std is very small (effectively constant values), skip the statistical test
             if std_val < 1e-6:
@@ -235,24 +233,43 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
                 continue
                 
             # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
-            try:
-                # Maximum sample size is 5000 for Shapiro-Wilk
-                if len(x) > 5000:
-                    x = x[:5000]
-                w, _ = stats.shapiro(x)
-                # Convert W to a non-Gaussianity score (1-W ranges from 0 to 1)
-                non_gaussianity.append(1.0 - w)
-            except Exception:
-                # Return a high value if test fails (maximum non-Gaussianity)
-                non_gaussianity.append(1.0)
+            x = (flattened_act[:, j] - torch.mean(flattened_act[:, j])) / (std_val + 1e-8)
+            
+            # Sort the values (this is a key part of Shapiro-Wilk)
+            x_sorted, _ = torch.sort(x)
+            
+            # Simple approximation based on comparing ordered data to expected normal values
+            # This isn't a real Shapiro-Wilk test but gives a rough measure of non-Gaussianity
+            n = x.size(0)
+            
+            # Create expected values for a normal distribution
+            # We use a linear approximation of the normal quantile function for simplicity
+            positions = torch.linspace(1/(n*2), 1-1/(n*2), n, device=x.device)
+            
+            # Fix for the error: Create a tensor for sqrt(2)
+            sqrt_2 = torch.tensor(2.0, device=x.device).sqrt()
+            
+            # Simple approximation of normal quantiles using an error function approximation
+            normal_approx = sqrt_2 * torch.erfinv(2 * positions - 1)
+            
+            # Calculate correlation between sorted data and expected normal values
+            # Higher correlation means more Gaussian
+            mean_x_sorted = torch.mean(x_sorted)
+            mean_normal = torch.mean(normal_approx)
+            numerator = torch.sum((x_sorted - mean_x_sorted) * (normal_approx - mean_normal))
+            denominator = torch.sqrt(torch.sum((x_sorted - mean_x_sorted)**2) * torch.sum((normal_approx - mean_normal)**2))
+            correlation = numerator / denominator
+            
+            # Convert to non-Gaussianity score (1 - correlation)
+            # This ranges from 0 (perfectly Gaussian) to 1 (maximally non-Gaussian)
+            non_gaussianity.append(1.0 - correlation.item())
     
     elif method == "ks":
-        # Kolmogorov-Smirnov test against a normal distribution
+        # Approximation of KS test using empirical CDF
         non_gaussianity = []
         for j in range(D):
             # Calculate standard deviation
-            std_val = np.std(act_np[:, j])
+            std_val = torch.std(flattened_act[:, j])
             
             # If std is very small (effectively constant values), skip the statistical test
             if std_val < 1e-6:
@@ -261,70 +278,32 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
                 continue
                 
             # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
-            try:
-                # Test against normal distribution - returns KS statistic and p-value
-                # Higher KS indicates greater deviation from normality
-                ks, _ = stats.kstest(x, 'norm')
-                non_gaussianity.append(ks)
-            except Exception:
-                non_gaussianity.append(1.0)
-    
-    elif method == "anderson":
-        # Anderson-Darling test - more sensitive to tails
-        non_gaussianity = []
-        for j in range(D):
-            # Calculate standard deviation
-            std_val = np.std(act_np[:, j])
+            x = (flattened_act[:, j] - torch.mean(flattened_act[:, j])) / (std_val + 1e-8)
             
-            # If std is very small (effectively constant values), skip the statistical test
-            if std_val < 1e-6:
-                # For constant values, consider them maximally non-Gaussian
-                non_gaussianity.append(10.0)  # Use max value consistent with this method
-                continue
-                
-            # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
-            try:
-                result = stats.anderson(x, 'norm')
-                # Higher statistic means greater deviation from normality
-                # Normalize by critical value for significance level 5%
-                stat = result.statistic / result.critical_values[2]
-                non_gaussianity.append(min(stat, 10.0))  # Cap at 10 to avoid extreme values
-            except Exception:
-                non_gaussianity.append(10.0)
-    
-    elif method == "kurtosis":
-        # Use excess kurtosis as a measure of non-Gaussianity
-        # Gaussian distribution has excess kurtosis of 0
-        # We take absolute value so both super- and sub-Gaussian show as deviation
-        non_gaussianity = []
-        for j in range(D):
-            # Calculate standard deviation
-            std_val = np.std(act_np[:, j])
+            # Sort the values to compute empirical CDF
+            x_sorted, _ = torch.sort(x)
+            n = x_sorted.size(0)
             
-            # If std is very small (effectively constant values), skip the statistical test
-            if std_val < 1e-6:
-                # For constant values, consider them maximally non-Gaussian
-                non_gaussianity.append(10.0)  # Use max value consistent with this method
-                continue
-                
-            # Normalize to zero mean and unit variance
-            x = (act_np[:, j] - np.mean(act_np[:, j])) / (std_val + 1e-8)
-            try:
-                kurtosis = stats.kurtosis(x)
-                non_gaussianity.append(min(abs(kurtosis), 10.0))  # Cap at 10
-            except Exception:
-                non_gaussianity.append(10.0)
+            # Empirical CDF (from 1/n to 1.0)
+            ecdf = torch.linspace(1/n, 1.0, n, device=x.device)
+            
+            # Create tensor for sqrt(2)
+            sqrt_2 = torch.tensor(2.0, device=x.device).sqrt()
+            
+            # Theoretical CDF for normal distribution: 0.5 * (1 + erf(x / sqrt(2)))
+            tcdf = 0.5 * (1 + torch.erf(x_sorted / sqrt_2))
+            
+            # KS statistic is the maximum absolute difference between ECDFs
+            ks_stat = torch.max(torch.abs(tcdf - ecdf)).item()
+            non_gaussianity.append(ks_stat)
     
     else:
         raise ValueError(f"Unknown method: {method}")
     
     # Average non-Gaussianity across all neurons
-    mean_non_gaussianity = float(np.mean(non_gaussianity))
+    mean_non_gaussianity = sum(non_gaussianity) / len(non_gaussianity)
     
     return mean_non_gaussianity
-
 
 def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
                       dead_threshold, 
