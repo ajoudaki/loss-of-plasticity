@@ -15,6 +15,7 @@ no_augment: false
 early_stopping_steps: 0
 seed: 42
 device: null
+compile: false
 
 # Retain base model parameters
 track_base: true  # Whether to keep training the original model alongside the expanded models
