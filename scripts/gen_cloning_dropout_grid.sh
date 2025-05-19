@@ -4,14 +4,15 @@
 models=("mlp" "cnn" "vit" "resnet")
 normalizations=("batch" "layer" "none")
 dropout_values=("0" "0.1" "0.2")
-seeds=("41" "42" "43")
+seeds=("40" "41" "42" "43" "44")
 optimizers=("sgd" "adam")
-learning_rates=("0.01" "0.001")  # Added learning rate grid
+learning_rates=("0.01" "0.001" "0.0001")  # Added learning rate grid
 
 # Fixed parameters
+num_workers="2"
 dataset="cifar10"
-initial_epochs="10"
-epochs_per_expansion="100"
+initial_epochs="20"
+epochs_per_expansion="500"
 wandb_tags="[main,cloning]"
 
 # Counter for experiments
@@ -37,6 +38,7 @@ for model in "${models[@]}"; do
 	    training=cloning \
 	    training.initial_epochs=$initial_epochs \
             training.epochs_per_expansion=$epochs_per_expansion \
+	    training.num_workers=$num_workers \ 
             training.seed=$seed \
 	    optimizer=$optimizer \
             optimizer.lr=$lr \
