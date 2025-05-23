@@ -686,11 +686,11 @@ def validate_modulation_2d_comprehensive():
     plt.suptitle('Comprehensive 2D Analysis: Modulation Effects on Different Activation Functions', 
                  fontsize=14, y=0.995)
     # Add parameter explanation
-    param_text = ("Parameters: For ReLU/SELU: f(ax+b) with b∈[-20,5], for Tanh/Sigmoid: f(a(x+b)) with b∈[-3,1]\n"
-                  "Half-vanishing: zero gradient for negative inputs → dead units\n"
-                  "Plateauing: near-zero gradient at extremes → saturation")
-    fig.text(0.5, 0.005, param_text, ha='center', va='bottom', fontsize=9, 
-             style='italic', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+    # param_text = ("Parameters: For ReLU/SELU: f(ax+b) with b∈[-20,5], for Tanh/Sigmoid: f(a(x+b)) with b∈[-3,1]\n"
+    #               "Half-vanishing: zero gradient for negative inputs → dead units\n"
+    #               "Plateauing: near-zero gradient at extremes → saturation")
+    # fig.text(0.5, 0.005, param_text, ha='center', va='bottom', fontsize=9, 
+    #          style='italic', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
     
     plt.tight_layout(rect=[0, 0.02, 1, 0.98])
     plt.savefig(os.path.join(FIGURE_DIR, "validation_modulation_2d_comprehensive.pdf"))
