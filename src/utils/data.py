@@ -440,11 +440,12 @@ def create_task_dataloaders(
         val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, multiprocessing_context='fork')
         
         # Fixed batches for metrics
-        fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
-        fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
+        fixed_batch_size = 500
+        fixed_train = Subset(train_subset, range(min(fixed_batch_size, len(train_subset))))
+        fixed_val = Subset(val_subset, range(min(fixed_batch_size, len(val_subset))))
         
-        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size,  num_workers=num_workers, shuffle=False)
-        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size,  num_workers=num_workers, shuffle=False)
+        fixed_train_loader = DataLoader(fixed_train, batch_size=fixed_batch_size,  num_workers=num_workers, shuffle=False)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=fixed_batch_size,  num_workers=num_workers, shuffle=False)
         
         task_dataloaders[task_id] = {
             'train': train_loader,
