@@ -20,6 +20,8 @@ import numpy as np
 # Add profiling imports
 from torch.profiler import profile, record_function, ProfilerActivity
 
+torch.set_float32_matmul_precision('high')
+
 # ------------------------- GPU Monitoring Utilities -------------------------
 
 class GPUMonitor:
@@ -139,11 +141,299 @@ class LargeMLP(nn.Module):
         x = self.layers(x)
         return x
 
+# ------------------------- ResNet Implementation -------------------------
+
+class BasicBlock(nn.Module):
+    """Basic Block for ResNet18/34"""
+    expansion = 1
+    
+    def __init__(self, in_planes, planes, stride=1):
+        super(BasicBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion * planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(self.expansion * planes)
+            )
+    
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
+
+class Bottleneck(nn.Module):
+    """Bottleneck Block for ResNet50/101/152"""
+    expansion = 4
+    
+    def __init__(self, in_planes, planes, stride=1):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, self.expansion * planes, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+        
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion * planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(self.expansion * planes)
+            )
+    
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
+
+class ResNet(nn.Module):
+    """ResNet implementation for image classification"""
+    def __init__(self, block, num_blocks, num_classes=10, channels=3):
+        super(ResNet, self).__init__()
+        self.in_planes = 64
+        
+        # Initial convolution
+        self.conv1 = nn.Conv2d(channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        
+        # ResNet layers
+        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+        
+        # Final classification layer
+        self.linear = nn.Linear(512 * block.expansion, num_classes)
+    
+    def _make_layer(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride))
+            self.in_planes = planes * block.expansion
+        return nn.Sequential(*layers)
+    
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        out = F.avg_pool2d(out, 4)
+        out = out.view(out.size(0), -1)
+        out = self.linear(out)
+        return out
+
+def ResNet18(num_classes=10, channels=3):
+    return ResNet(BasicBlock, [2, 2, 2, 2], num_classes, channels)
+
+def ResNet34(num_classes=10, channels=3):
+    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes, channels)
+
+def ResNet50(num_classes=10, channels=3):
+    return ResNet(Bottleneck, [3, 4, 6, 3], num_classes, channels)
+
+# ------------------------- Vision Transformer (ViT) Implementation -------------------------
+
+class PatchEmbed(nn.Module):
+    """Split image into patches and embed them"""
+    def __init__(self, img_size=32, patch_size=4, in_chans=3, embed_dim=768):
+        super().__init__()
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.n_patches = (img_size // patch_size) ** 2
+        
+        self.proj = nn.Conv2d(
+            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
+    
+    def forward(self, x):
+        x = self.proj(x)  # (B, embed_dim, H/patch_size, W/patch_size)
+        x = x.flatten(2)  # (B, embed_dim, n_patches)
+        x = x.transpose(1, 2)  # (B, n_patches, embed_dim)
+        return x
+
+class Attention(nn.Module):
+    """Multi-head Attention mechanism"""
+    def __init__(self, dim, n_heads=12, qkv_bias=True, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        self.n_heads = n_heads
+        self.dim = dim
+        self.head_dim = dim // n_heads
+        self.scale = self.head_dim ** -0.5
+        
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+    
+    def forward(self, x):
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.n_heads, C // self.n_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+        
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+class MLP(nn.Module):
+    """MLP module for Transformer blocks"""
+    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+    
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+
+class Block(nn.Module):
+    """Transformer block"""
+    def __init__(self, dim, n_heads, mlp_ratio=4., qkv_bias=True, drop=0., attn_drop=0.):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = Attention(
+            dim, n_heads=n_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop
+        )
+        self.norm2 = nn.LayerNorm(dim)
+        self.mlp = MLP(
+            in_features=dim, hidden_features=int(dim * mlp_ratio), drop=drop
+        )
+    
+    def forward(self, x):
+        x = x + self.attn(self.norm1(x))
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+class VisionTransformer(nn.Module):
+    """Vision Transformer implementation for image classification"""
+    def __init__(self, img_size=32, patch_size=4, in_chans=3, num_classes=10,
+                 embed_dim=192, depth=12, n_heads=3, mlp_ratio=4., qkv_bias=True,
+                 drop_rate=0.1, attn_drop_rate=0.):
+        super().__init__()
+        self.num_classes = num_classes
+        self.num_features = embed_dim
+        
+        # Split image into patches and project to embedding dimension
+        self.patch_embed = PatchEmbed(
+            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim
+        )
+        num_patches = self.patch_embed.n_patches
+        
+        # Create class token and positional embeddings
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+        self.pos_drop = nn.Dropout(drop_rate)
+        
+        # Build transformer encoder blocks
+        self.blocks = nn.ModuleList(
+            [Block(embed_dim, n_heads, mlp_ratio, qkv_bias, drop_rate, attn_drop_rate)
+             for _ in range(depth)]
+        )
+        
+        self.norm = nn.LayerNorm(embed_dim)
+        
+        # Classification head
+        self.head = nn.Linear(embed_dim, num_classes)
+        
+        # Initialize weights
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=0.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+    
+    def forward(self, x):
+        # Create patches and project
+        B = x.shape[0]
+        x = self.patch_embed(x)
+        
+        # Add class token
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        
+        # Add position embedding and apply dropout
+        x = x + self.pos_embed
+        x = self.pos_drop(x)
+        
+        # Pass through transformer blocks
+        for block in self.blocks:
+            x = block(x)
+        
+        # Apply layer normalization
+        x = self.norm(x)
+        
+        # Classification from class token
+        x = self.head(x[:, 0])
+        
+        return x
+
+def create_vit_small(num_classes=10, img_size=32, channels=3):
+    """Create a small ViT model suitable for CIFAR-like datasets"""
+    return VisionTransformer(
+        img_size=img_size,
+        patch_size=4,
+        in_chans=channels,
+        num_classes=num_classes,
+        embed_dim=192,
+        depth=12,
+        n_heads=3,
+        mlp_ratio=2.0,
+        qkv_bias=True,
+        drop_rate=0.1
+    )
+
+def create_vit_mini(num_classes=10, img_size=32, channels=3):
+    """Create a very small ViT model for faster experimentation"""
+    return VisionTransformer(
+        img_size=img_size,
+        patch_size=4,
+        in_chans=channels,
+        num_classes=num_classes,
+        embed_dim=96,
+        depth=6,
+        n_heads=3,
+        mlp_ratio=2.0,
+        qkv_bias=True,
+        drop_rate=0.1
+    )
+
 # ------------------------- Fixed Batch Implementation -------------------------
 
 def fixed_batch_training(model, train_loader, val_loader=None, 
                       num_epochs=5, device='cuda', batch_size=None,
-                      use_amp=False, use_channels_last=False, 
+                      use_amp=False, use_channels_last=False,
+                      use_compile=False, compile_mode="default",
                       iterations_per_epoch=100):
     """
     A training loop that uses a single fixed batch for the entire training.
@@ -158,6 +448,8 @@ def fixed_batch_training(model, train_loader, val_loader=None,
         batch_size: Batch size (for information only)
         use_amp: Whether to use automatic mixed precision
         use_channels_last: Whether to use channels_last memory format
+        use_compile: Whether to use torch.compile for model optimization
+        compile_mode: Compilation mode for torch.compile ('default', 'reduce-overhead', or 'max-autotune')
         iterations_per_epoch: Number of iterations per epoch
     """
     # Move model to device and set memory format if needed
@@ -166,6 +458,15 @@ def fixed_batch_training(model, train_loader, val_loader=None,
         print("Using channels_last memory format")
     else:
         model = model.to(device)
+    
+    # Apply torch.compile if requested and available (PyTorch 2.0+)
+    if use_compile:
+        if hasattr(torch, 'compile'):
+            print(f"Compiling model with mode: {compile_mode}")
+            model = torch.compile(model, mode=compile_mode)
+            torch.set_float32_matmul_precision('high')
+        else:
+            print("Warning: torch.compile is not available in your PyTorch version. Skipping compilation.")
     
     # Count model parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -216,6 +517,9 @@ def fixed_batch_training(model, train_loader, val_loader=None,
     print(f"  Device: {device}")
     print(f"  Mixed Precision: {use_amp}")
     print(f"  Memory Format: {'channels_last' if use_channels_last else 'channels_first'}")
+    print(f"  Using torch.compile: {use_compile}")
+    if use_compile:
+        print(f"  Compilation mode: {compile_mode}")
     print(f"  Fixed Batch Mode: True")
     print(f"  Iterations per Epoch: {iterations_per_epoch}")
     
@@ -262,7 +566,7 @@ def fixed_batch_training(model, train_loader, val_loader=None,
                             
                             if use_amp:
                                 # Use automatic mixed precision
-                                with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                                with torch.amp.autocast('cuda', dtype=torch.float16):
                                     outputs = model(fixed_inputs)
                                     loss = criterion(outputs, fixed_targets)
                                 
@@ -307,7 +611,7 @@ def fixed_batch_training(model, train_loader, val_loader=None,
                 
                 if use_amp:
                     # Use automatic mixed precision
-                    with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                    with torch.amp.autocast('cuda', dtype=torch.float16):
                         outputs = model(fixed_inputs)
                         loss = criterion(outputs, fixed_targets)
                     
@@ -426,7 +730,8 @@ class FullGPUTrainer:
     Trainer that loads the entire dataset to GPU memory once and processes it in batches.
     This implementation includes profiling to diagnose performance issues.
     """
-    def __init__(self, model, device='cuda', use_amp=False, use_channels_last=False):
+    def __init__(self, model, device='cuda', use_amp=False, use_channels_last=False, 
+                 use_compile=False, compile_mode="default"):
         """
         Initialize the trainer with a model and training parameters.
         
@@ -435,10 +740,14 @@ class FullGPUTrainer:
             device: Device to use ('cuda' or 'cpu')
             use_amp: Whether to use automatic mixed precision
             use_channels_last: Whether to use channels_last memory format
+            use_compile: Whether to use torch.compile for model optimization
+            compile_mode: Compilation mode for torch.compile ('default', 'reduce-overhead', or 'max-autotune')
         """
         self.device = device
         self.use_amp = use_amp and torch.cuda.is_available()
         self.use_channels_last = use_channels_last
+        self.use_compile = use_compile
+        self.compile_mode = compile_mode
         
         # Set up the model
         if use_channels_last and 'cuda' in str(device):
@@ -446,6 +755,14 @@ class FullGPUTrainer:
             print("Using channels_last memory format")
         else:
             self.model = model.to(device)
+        
+        # Apply torch.compile if requested and available (PyTorch 2.0+)
+        if use_compile:
+            if hasattr(torch, 'compile'):
+                print(f"Compiling model with mode: {compile_mode}")
+                self.model = torch.compile(self.model, mode=compile_mode)
+            else:
+                print("Warning: torch.compile is not available in your PyTorch version. Skipping compilation.")
             
         # Set up loss function
         self.criterion = nn.CrossEntropyLoss()
@@ -569,7 +886,7 @@ class FullGPUTrainer:
                     
                     with record_function("forward_pass"):
                         if self.use_amp:
-                            with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                            with torch.amp.autocast('cuda', dtype=torch.float16):
                                 outputs = self.model(inputs)
                                 loss = self.criterion(outputs, targets)
                         else:
@@ -595,7 +912,7 @@ class FullGPUTrainer:
         
         return prof
         
-    def train_epoch(self, all_data, all_targets, batch_size, shuffle=True, profile_first_epoch=True):
+    def train_epoch(self, all_data, all_targets, batch_size, shuffle=True, profile_first_epoch=True, drop_last=True):
         """
         Train for one epoch on pre-loaded data in GPU memory.
         
@@ -618,7 +935,11 @@ class FullGPUTrainer:
         indices = torch.randperm(num_samples).to(self.device) if shuffle else torch.arange(num_samples).to(self.device)
         
         # Calculate total number of batches
-        total_batches = (num_samples + batch_size - 1) // batch_size  # Ceiling division
+        if drop_last:
+            total_batches = num_samples // batch_size
+        else:
+            # If drop_last is False, we need to handle the last batch
+            total_batches = (num_samples + batch_size - 1) // batch_size  # Ceiling division
         
         # Initialize statistics
         train_loss = 0.0
@@ -644,7 +965,7 @@ class FullGPUTrainer:
             
             if self.use_amp:
                 # Use automatic mixed precision
-                with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                with torch.amp.autocast('cuda', dtype=torch.float16):
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, targets)
                 
@@ -784,10 +1105,11 @@ class FullGPUTrainer:
         print("\nStarting training...")
         print(f"Configuration: batch_size={batch_size}, num_epochs={num_epochs}")
         print(f"Mixed Precision: {self.use_amp}, Memory Format: {'channels_last' if self.use_channels_last else 'channels_first'}")
+        print(f"Using torch.compile: {self.use_compile}, Compile Mode: {self.compile_mode if self.use_compile else 'N/A'}")
         
-        # Profile batch processing first
-        if 'cuda' in str(self.device):
-            self.profile_batch_processing(all_data, all_targets, batch_size, num_batches=50)
+        # # Profile batch processing first
+        # if 'cuda' in str(self.device):
+        #     self.profile_batch_processing(all_data, all_targets, batch_size, num_batches=20)
         
         # Start GPU monitoring
         if self.gpu_monitor:
@@ -961,8 +1283,9 @@ def main():
     parser = argparse.ArgumentParser(description='PyTorch Training Performance Comparison')
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100', 'mnist'],
                         help='Dataset to use (cifar10, cifar100, mnist)')
-    parser.add_argument('--model', type=str, default='simple', choices=['simple', 'large'],
-                        help='Model architecture to use (simple, large)')
+    parser.add_argument('--model', type=str, default='simple', 
+                        choices=['simple', 'large', 'resnet18', 'resnet34', 'resnet50', 'vit', 'vit-small'],
+                        help='Model architecture to use (simple, large, resnet18, resnet34, resnet50, vit, vit-small)')
     parser.add_argument('--batch-size', type=int, default=128,
                         help='Batch size for processing')
     parser.add_argument('--epochs', type=int, default=3,
@@ -973,10 +1296,15 @@ def main():
                         help='Use automatic mixed precision')
     parser.add_argument('--channels-last', action='store_true', default=False,
                         help='Use channels_last memory format')
-    parser.add_argument('--method', type=str, default='both', choices=['fixed', 'fullgpu', 'both'],
+    parser.add_argument('--method', type=str, default='fullgpu', choices=['fixed', 'fullgpu', 'both'],
                         help='Training method to use: fixed batch, full GPU, or both for comparison')
     parser.add_argument('--iterations-per-epoch', type=int, default=100,
                         help='Number of iterations per epoch for fixed batch training')
+    parser.add_argument('--compile', action='store_true', default=False,
+                        help='Use torch.compile for model optimization (PyTorch 2.0+)')
+    parser.add_argument('--compile-mode', type=str, default='default', 
+                        choices=['default', 'reduce-overhead', 'max-autotune'],
+                        help='Compilation mode for torch.compile (default, reduce-overhead, max-autotune)')
     
     args = parser.parse_args()
     
@@ -996,6 +1324,27 @@ def main():
         batch_size=args.batch_size
     )
     
+    # Helper function to create model based on command line argument
+    def create_model(model_name):
+        print(f"Creating {model_name} model...")
+        
+        if model_name == 'simple':
+            return SimpleMLP(num_classes=num_classes, channels=channels, input_size=input_size)
+        elif model_name == 'large':
+            return LargeMLP(num_classes=num_classes, channels=channels, input_size=input_size)
+        elif model_name == 'resnet18':
+            return ResNet18(num_classes=num_classes, channels=channels)
+        elif model_name == 'resnet34':
+            return ResNet34(num_classes=num_classes, channels=channels)
+        elif model_name == 'resnet50':
+            return ResNet50(num_classes=num_classes, channels=channels)
+        elif model_name == 'vit':
+            return create_vit_mini(num_classes=num_classes, img_size=input_size, channels=channels)
+        elif model_name == 'vit-small':
+            return create_vit_small(num_classes=num_classes, img_size=input_size, channels=channels)
+        else:
+            raise ValueError(f"Unsupported model: {model_name}")
+    
     # Check if doing fixed batch training
     if args.method in ['fixed', 'both']:
         print("\n" + "="*80)
@@ -1003,11 +1352,7 @@ def main():
         print("="*80)
         
         # Create model for fixed batch training
-        print(f"Creating {args.model} MLP model...")
-        if args.model == 'simple':
-            model_fixed = SimpleMLP(num_classes=num_classes, channels=channels, input_size=input_size)
-        else:
-            model_fixed = LargeMLP(num_classes=num_classes, channels=channels, input_size=input_size)
+        model_fixed = create_model(args.model)
         
         # Train with fixed batch
         fixed_batch_training(
@@ -1019,6 +1364,8 @@ def main():
             batch_size=args.batch_size,
             use_amp=args.amp,
             use_channels_last=args.channels_last,
+            use_compile=args.compile,
+            compile_mode=args.compile_mode,
             iterations_per_epoch=args.iterations_per_epoch
         )
     
@@ -1029,18 +1376,16 @@ def main():
         print("="*80)
         
         # Create model for full GPU training
-        print(f"Creating {args.model} MLP model...")
-        if args.model == 'simple':
-            model_full = SimpleMLP(num_classes=num_classes, channels=channels, input_size=input_size)
-        else:
-            model_full = LargeMLP(num_classes=num_classes, channels=channels, input_size=input_size)
+        model_full = create_model(args.model)
         
         # Create trainer
         trainer = FullGPUTrainer(
             model=model_full,
             device=device,
             use_amp=args.amp,
-            use_channels_last=args.channels_last
+            use_channels_last=args.channels_last,
+            use_compile=args.compile,
+            compile_mode=args.compile_mode
         )
         
         # Load training data to GPU
