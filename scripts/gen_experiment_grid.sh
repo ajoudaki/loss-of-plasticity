@@ -4,7 +4,7 @@
 models=("vit" "cnn" "resnet" "mlp")
 normalizations=("batch" "layer" "none")
 dropout_values=("0" "0.1")
-seeds=("41" "42" "43")
+seeds=("40" "41" "42" "43" "44")
 learning_rates=("0.0001" "0.001" "0.01")  # Added learning rate grid
 
 # Fixed parameters
