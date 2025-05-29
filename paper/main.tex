@@ -22,7 +22,7 @@
 \usepackage{amsfonts}       % blackboard math symbols
 \usepackage{nicefrac}       % compact symbols for 1/2, etc.
 \usepackage{microtype}      % microtypography
-\usepackage[usenames,dvipsnames]{xcolor}         % colors
+\usepackage[dvipsnames]{xcolor}         % colors
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{enumitem}
 \usepackage{geometry} % Consider adjusting margins if needed, or removing if default is fine
@@ -218,7 +218,12 @@ Then, the derivative $f'_{s_k}(z)$ tends to zero in probability as $k \to \infty
 $$ \lim_{k \to \infty} P(|f'_{s_k}(z)| < \epsilon) = 1, \quad \text{for } z \sim \mathcal{N}(0,1). $$
 \end{corollary}
 
-The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Appendix~\ref{app:theory_appendix}\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} for a proof of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
+The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Section~\ref{app:max_rank_frozen}
+\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} 
+\AJ{The detailed proof turned out to be very involved and long (5-6 pages) and is a bit incomplete, so I rephrased the sentence to we're "discussing" it not proving it. Is that ok, or you prefer to include the actual proof?}
+for a detailed discussion of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.
+\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
+\AJ{this is a very interesting point, do you have any suggestions on how to develop this idea further? }
 
 \begin{example}
 For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $\alpha_f.$ However, observe that in the limit of $\lim_{a \to \infty} \tanh(a x) = \text{sign}(x),$ we have $f'=0$ almost everywhere except $x=0.$ 
@@ -244,7 +249,7 @@ We tracked the emergence of LoP symptoms including dead units (neurons with near
 
 The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity. 
 
-\begin{figure}[!h]
+\begin{figure}[!ht]
     \centering
     \includegraphics[width=0.23\linewidth]{paper/images/mlp_act__dead_fraction_plot.pdf}
     \includegraphics[width=0.23\linewidth]{paper/images/cnn_act__dead_fraction_plot.pdf}
@@ -255,7 +260,7 @@ The experimental evidence confirms these intuitions (see Appendix~\ref{app:empir
     \label{fig:emergence_lop_symptoms_cl}
 \end{figure}
 
-\begin{figure}[!h]
+\begin{figure}[!ht]
     \centering
     \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__rankdead_plot.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__rankdead_plot.pdf}
@@ -304,6 +309,8 @@ Detailed conditions for duplicate cloning and its proof are given in  Appendix~\
 The cloning LoP manifold naturally lends itself to gradient descent and stochastic gradient descent, regardless of the order which we process the samples, will remain strictly within the manifold. However, Stochastic Gradient Descent (SGD) with momentum or adaptive scaling such as Adam, or regularization techniques such as weight decay, all might violate the symmetry assumptions that were inherent to the proof of this theorem.
 \end{remark}
 
+To empirically test the stability of such manifolds and potential escape mechanisms, we conduct \emph{cloning experiments}, where a base model, namely an MLP, is first trained on a task, then, an larger model is constructed by expanding the base model (across width for MLP; channels for CNNs/ResNets; and feature dimension ViTs), with the weights of the cloned model initialized in such a way that its activations are copies of the base model, effectively creating blocks of units that have identical activations. At this point, we resume training both base and cloned model on the same task, and track their training trajectory via the loss curve, effective rank of representations, and cloning $R^2$ score. Figure~\ref{fig:cloning_perfect_appendix} shows results from such experiments on MLPs, investigating dynamics within and escapes from these LoP manifolds.
+
 Empirical validation of these claims, such as showing perfect cloning under specific initializations  or the persistence of dead units, can be found in Figure~\ref{fig:cloning_perfect_appendix} and Appendix~\ref{app:empirical_evidence_appendix}. One notable observation is that, despite the fact that Adam violates the symmetry conditions required for Proposition~\ref{prop:frozen_duplicate_lop}, the empirical evidence showed that it is often unable to escape the manifold nervertheless. This evidence suggests that a stronger theory might exist to explain this.
 
 
@@ -329,6 +336,7 @@ To understand the practical implications of these stability types, consider inje
 
 Therefore, the strongest form of LoP corresponds to a \emph{stable} LoP manifold, as it actively resists escape. An unstable manifold is the easiest to escape. A saddle manifold presents a mixed scenario, where random perturbations may or may not escape depending on the perturbation vector being in a positively or negative space orientation. 
 
+
 \paragraph{Escaping the LoP manifolds with perturbations.}
 % \GIU{I added a paragraph here}
 While a full theoretical characterization of the stability of empirically observed LoP manifolds is beyond the scope of this work, our empirical investigations suggest that these manifolds are often unstable or saddle-like. This is evidenced by the fact that certain types of noise or symmetry-breaking operations can help models escape them. We highlight two common perturbations:
@@ -337,19 +345,20 @@ While a full theoretical characterization of the stability of empirically observ
 (2) \emph{Dropout} introduces stochasticity in the forward and backward passes by randomly zeroing activations. For cloned units, this breaks the symmetry because different clones might be active in different dropout masks, leading to divergent gradient updates. This is supported by experiments where dropout helps a model escape an artificially induced cloning manifold (see Figure~\ref{fig:dropout_escapes_cloning_appendix}).
     
 
-\begin{figure}[!h]
+\begin{figure}[!ht]
     \centering
     \includegraphics[width=0.24\linewidth]{cloning_R2_plot.pdf }
     \includegraphics[width=0.24\linewidth]{cloning_losses_plot.pdf}
     \includegraphics[width=0.24\linewidth]{cloning_rank_plot.pdf}
     \vspace{-.3cm}
-    % \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold.}
-    \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. \textbf{Left}: Cloning $R^2$ measures how well the mean of cloned units explains the variance of individual units in each layer (higher values indicate stronger cloning, see Section~\ref{subsec:core_methodologies} for details). \textbf{Middle}: Loss comparison between base and cloned models. \textbf{Right}: Effective rank evolution showing representational diversity.}
-
-    \label{fig:enter-label}
+    \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. 
+    \textbf{Left}: Cloning $R^2$ score quantifies the proportion of variance in individual unit activations within a cloned block that is explained by the mean activation of that block. An $R^2$ score of 1 indicates perfect cloning (units in a block are nearly identical), while a 0 score indicates no explained variance. See Section~\ref{subsec:core_methodologies} (Appendix~\ref{app:empirical_evidence_appendix}) for the precise formula and calculation details.
+    \textbf{Middle}: Training loss comparison. \emph{Cloned loss} refers to the loss of the cloned model during its training phase, while \emph{base loss}  refers to the loss of the original base model, which continues training for comparison.
+    \textbf{Right}: Effective rank evolution showing representational diversity.}
     \label{fig:cloning_perfect_appendix}
     \label{fig:dropout_escapes_cloning_appendix}
 \end{figure}
+
 \ff{what is "cloning R2" in y-axis of the left plot?}
 \ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
 
@@ -606,8 +615,8 @@ $$\alpha_{f_{a,b}} = \frac{\mathbb{E}[f'_{a,b}(z)^2]}{\mathbb{E}[f_{a,b}(z)^2]} 
 
 Let us assume $f:\mathbb{R}\to\mathbb{R}$ to be a continuous, piecewise smooth function satisfying one of the following conditions:
 \begin{enumerate}
-    \item \emph{Half-vanishing, half-growth:} For some $p > 1/2$, On one side (say $x \geq 0$): $f(x) = x^p(1 + O(1/|x|))$ and $f'(x) = px^{p-1} (1+O(1/|x|)),$ and on the other side ($x < 0$): $f(x) = O(1/|x|)$ and $f'(x) = O(1/|x|^2)$
-    For these functions, $\alpha_{f_{a_k,b_k}}$ becomes unbounded roughly as $(b_k/a_k)^2$ in the limit of $(a_k,b_k) $ growing very large, negative shift $b_k < 0$, and scale grows slower than shift magnitude $\lim_{k\to\infty} a_k/b_k \to 0^-$. 
+    \item \emph{Half-vanishing, half-growth:} For some $p > 1/2$, On one side (say $x \geq 0$): $f(x) \approx x^p$ and $f'(x) \approx px^{p-1},$ and on the other side ($x < 0$): $f(x) = C + O(1/|x|)$ and $f'(x) = O(1/|x|^2)$. 
+    For these functions, $\alpha_{f_{a_k,b_k}}$ grows  as $(b_k/a_k)^2$ in the limit of $(a_k,b_k) $ growing very large, negative shift $b_k < 0$, which is unbounded if the sequence obeys $\lim_{k\to\infty} a_k/b_k \to -\infty$. 
     
     \item \emph{Plateauing on both sides:} We have $\lim_{x \to \pm\infty} f(x) = C_{\pm}$ (finite constants) and $|f'(x)| = O(1/x^2)$ as $x \to \pm\infty.$
     For these functions, $\alpha_{f_{a_k,b_k}}$ grows unbounded roughly as $a_k$ when $a_k$ grow unbounded as $k$ grows, and scale not growing slower than shift $\lim_{k\to\infty} a_k/b_k \neq 0 .$
@@ -974,7 +983,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/vit_cloning_rank_plot.pdf}
     
     \caption{Cloning experiments across architectures. Configurations details: SGD with LR=0.01, Noisy SGD with $\sigma = 0.01$ and $\lambda = 0.999$, and Dropout with probability $0.1$. Normalization used: Batch Norm for all architectures, except ViTs, where we use Layer Norm.}
-    \label{fig:enter-label}
+    \label{fig:cloning}
 \end{figure}
 
 
@@ -984,7 +993,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/mlp_noises_cloning_losses_plot_sigma_lambda_0.99.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/mlp_noises_cloning_losses_plot_sigma_lambda_0.999.pdf}
     \caption{Effect of noise scale parameter $\sigma$ in Noisy SGD for the Cloning MLP Experiments.}
-    \label{fig:enter-label}
+    \label{fig:cloning-noise-scale-mlp}
 \end{figure}
 
 
@@ -994,7 +1003,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/mlp_noises_cloning_losses_plot_lamda_sigma_0.02.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/mlp_noises_cloning_losses_plot_lamda_sigma_0.05.pdf}
     \caption{Effect of noise decay parameter $\lambda$ in Noisy SGD for the Cloning MLP Experiments.}
-    \label{fig:enter-label}
+    \label{fig:cloning-decay-mlp}
 \end{figure}
 
 \begin{figure}
@@ -1003,7 +1012,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/vit_noises_cloning_losses_plot_sigma_lambda_0.99.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/vit_noises_cloning_losses_plot_sigma_lambda_0.999.pdf}
     \caption{Effect of noise scale parameter $\sigma$ in Noisy SGD for the Cloning ViT Experiments.}
-    \label{fig:enter-label}
+    \label{fig:cloning-scale-vit}
 \end{figure}
 
 
@@ -1013,7 +1022,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/vit_noises_cloning_losses_plot_lamda_sigma_0.02.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/vit_noises_cloning_losses_plot_lamda_sigma_0.05.pdf}
     \caption{Effect of noise decay parameter $\lambda$ in Noisy SGD for the Cloning ViT Experiments.}
-    \label{fig:enter-label}
+    \label{fig:noise-decay-vit}
 \end{figure}
 
 
@@ -1023,7 +1032,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/cnn_dropout_cloning_losses_plot.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/vit_dropout_cloning_losses_plot.pdf}
     \caption{Effect of dropout probability parameter for the Cloning MLP, CNN and ViT Experiments. Batch norm is used for the MLP and CNN models, and Layer norm for the ViT model.}
-    \label{fig:enter-label}
+    \label{fig:cloning-dropout}
 \end{figure}
 
 
@@ -1033,7 +1042,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/mlp_optimizer_cloning_r2_plot.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/mlp_optimizer_cloning_rank_plot.pdf}
     \caption{Differences between SGD and Adam optimizers in the MLP Experiments. Like SGD, Adam cannot escape the base sub-manifold, although the dynamics are different.}
-    \label{fig:enter-label}
+    \label{fig:cloning-sgd-adam}
 \end{figure}
 
 
@@ -1043,7 +1052,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/vit_optimizer_cloning_r2_plot.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/vit_optimizer_cloning_rank_plot.pdf}
     \caption{Differences between SGD and Adam optimizers in the ViT Experiments. Like SGD, Adam cannot escape the base sub-manifold, although the dynamics are different.}
-    \label{fig:enter-label}
+    \label{fig:cloning-optimizer-diff}
 \end{figure}
 
 
