@@ -1,0 +1,244 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{geometry}
+\usepackage{enumitem}
+
+\geometry{margin=1in}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{remark}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\renewcommand{\P}{\mathbb{P}}
+
+\title{Asymptotic Analysis of Function Ratios with Normal Random Variables}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\subsection{Non-linear activations}
+We want to study how activations affect feature learning and particularly rank of the representations 
+
+\subsection{Hard rank}
+
+\subsubsection{Rank recovery using non-linear activations}
+Let $f$ denote a non-linear activation. Define its \emph{rank recovery strength}:
+\begin{align*}
+    \alpha = \frac{\E f'(z)^2}{\E f(z)^2 } - 1 && z \sim N(0,1)
+\end{align*}
+
+Let $X,Y \sim N(0,1)$ be standard Gaussians with a high correlation  $\E X Y = 1-\delta, $ for some small $\delta > 0.$ The first fact is that 
+\begin{align*}
+   (X,Y)\sim N\left(0,\begin{pmatrix}
+       1 & 1-\delta \\ 1-\delta & 1
+   \end{pmatrix} \right) \implies  \frac{\E f(X) \E Y }{\sqrt{E f(X)^2 \E f(Y)^2 }}\approx 1 - (1+\alpha)\delta 
+\end{align*}
+
+
+\subsubsection{Manipulation function by shift and scaling pre-activations}
+
+Let $Z \sim \mathcal{N}(0,1)$ be a standard normal random variable. We consider a differentiable function $f: \mathbb{R} \to \mathbb{R}$. Let $g(Z) = f(aZ+b)$ denote a manipulation of this activation by shifting and scaling the pre-activations,  where $a \in \mathbb{R}^+$ (i.e., $a>0$) denotes scaling, and $b \in \mathbb{R}$ denotes the shift. We are primarily interested in rank recovery strength of $g$ as a function of the shape parameters $a$ and $b.$ 
+
+\begin{proposition}
+    Suppose we have function $f$ that is continuous and piecewise smooth,  and obeys one of the following:
+    \begin{itemize}
+        \item Half-vanishing half-Growth: we have  $f'(x) = O(1/|x|^2)$ and $f(x) = O(1/|x|)$ for $x\ne 0 $(or positive range $x\ge 0$), and powr-law growth on the other side $f(x) = x^p ( 1 + O(1/|x|))$  on the positive side (negative side), where $p > \frac12.$
+        \item Flat from both sides: we have $f'(x) = O(1/x^2) $ for both sides $x\to\pm\infty.$
+    \end{itemize}
+    Let  $(a_i,b_i)$ denote a sequence of shift and scale parameters, and let $(\alpha_i)$ denote the sequence of rank recovery strength corresponding to $g_k = f(a_k x + b_k).$  Then, if rank recovery strength is unbounded in the limit $\lim_k\alpha_k = \infty, $ then the limiting function will be flat almost everywhere according to the Gaussian kernel. Formally, for any $\epsilon>0,$ we have 
+    \begin{align*}
+        \P(|g'_k(z)|>\epsilon) \to 0 \text{ as } k\to \infty. 
+    \end{align*}
+\end{proposition}
+
+Let us review activations that fall into this propositions categories and validate them if possible:
+
+\begin{remark}
+    Most of the commonly used activations fall into one or the other category proven here. Namely, ReLU, SeLU, GeLU, Swish, Softplus, and Exp all are one-sided vanishing type. And Tanh and Sigmoid are two sided flat type. Notably, two activations do not satisfy the conditions here: LeakyReLU, and ELU, both of which have neither flat ends, nor half-sided vanishing side. 
+\end{remark}
+
+
+Because our goal is to study the configurations that have unbounded $\alpha,$ we will study  asymptotic behavior of the ratio $R$:
+$$R(a,b) = \frac{\mathbb{E}[g(Z)^2]}{\mathbb{E}[(g'(Z))^2]} $$, which is inversely related to $\alpha. $ More precisely, $\alpha$ is unbounded precisely when $R$ is vanishing $\alpha = \infty \iff R = 0. $ The reason for this chagne is that treating $R$ will be more amenable to our calculations. 
+
+We are interested in the regime where $a \to \infty$ and $b \to \pm\infty$. We define the ratio $\gamma = a/b$. Since $a>0$, the sign of $\gamma$ is determined by the sign of $b$. We will analyze $R$ for different asymptotic behaviors of $\gamma$.  Let $X = aZ+b$. Then $X \sim \mathcal{N}(b, a^2)$, which is alternatively defined  $X = b(\gamma Z + 1)$. Finally, let $W = X/|b|$, which is alternatively defined as $W = \text{sgn}(b)(\gamma Z + 1),$ or $W \sim \mathcal{N}(\text{sgn}(b), \gamma^2)$.  
+
+\begin{lemma}
+    Suppose we have function $f$ that satisfies one of the following two conditions: 
+    \begin{itemize}
+        \item Half-vanishing half-Growth: we have  $f'(x) = O(1/|x|^2)$ and $f(x) = O(1/|x|)$ for $x\ne 0 $(or positive range $x\ge 0$), and powr-law growth on the other side $f(x) = x^p ( 1 + O(1/|x|))$  on the positive side (negative side), where $p > \frac12.$ Then, for any finite values of $a,b$ or infinite values such that $\gamma = a/b$ is finite, $R(a,b)$ will have finite non-zero values. The only limiting configuration that will vanish it will be $a,b$ growing, but $\gamma 
+= a/b \to 0^-,$ where we have $R \approx \gamma^2.$
+        \item Flat from both sides: we have $f'(x) = O(1/x^2) $ for both sides $x\to\pm\infty,$ then for all finite values of $a,b$ then $R(a,b)$ will be finite, and if $a,b$ grow while $\gamma = a/b$ is fixed, we have $R(a,b) = O( 1 /a  ),$ which will vanish if $a$ grows. 
+    \end{itemize}
+    In both these cases, if $a,b$ are finite values, $R(a,b)$ will also be a finite non-zero value, 
+\end{lemma}
+
+The following two lemmas prove this lemma. 
+
+
+\begin{lemma}[$f(x)$ with Power-Law Growth on One Side]
+This lemma considers functions that grow as a power law on the positive side and decay rapidly on the negative side.
+
+\textbf{Assumptions:}
+Let $f(x)$ be a differentiable function such that:
+\begin{itemize}
+    \item[\textbf{(A1)}] For $x \ge 0$: $f(x) = x^p + o(x^{p-1})$ and $f'(x) = px^{p-1} + o(x^{p-2})$ for large positive $x$, for some constant $p > 1/2$. 
+    \item[\textbf{(A2)}] For $x \le 0$: $f(x) = O(1/|x|)$ and $f'(x) = O(1/|x|^2)$. (These are the ``vanishing'' conditions on the negative side).
+    \item[\textbf{(A3)}] $f$ and $f'$ are finite and bounded on any finite range on the real line. 
+\end{itemize}
+
+\textbf{Asymptotic Result for $R$:}
+As $a \to \infty$ and $b \to \pm\infty$ (such that $\gamma=a/b$ behaves as specified above), the dominant contribution to both the numerator and the denominator of $R$ comes from the region where $aZ+b \ge 0$. The asymptotic behavior of $R$ is equivalent to that for $f_0(x) = x^p \mathbb{I}(x \ge 0)$.
+
+Let $W \sim \mathcal{N}(\text{sgn}(\gamma), |\gamma|^2)$. The ratio $R$ behaves as:
+$$R(a,b) \approx \frac{1}{p^2 \gamma^2} \frac{\mathbb{E}[W^{2p} \mathbb{I}(W \ge 0)]}{\mathbb{E}[W^{2p-2} \mathbb{I}(W \ge 0)]}$$
+where the expectation is over the distribution of $W$. More explicitly:
+$$R(a,b) \approx \frac{1}{p^2 \gamma^2} \frac{\int_0^\infty w^{2p} \exp\left(-\frac{(w - \text{sgn}(\gamma))^2}{2|\gamma|^2}\right) dw}{\int_0^\infty w^{2p-2} \exp\left(-\frac{(w - \text{sgn}(\gamma))^2}{2|\gamma|^2}\right) dw}$$
+
+which is finite for all finite values of $\gamma,$ and for its limiting values we have:
+
+\begin{enumerate}
+    \item \textbf{Case $b>0 \implies \gamma > 0$}:
+    \begin{itemize}
+        \item If $\gamma \to 0^+$: The mean of $W$ is $1$ and variance $\gamma^2 \to 0$. $W$ is concentrated at $1$, we have $R \approx \frac{1}{p^2 \gamma^2} + \frac{4p-3}{p^2}$.
+        \item If $\gamma \to +\infty$: The variance variance of $W$ dominates the mean $1$: $R \to \frac{2p-1}{p^2}$.
+    \end{itemize}
+
+    \item \textbf{Case $b<0 \implies \gamma < 0$}:
+    \begin{itemize}
+        \item If $\gamma \to 0^-$ The mean of $W$ is $-1$ and variance $\gamma^2 \to 0$. $W$ is concentrated at $-1$. Since integrals are over $w \ge 0$, they become very small.
+        $R \approx \gamma^2 \frac{2(2p-1)}{p}$, which converges to zero $R\to 0 $ as $\gamma \to 0^-.$
+        \item If $\gamma \to -\infty$: The variance dominates the mean: $R \to \frac{2p-1}{p^2}$.
+    \end{itemize}
+\end{enumerate}
+
+The condition $p>1/2$ ensures that the moment $\mathbb{E}[W^{2p-2}\mathbb{I}(W \ge 0)]$ is finite.
+\end{lemma}
+
+\begin{proof}[Proof Sketch]
+Let $X = aZ+b$.
+
+\textbf{Numerator:} $\mathbb{E}[f(X)^2] = \mathbb{E}[f(X)^2 \mathbb{I}(X \ge 0)] + \mathbb{E}[f(X)^2 \mathbb{I}(X < 0)]$.
+
+For large $|b|$, $X$ is large.
+\begin{itemize}
+    \item If $X \ge 0$ and large, $f(X)^2 \sim (X^p)^2 = X^{2p}$. $\mathbb{E}[X^{2p}\mathbb{I}(X \ge 0)] \sim |b|^{2p}\mathbb{E}[W^{2p}\mathbb{I}(W \ge 0)]$.
+    \item If $X < 0$ and large, $f(X)^2 = O(1/X^2)$. $\mathbb{E}[O(1/X^2)\mathbb{I}(X < 0)] = O(|b|^{-2})$.
+\end{itemize}
+
+Since $p > 1/2 \implies 2p > 1$, the $O(|b|^{2p})$ term dominates.
+$\mathbb{E}[f(X)^2] \sim |b|^{2p} \mathbb{E}[W^{2p} \mathbb{I}(W \ge 0)]$.
+
+\textbf{Denominator:} $a^2 \mathbb{E}[(f'(X))^2] = a^2 \mathbb{E}[(f'(X))^2 \mathbb{I}(X \ge 0)] + a^2 \mathbb{E}[(f'(X))^2 \mathbb{I}(X < 0)]$.
+
+\begin{itemize}
+    \item If $X \ge 0$ and large, $(f'(X))^2 \sim (px^{p-1})^2 = p^2 X^{2p-2}$. Contribution is 
+    \begin{align}
+    a^2 p^2 \mathbb{E}[X^{2p-2}\mathbb{I}(X \ge 0)] &\sim a^2 p^2 |b|^{2p-2}\mathbb{E}[W^{2p-2}\mathbb{I}(W \ge 0)] \\
+    &= (a/|b|)^2 p^2 |b|^{2p} \mathbb{E}[W^{2p-2}\mathbb{I}(W \ge 0)] \\
+    &= |\gamma|^2 p^2 |b|^{2p} \mathbb{E}[W^{2p-2}\mathbb{I}(W \ge 0)]
+    \end{align}
+    \item If $X < 0$ and large, $(f'(X))^2 = O(1/X^4)$. Contribution is $a^2 O(|b|^{-4}) = O(|\gamma|^2 |b|^{-2})$.
+\end{itemize}
+
+The $O(|\gamma|^2 |b|^{2p})$ term dominates.
+$a^2 \mathbb{E}[(f'(X))^2] \sim \gamma^2 p^2 |b|^{2p} \mathbb{E}[W^{2p-2} \mathbb{I}(W \ge 0)]$.
+
+The ratio becomes 
+$$R \approx \frac{|b|^{2p} \mathbb{E}[W^{2p} \mathbb{I}(W \ge 0)]}{\gamma^2 p^2 |b|^{2p} \mathbb{E}[W^{2p-2} \mathbb{I}(W \ge 0)]} = \frac{1}{\gamma^2 p^2} \frac{\mathbb{E}[W^{2p} \mathbb{I}(W \ge 0)]}{\mathbb{E}[W^{2p-2} \mathbb{I}(W \ge 0)]}$$
+
+Substituting $W \sim \mathcal{N}(\text{sgn}(b), |\gamma|^2)$ (which is $\mathcal{N}(\text{sgn}(\gamma), |\gamma|^2)$) gives the stated result. The limiting behaviors follow from analyzing the ratio of integrals involving the normal PDF.
+\end{proof}
+
+\begin{lemma}[$f(x)$ Decaying to Constants on Both Sides]
+This lemma considers functions that approach constant values at $\pm\infty$.
+
+\textbf{Assumptions:}
+Let $f(x)$ be a continuously differentiable function such that:
+\begin{itemize}
+    \item[\textbf{(A1)}] $\lim_{x\to\infty} f(x)$ and $\lim_{x\to-\infty} f(x) $ both exist and have finite values. 
+    \item[\textbf{(A2)}] The convergence to limits happens at a $O(1/|x|)$ rate
+    \begin{align}
+    |f'(x)| &= O(1/x^2) \quad \text{as } x \to \pm\infty  \implies  f(x) = C_\pm + O(1/|x|) \quad \text{as } x \to \pm\infty,
+    \end{align}
+    where $C_-, C_+$ are constants. This implies $f$ is ``plateauing'' on both sides of the real line. 
+    
+    \item[\textbf{(A3)}] The integral $I_2 = \int_{-\infty}^{\infty} (f'(x))^2 dx$ is finite and positive.
+\end{itemize}
+
+As $a \to \infty$ (and $b \to \pm\infty$ according to $\gamma = a/b$), let $K_0 = -b/a = -1/\gamma$.
+
+Define $C_1() = P^2 \mathbb{P}(Z > x) + N^2 \mathbb{P}(Z < x).$
+
+Provided $I_2 \phi_Z(-1/\gamma) \neq 0$ (where $\phi_Z$ is the PDF of $Z \sim \mathcal{N}(0,1)$), the asymptotic behavior of $R$ is:
+$$R(a,b) = \frac{C_1(-\frac1\gamma)}{I_2 \phi_Z(-\frac1\gamma)} \frac{1}{a} + O\left(\frac{1}{a^2}\right)$$
+
+This general form captures the behavior across different regimes of $\gamma$ with 
+    $K_0 = -1/\gamma$ as a fixed non-zero constant, $C_1(K_0)$ and $\phi_Z(K_0)$ are positive constants.
+    $R(a,b) \sim \frac{C_1(-1/\gamma)}{I_2 \phi_Z(-1/\gamma)} \frac{1}{a}$, so $R(a,b) = O(1/a)$.
+
+\begin{enumerate}
+    \item \textbf{$\gamma \to \gamma_0 \in \mathbb{R} \setminus \{0\}$ (fixed non-zero $\gamma_0$):}
+    $K_0 = -1/\gamma_0$ is a fixed non-zero constant. $C_1(K_0)$ and $\phi_Z(K_0)$ are positive constants.
+    $R(a,b) \sim \frac{C_1(-1/\gamma_0)}{I_2 \phi_Z(-1/\gamma_0)} \frac{1}{a}$, so $R(a,b) = O(1/a)$.
+
+    \item \textbf{$\gamma \to 0^+$ (so $b \to +\infty$, $K_0 = -1/\gamma \to -\infty$):}
+    $C_1(K_0) \to P^2 \mathbb{P}(Z > -\infty) + N^2 \mathbb{P}(Z < -\infty) = P^2$.
+    $\phi_Z(K_0) = \phi_Z(-1/\gamma) \approx \frac{|\gamma|}{\sqrt{2\pi}} \exp\left(-\frac{1}{2\gamma^2}\right)$ for small $\gamma > 0$.
+    $R(a,b) \sim \frac{P^2}{a I_2 \phi_Z(-1/\gamma)} \approx \frac{P^2 \sqrt{2\pi}}{I_2} \frac{1}{a|\gamma|} \exp\left(\frac{1}{2\gamma^2}\right)$.
+    $R(a,b)$ grows very rapidly as $\gamma \to 0^+$.
+
+    \item \textbf{$\gamma \to 0^-$ (so $b \to -\infty$, $K_0 = -1/\gamma \to +\infty$):}
+    $C_1(K_0) \to N^2$.
+    $\phi_Z(K_0) = \phi_Z(-1/\gamma) \approx \frac{|\gamma|}{\sqrt{2\pi}} \exp\left(-\frac{1}{2\gamma^2}\right)$ for small $\gamma < 0$.
+    $R(a,b) \sim \frac{N^2}{a I_2 \phi_Z(-1/\gamma)} \approx \frac{N^2 \sqrt{2\pi}}{I_2} \frac{1}{a|\gamma|} \exp\left(\frac{1}{2\gamma^2}\right)$.
+    $R(a,b)$ also grows very rapidly as $\gamma \to 0^-$.
+
+    \item \textbf{$\gamma \to \pm\infty$ (so $K_0 = -1/\gamma \to 0$):}
+    $C_1(K_0) \to C_1(0) = P^2 \mathbb{P}(Z > 0) + N^2 \mathbb{P}(Z < 0) = (P^2+N^2)/2$.
+    $\phi_Z(K_0) \to \phi_Z(0) = 1/\sqrt{2\pi}$.
+    $R(a,b) \sim \frac{(P^2+N^2)/2}{a I_2 (1/\sqrt{2\pi})} = \frac{(P^2+N^2)\sqrt{2\pi}}{2 I_2} \frac{1}{a}$, so $R(a,b) = O(1/a)$.
+\end{enumerate}
+
+In all cases where $K_0$ is finite and non-zero, or $K_0 \to 0$, $R(a,b) \to 0$ as $a \to \infty$. However, if $\gamma \to 0^\pm$, $R(a,b)$ can grow without bound due to the exponential term involving $\gamma$.
+\end{lemma}
+
+\begin{proof}[Proof Sketch]
+Let $X = aZ+b = a(Z-K_0)$.
+
+\textbf{Numerator:} $N(a,b) = \mathbb{E}[f(X)^2]$. As $a \to \infty$, $f(X) \to P \cdot \mathbb{I}(Z>K_0) + N \cdot \mathbb{I}(Z<K_0)$ (since $a>0$).
+
+By Dominated Convergence Theorem (DCT), $\lim_{a\to\infty} N(a,b) = C_1(K_0)$.
+A more precise expansion using (A2) gives $N(a,b) = C_1(K_0) + O(1/a)$.
+
+\textbf{Denominator:} $D(a,b) = a^2 \mathbb{E}[(f'(X))^2]$.
+$$D(a,b) = a^2 \int_{-\infty}^{\infty} (f'(aZ+b))^2 \phi_Z(Z)dZ$$
+
+Let $u=aZ+b$, so $dZ=du/a$.
+$$D(a,b) = a \int_{-\infty}^{\infty} (f'(u))^2 \phi_Z\left(\frac{u-b}{a}\right)du = a \int_{-\infty}^{\infty} (f'(u))^2 \phi_Z\left(K_0 + u/a\right)du$$
+
+As $a \to \infty$, $u/a \to 0$. Let $H_a(u) = (f'(u))^2 \phi_Z(K_0 + u/a)$.
+
+Pointwise, $H_a(u) \to (f'(u))^2 \phi_Z(K_0)$. By DCT (since $\phi_Z$ is bounded and $\int (f'(u))^2 du = I_2 < \infty$):
+$$\lim_{a\to\infty} \int H_a(u)du = \phi_Z(K_0)I_2$$
+
+A Taylor expansion of $\phi_Z(K_0+u/a) = \phi_Z(K_0) + \phi_Z'(K_0)(u/a) + O((u/a)^2)$ leads to:
+$$D(a,b) = a \left( I_2\phi_Z(K_0) + \frac{I_{u,1}\phi_Z'(K_0)}{a} + O(1/a^2) \right) = aI_2\phi_Z(K_0) + I_{u,1}\phi_Z'(K_0) + O(1/a)$$
+where $I_{u,1} = \int u(f'(u))^2 du$, which converges due to (A2).
+
+\textbf{Ratio:} $R(a,b) = \frac{C_1(K_0) + O(1/a)}{aI_2\phi_Z(K_0) + I_{u,1}\phi_Z'(K_0) + O(1/a)}$.
+
+This gives $R(a,b) = \frac{C_1(K_0)}{aI_2\phi_Z(K_0)} (1 + O(1/a)) = \frac{C_1(K_0)}{I_2\phi_Z(K_0)} \frac{1}{a} + O(1/a^2)$, assuming $I_2\phi_Z(K_0) \neq 0$. 
+
+The specific behaviors for $\gamma$ follow from how $K_0=-1/\gamma$ affects $C_1(K_0)$ and $\phi_Z(K_0)$.
+\end{proof}
+
+\end{document}
