@@ -1,4 +1,3 @@
-
 \documentclass{article}
 
 % NeurIPS 2025 formatting
@@ -15,7 +14,7 @@
 \hypersetup{
     colorlinks=false,  % Don't color the links
     % pdfborder={0 0 0}, % No border around links (set to 0)
-    % hidelinks          % Hide all visual cues of links
+    % hidelinks         % Hide all visual cues of links
 }
 \usepackage{url}            % simple URL typesetting
 \usepackage{booktabs}       % professional-quality tables
@@ -173,7 +172,7 @@ Linear layers in neural networks, which are essentially matrix multiplications (
 This inherent rank-reducing nature of linear transformations means that non-linearities are crucial for creating and maintaining feature diversity.
 
 \paragraph{Non-linear Activations and Rank Recovery.}
-Non-linear activation functions are the primary mechanism by which neural networks can counteract the rank-reducing effects of linear layers and expand the dimensionality of learned representations. Informally, even if input features are highly correlated (implying low effective rank), a sufficiently non-linear activation can transform them in such a way that they become more distinct, increasing both the absolute number of independent features (hard rank) and their effective diversity.  
+Non-linear activation functions are the primary mechanism by which neural networks can counteract the rank-reducing effects of linear layers and expand the dimensionality of learned representations. Informally, even if input features are highly correlated (implying low effective rank), a sufficiently non-linear activation can transform them in such a way that they become more distinct, increasing both the absolute number of independent features (hard rank) and their effective diversity.   
 To make this more formal, consider a matrix of pre-activations $X \in \R^{n \times d}$ ($n$ samples, $d$ features with $n\ge d$), where each row is independently drawn from a multivariate Gaussian distribution $\mathcal{N}(0, C)$, with $C$ being the covariance matrix (unit diagonals, off-diagonals strictly in $(-1,1)$). Let $f: \R \to \R$ be an element-wise non-linear activation function.
 
 \begin{proposition}[Rank recovery with non-linear activations]
@@ -186,15 +185,14 @@ The formal statement and proof details, based on Hermite polynomial expansions o
 \begin{remark}
 \label{rem:duplicate_rank}
     The proposition above reveals an important insight that, both in hard rank and effective rank case, as long as pre-activation correlations are within $(-1,1),$ their post-activations will be hard rank and improved effective rank. Thus, one way of countering this will be to create duplicate features, where the activation will be unable to decouple.
-    % \ff{what is "hard rank"?}
+    %  
 \end{remark}
 
 This theory reveals an important insight that non-linear activations indeed recover both hard rank and effective rank.  One natural question is, what can we say if the pre-activations deviate from standard Gaussian, e.g., if the pre-activations are distributed as $x\sim N(\mu,\sigma^2).$ This question is particularly relevant considering that training dynamics can dramatically shift distribution of pre-activations. It turns out that we can view this distributional shift as a way of modulating the activation. For example, in case of non-standard Gaussian pre-activation, we can control its mean and standard deviation into the activation, by shaping the activation $f(\mu + \sigma z)$ where $z\sim N(0,1)$. Thus, we view  changes in pre-activation statistics as a transformation the activation function itself. The following example sheds more light on this notion.
 
 \begin{example}
-For $f(x) = \tanh(ax)$. If $a$ is small, $\tanh(ax) \approx ax$, behaving linearly, with $\alpha$ converging to $0.$ On the other hand, if $a$ is very large, $\tanh(ax)$ approaches a sign function, and $\alpha$ tends to infinity.  
-For $f(x) = \text{ReLU}(a x + b)$. If $b $ is a large positive shift, $f(x)$ will be mostly an affine transform $f(x) = a x + b, $ which cannot recover rank, but for non-positive shifts $b\ge 0, $ it will maintain its non-linearity. 
-% \ff{non-positive or $\le 0$?}
+For $f(x) = \tanh(ax)$. If $a$ is small, $\tanh(ax) \approx ax$, behaving linearly, with $\alpha$ converging to $0.$ On the other hand, if $a$ is very large, $\tanh(ax)$ approaches a sign function, and $\alpha$ tends to infinity.   
+For $f(x) = \text{ReLU}(a x + b)$. If $b $ is a large positive shift, $f(x)$ will be mostly an affine transform $f(x) = a x + b, $ which cannot recover rank, but for non-positive shifts $b \le 0, $ it will maintain its non-linearity. 
 % You can see an illustration of this in Figure~\ref{fig:theory_tanh_az_rank}.
 \end{example}
 
@@ -218,7 +216,7 @@ Then, the derivative $f'_{s_k}(z)$ tends to zero in probability as $k \to \infty
 $$ \lim_{k \to \infty} P(|f'_{s_k}(z)| < \epsilon) = 1, \quad \text{for } z \sim \mathcal{N}(0,1). $$
 \end{corollary}
 
-The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Appendix~\ref{app:theory_appendix}\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} for a proof of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
+The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Appendix~\ref{app:max_rank_frozen} for a proof of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh.\AJ{Consider FF's point about a potential connection to lazy training here. This phenomenon might resemble lazy training regimes under certain scaling limits, especially with full-rank random initializations. Would a brief mention or discussion be appropriate?}
 
 \begin{example}
 For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $\alpha_f.$ However, observe that in the limit of $\lim_{a \to \infty} \tanh(a x) = \text{sign}(x),$ we have $f'=0$ almost everywhere except $x=0.$ 
@@ -227,18 +225,15 @@ For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $
 
 % \GIU{This conclusion needs to be expanded on.} 
 % (Giulia's trys) 
-Taken together, Proposition \ref{prop:hard_rank_increase_main} and Corollary \ref{cor:max_alpha_frozen_formal}, tell us that activation functions are a double-edged sword when it comes to feature rank. On one hand, when the modulation is present, the non-linearity allows rank recovery for low-rank pre-activations, while on the other hand, if the modulation strength  is too high, the activation function can lead to frozen units.   
+Taken together, Proposition \ref{prop:hard_rank_increase_main} and Corollary \ref{cor:max_alpha_frozen_formal}, tell us that activation functions are a double-edged sword when it comes to feature rank. On one hand, when the modulation is present, the non-linearity allows rank recovery for low-rank pre-activations, while on the other hand, if the modulation strength  is too high, the activation function can lead to frozen units.    
 The key message of the corollary and the example above is  that frozen features may emerge as a natural tendency towards finding rich and diverse features while learning. 
 % \GIU{Where did the ReLU example go?}
 
 \paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape.  However, moving too far in any direction may lead the network to Loss of Plasticity: aggressively increasing rank via strong non-linearity risks creating frozen units, i.e., Corollary~\ref{cor:max_alpha_frozen_formal}, while simplifying representations can lead to rank collapse or creation of duplicate features, i.e., Remark~\ref{rem:duplicate_rank}.
 
 \subsection{Experimental Setup}
-% \ff{may be better as a subsection than a paragraph} 
-To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes. 
-Each task is trained for 500 steps, and validation is performed periodically, resulting in approximately 25,000 total steps shown in the figures. 
-We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
-\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000. where are the task boundaries? is it at 2500 intervals? is the accuracy shown for the first task or average on all tasks?}
+%  
+To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of $200$ classes. Each architecture was trained on a sequence of $40$ tasks, with each task containing a disjoint subset of $5$ classes. We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Training proceeds sequentially through the 40 tasks. Figures showing training progression over 'steps' reflect this continuous process; refer to Appendix~\ref{app:empirical_evidence_appendix} for specifics on steps per task and task switching protocol. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
 \AJ{Excellent point, there was a small inconsistency here before which is now fixed (we have 40 tasks not 10), and each task is trained for 500 epochs, so the 25000 steps corresponds to this plus the validation steps. Is it important to fix the plots or just explain it in text? }
 
 
@@ -251,7 +246,7 @@ The experimental evidence confirms these intuitions (see Appendix~\ref{app:empir
     \includegraphics[width=0.23\linewidth]{paper/images/resnet_block_dead_fraction_plot.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_plot.pdf}
         \vspace{-.3cm}
-    \caption{Causes and symptoms of Loss of Plasticity emerging during continual learning. The plots illustrate (across different architectures like MLP, CNN, ResNet, and ViT from left to right) an increase in the fraction of dead or duplicate units during training, coincidental with a decrease in training accuracy. These are key indicators of LoP. (Details of experimental setup in Appendix~\ref{app:empirical_evidence_appendix}).}
+    \caption{Causes and symptoms of Loss of Plasticity emerging during continual learning. The plots illustrate (across different architectures like MLP, CNN, ResNet, and ViT from left to right) an increase in the fraction of dead or duplicate units during training, coincidental with a decrease in training accuracy. These are key indicators of LoP. The 'Training Accuracy' refers to an evolving measure of performance across tasks (specific definition in Appendix~\ref{app:empirical_evidence_appendix}, cf. Figure~\ref{fig:normalizations-recovering} caption). (Details of experimental setup in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:emergence_lop_symptoms_cl}
 \end{figure}
 
@@ -265,19 +260,20 @@ The experimental evidence confirms these intuitions (see Appendix~\ref{app:empir
     \caption{Co-evolution of Effective rank and LoP symptoms, such as dead or duplicate units in the network during continual training. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:norm-rank-nG}
 \end{figure}
-% \ff{the details of these experiments should be in the main body and come before the figures}
+% 
 
 
 Our inquiry so far highlights two key pathways to LoP common symptoms:
     (1) 
     % \GIU{The duplicate features so far have only been mentioned in passing. Should spend a sentence or two to define them above.} 
-    Emergence of \textbf{duplicate features}, where distinct computational units, or groups of units, within a network layer effectively learn to become identical or highly correlated, as a potential consequence of attempting to lower representational rank, i.e.,   Remark~\ref{rem:duplicate_rank}. 
+    Emergence of \textbf{duplicate features}, where distinct computational units, or groups of units, within a network layer effectively learn to become identical or highly correlated, as a potential consequence of attempting to lower representational rank, i.e.,    Remark~\ref{rem:duplicate_rank}. 
     (2) Emergence of \textbf{frozen or dead features}, where weights and biases of a unit stop learning, as a result of attempting to maximize rank increase (leading to saturation) or to flatten the loss landscape around the current parameters, i.e., Corrolary~\ref{cor:max_alpha_frozen_formal}.
 Thus, the critical question now becomes: do these features, once emerged, lead to persistent LoP as defined by our framework (Definition~\ref{def:lop})? 
 
 
+
 \section{LoP Manifolds: Traps for Gradient Descent}
-\ff{it looks like the first time we actually use the definitions of manifold is here. maybe consider moving content of section 2 to this section}
+% 
 \AJ{do you mean the  move entire preliminary section to here or just the definitions. If we move definitions preliminary becomes one paragraph though. }
 \label{sec:existence_lop_manifold}
 In the previous section, we discussed how features characteristic of LoP, such as frozen units and duplicated representations, can emerge during training. Now, we formalize how these phenomena lead to the network's parameters being confined to LoP manifolds, restricting subsequent learning. We present a central proposition that jointly addresses LoP arising from frozen and duplicate units.
@@ -292,8 +288,8 @@ Let $\theta \in \Theta$ be the parameters of a neural network.
     \item \textbf{Duplicate manifold:} Let us suppose we can partition the units of a network to a number of blocks, where within each block the units are perfectly cloned (i.e., they compute identical functions due to symmetric weight configurations and identical activation functions, and receive identical error signals), their  parameters of the model will be constrained such that their updates maintain this symmetry. The parameter trajectory becomes confined to an affine LoP manifold $\mathcal{M}_D$ where this symmetry is preserved (e.g., weights remain identical or maintain specific sum relations). The dimension of $\mathcal{M}_D$ is the number of connections between the partitions, which can be significantly lower than the raw parameter count.
 \end{enumerate}
 In both cases, the gradient $\nabla_\theta \Loss(\theta)$ is tangent to $\mathcal{M}_F$ or $\mathcal{M}_D$ respectively, satisfying Definition~\ref{def:lop}.
-% \GIU{Remove these parenthesis, mention the proof in the appendix.}
-Detailed conditions for duplicate cloning and its proof are given in  Appendix~\ref{app:empirical_evidence_appendix}. 
+% 
+Detailed conditions for duplicate cloning and its proof are given in  Appendix~\ref{app:cloning_manifold_details}. 
 \end{proposition}
 
 % \begin{remark}
@@ -343,15 +339,13 @@ While a full theoretical characterization of the stability of empirically observ
     \includegraphics[width=0.24\linewidth]{cloning_losses_plot.pdf}
     \includegraphics[width=0.24\linewidth]{cloning_rank_plot.pdf}
     \vspace{-.3cm}
-    % \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold.}
-    \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. \textbf{Left}: Cloning $R^2$ measures how well the mean of cloned units explains the variance of individual units in each layer (higher values indicate stronger cloning, see Section~\ref{subsec:core_methodologies} for details). \textbf{Middle}: Loss comparison between base and cloned models. \textbf{Right}: Effective rank evolution showing representational diversity.}
-
-    \label{fig:enter-label}
+    \caption{Cloning experiments on MLPs where hidden layer units are duplicated (cloning factor of 2 from a base model). 'Cloning R2 Score' (left) indicates functional identity of cloned units (higher means stronger cloning). 'Losses' (middle) compares the training loss of the cloned model ('Cloned Loss') and the original model ('Base Loss'). 'Rank' (right) refers to effective rank. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
+    \label{fig:enter-label} %TODO: Figure label was duplicated, consider making labels more specific if needed.
     \label{fig:cloning_perfect_appendix}
     \label{fig:dropout_escapes_cloning_appendix}
 \end{figure}
-\ff{what is "cloning R2" in y-axis of the left plot?}
-\ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
+% 
+% 
 
 Both noisy SGD and dropout act as symmetry-breaking operations. In the case of dropout, both forward and backward passes are asymmetric for cloned units. For noisy SGD, the backward pass (gradient update) becomes asymmetric. This asymmetry causes the parameters of notionally cloned units to slowly diverge. Remarkably, in our MLP experiments, even a small amount of gradient noise e.g., a single step with noise magnitude $0.01$ relative to gradient norms, suffices to initiate escape from an LoP manifold, though stronger noise generally leads to faster escape. In contrast, in some other settings such as Vision Transformers, while the model could escape from the manifold with a small perturbation, it did not move very far from it. More experimental studies into this direction would be vital to better understand the stability of these LoP manifolds.  
 
@@ -387,7 +381,7 @@ This is widely supported by empirical evidence (see Appendix~\ref{app:empirical_
 \paragraph{Recovery from LoP via Perturbations.}
 What if LoP conditions, such as widespread frozen units or extensive feature cloning, have already set in? In such cases, mitigation strategies like normalization, which act proactively, may no longer be sufficient to reverse the state, as indicated by cloning experiments where normalization alone doesn't break perfect, established clones. However, similar to our discussion on manifold stability (Section~\ref{sec:existence_lop_manifold}), injecting noise into the training process can be a viable recovery strategy.
 
-The principle is that if the LoP manifold is unstable or saddle-like, perturbations can allow the optimizer to find an escape route. Noisy SGD and the more sophisticated Continual Backpropagation \citep{dohare2024loss} are examples of such mechanisms. An interesting benchmark are the ``bit-flipping'' experiments, a regression task where the current sample is a stochastic function of the previous sample. The model size is controlled to be lower than the complexity of the data generating function. Figures~\ref{fig:CBP-scale-rank} and \ref{fig:CBP-scale-dup} illustrate how aspects like rank and feature duplication are affected by the perturbed dynamics and the dimensionality of the model.   Illustrations of recovery dynamics can be found in Appendix~\ref{app:empirical_evidence_appendix}.
+The principle is that if the LoP manifold is unstable or saddle-like, perturbations can allow the optimizer to find an escape route. Noisy SGD and the more sophisticated Continual Backpropagation \citep{dohare2024loss} are examples of such mechanisms. An interesting benchmark are the ``bit-flipping'' experiments, a regression task where the current sample is a stochastic function of the previous sample (see \citep{dohare2024loss} and Appendix~\ref{app:empirical_evidence_appendix} for full details). In this setup, a target network uses Linear Threshold Units (LTUs), and the input consists of $m$ bits, $f$ of which periodically flip their state, creating a non-stationary target function that a two-layer MLP is trained online to learn. The model size is controlled to be lower than the complexity of the data generating function. Figures~\ref{fig:CBP-scale-rank} and \ref{fig:CBP-scale-dup} illustrate how aspects like rank and feature duplication are affected by the perturbed dynamics and the dimensionality of the model.    Illustrations of recovery dynamics can be found in Appendix~\ref{app:empirical_evidence_appendix}.
 \begin{figure}[!ht]
     \centering
     \includegraphics[width=0.33\linewidth]{paper/images/bf_Baseline_rankloss_plot.pdf}
@@ -405,7 +399,7 @@ The principle is that if the LoP manifold is unstable or saddle-like, perturbati
     \caption{Bit Flipping experiment on 5M samples. Duplicated structures (indicated by fraction of duplicate features at different layers/scales) emerge during training with standard Backpropagation (BP) but are less prevalent with Continual Backpropagation (CBP). As the model width is increased more duplicate features emerge. The size of the data generating function is $100$. (Other experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:CBP-scale-dup}
 \end{figure}
-\ff{details of bit flipping experiment are not defined in the main body}
+% 
 
 An interesting distinction arises when comparing artificially induced LoP (like explicit cloning) with naturally emerging LoP symtoms in challenging scenarios like continual learning. In controlled cloning setups (e.g., as conceptualized in Figure~\ref{fig:dropout_escapes_cloning_appendix}, dropout can be effective in breaking the artificially imposed symmetry and allowing units to diverge. In contrast, in our continual Bit Flipping experiments, the role of dropout can be mixed or even detrimental. While it might prevent some forms of LoP, it can also hinder the consolidation of new knowledge or exacerbate forgetting if it too aggressively discards learned information relevant to the new task. This suggests that the optimal strategy for maintaining or recovering plasticity might be context-dependent.
 
@@ -433,68 +427,68 @@ Ultimately, understanding and overcoming LoP is crucial for building AI systems 
 % \section*{NeurIPS Paper Checklist}
 % \begin{enumerate}
 % \item {\bf Claims}
-%     \item Answer: \answerYes{}
-%     \item Justification: The claims in the abstract and introduction accurately reflect the paper's contributions on LoP in neural networks, linking it to specific mechanisms (saturation, cloning) and proposing a dynamical systems framework.
+%       \item Answer: \answerYes{}
+%       \item Justification: The claims in the abstract and introduction accurately reflect the paper's contributions on LoP in neural networks, linking it to specific mechanisms (saturation, cloning) and proposing a dynamical systems framework.
 
 % \item {\bf Limitations}
-%     \item Answer: \answerYes{}
-%     \item Justification: Limitations are discussed in the Discussion section (Section 6), acknowledging open questions regarding non-linear manifolds, lack of our theoretical understanding of stability of LoP manifolds, effect of momentum and adaptive scaling, and the need for more sophisticated continual randomization schemes.
+%       \item Answer: \answerYes{}
+%       \item Justification: Limitations are discussed in the Discussion section (Section 6), acknowledging open questions regarding non-linear manifolds, lack of our theoretical understanding of stability of LoP manifolds, effect of momentum and adaptive scaling, and the need for more sophisticated continual randomization schemes.
 
 % \item {\bf Theory assumptions and proofs}
-%     \item Answer: \answerYes{}
-%     \item Justification: All theoretical results (propositions, corollary) state their assumptions clearly. Complete proofs are provided in Appendix~\ref{app:theory_appendix}.
+%       \item Answer: \answerYes{}
+%       \item Justification: All theoretical results (propositions, corollary) state their assumptions clearly. Complete proofs are provided in Appendix~\ref{app:theory_appendix}.
 
 % \item {\bf Experimental result reproducibility}
-%     \item Answer: \answerYes{} % Changed from Yes to NA as experiments are planned
-%     \item Justification: Section~\ref{app:empirical_evidence_appendix} outlines all experiments. Details on specific datasets, architectures, hyperparameters, and evaluation protocols would be provided with the results in a final version, enabling reproducibility. Code would also be released.
+%       \item Answer: \answerYes{} % Changed from Yes to NA as experiments are planned
+%       \item Justification: Section~\ref{app:empirical_evidence_appendix} outlines all experiments. Details on specific datasets, architectures, hyperparameters, and evaluation protocols would be provided with the results in a final version, enabling reproducibility. Code would also be released.
 
 % \item {\bf Open access to data and code}
-%     \item Answer: \answerYes{} % Changed from Yes to NA as experiments are planned
-%     \item Justification: Code and experimental configurations related to experiments the paper, in particular extensively discussed in Section~\ref{app:empirical_evidence_appendix} will be made available upon completion and acceptance. Only standard datasets (e.g., CIFAR, ImageNet variants) will are used.
+%       \item Answer: \answerYes{} % Changed from Yes to NA as experiments are planned
+%       \item Justification: Code and experimental configurations related to experiments the paper, in particular extensively discussed in Section~\ref{app:empirical_evidence_appendix} will be made available upon completion and acceptance. Only standard datasets (e.g., CIFAR, ImageNet variants) will are used.
 
 % \item {\bf Experimental setting/details}
-%     \item Answer: \answerYes{} % Changed from Yes to NA
-%     \item Justification: Section~\ref{app:empirical_evidence_appendix} provides a detailed experimental settings (architectures, optimizers, learning rates, task sequences, specific metrics implementations) will be included when reporting results.
+%       \item Answer: \answerYes{} % Changed from Yes to NA
+%       \item Justification: Section~\ref{app:empirical_evidence_appendix} provides a detailed experimental settings (architectures, optimizers, learning rates, task sequences, specific metrics implementations) will be included when reporting results.
 
 % \item {\bf Experiment statistical significance}
-%     \item Answer: \answerYes{} % Changed from Yes to NA
-%     \item Justification: Methods for ensuring statistical significance, we used multiple multiple runs with different random seeds (ranging between 3 and 5) for each of the points on our experimental grid, reporting means and standard deviations/errors), in order present the results throughout the paper and detailed in  Section~\ref{app:empirical_evidence_appendix}.
+%       \item Answer: \answerYes{} % Changed from Yes to NA
+%       \item Justification: Methods for ensuring statistical significance, we used multiple multiple runs with different random seeds (ranging between 3 and 5) for each of the points on our experimental grid, reporting means and standard deviations/errors), in order present the results throughout the paper and detailed in  Section~\ref{app:empirical_evidence_appendix}.
 
 % \item {\bf Experiments compute resources}
-%     \item Answer: \answerNo{}
-%     \item Justification: Details about computational resources (e.g., GPU types, number, training times) for the finalised experiments, which include those that appear in the appendix only, will be added in the final version presenting the empirical results.
+%       \item Answer: \answerNo{}
+%       \item Justification: Details about computational resources (e.g., GPU types, number, training times) for the finalised experiments, which include those that appear in the appendix only, will be added in the final version presenting the empirical results.
 
 % \item {\bf Code of ethics}
-%     \item Answer: \answerYes{}
-%     \item Justification: The research aims to understand fundamental AI capabilities and limitations, adhering to ethical research practices. It does not involve sensitive data or high-risk applications directly. Conforms to the NeurIPS Code of Ethics.
+%       \item Answer: \answerYes{}
+%       \item Justification: The research aims to understand fundamental AI capabilities and limitations, adhering to ethical research practices. It does not involve sensitive data or high-risk applications directly. Conforms to the NeurIPS Code of Ethics.
 
 % \item {\bf Broader impacts}
-%     \item Answer: \answerNA{}
-%     \item Justification: This is a foundational research paper and not directly linked to any specific application. 
+%       \item Answer: \answerNA{}
+%       \item Justification: This is a foundational research paper and not directly linked to any specific application. 
 
 % \item {\bf Safeguards}
-%     \item Answer: \answerNA{}
-%     \item Justification: This paper presents a theoretical framework and planned experiments. It does not release new models or datasets with immediate potential for misuse. Safeguards related to potential future applications are discussed in the Broader Impacts section.
+%       \item Answer: \answerNA{}
+%       \item Justification: This paper presents a theoretical framework and planned experiments. It does not release new models or datasets with immediate potential for misuse. Safeguards related to potential future applications are discussed in the Broader Impacts section.
 
 % \item {\bf Licenses for existing assets}
-%     \item Answer: \answerNA{} % Changed from Yes to NA
-%     \item Justification: The  experiments use standard, publicly available datasets (e.g., CIFAR, ImageNet) which have permissive licenses for research use.
+%       \item Answer: \answerNA{} % Changed from Yes to NA
+%       \item Justification: The  experiments use standard, publicly available datasets (e.g., CIFAR, ImageNet) which have permissive licenses for research use.
 
 % \item {\bf New assets}
-%     \item Answer: \answerNA{} % Changed from Yes to NA
-%     \item Justification: Code developed for the experiments will be released with appropriate documentation and an open-source license upon publication.
+%       \item Answer: \answerNA{} % Changed from Yes to NA
+%       \item Justification: Code developed for the experiments will be released with appropriate documentation and an open-source license upon publication.
 
 % \item {\bf Crowdsourcing and research with human subjects}
-%     \item Answer: \answerNA{}
-%     \item Justification: This research is purely theoretical and computational, involving no human subjects or crowdsourcing.
+%       \item Answer: \answerNA{}
+%       \item Justification: This research is purely theoretical and computational, involving no human subjects or crowdsourcing.
 
 % \item {\bf Institutional review board (IRB) approvals or equivalent for research with human subjects}
-%     \item Answer: \answerNA{}
-%     \item Justification: Not applicable as no human subjects are involved.
+%       \item Answer: \answerNA{}
+%       \item Justification: Not applicable as no human subjects are involved.
 
 % \item {\bf Declaration of LLM usage}
-%     \item Answer: \answerNo{}
-%     \item Justification: No LLMs were used in the development of the core theoretical analyses or development of experiments presented in this research. 
+%       \item Answer: \answerNo{}
+%       \item Justification: No LLMs were used in the development of the core theoretical analyses or development of experiments presented in this research. 
 % \end{enumerate}
 
 % \renewcommand{\thefigure}{\thesection.\arabic{figure}}
@@ -504,7 +498,7 @@ Ultimately, understanding and overcoming LoP is crucial for building AI systems 
 % \newpage
 
 \section{Theoretical Appendix}
-% \ff{I enabled appendix so that the section numbers start from characters and more clear in the main body that refrence appendix}
+% 
 \label{app:theory_appendix}
 This section contains detailed proofs of propositions and lemmas, further theoretical derivations, and discussions extending the concepts presented in the main paper. 
 
@@ -520,8 +514,7 @@ Recall the definition of pre-activations matrix $X \in \R^{n \times d}$ ($n$ sam
 \begin{proposition}[Rank recovery with non-linear activations (re-stated Proposition~\ref{prop:rank_recovery_informal})]
 Let us assume that  $f$ is not a bounded degree polynomial, and that $\E f(z)^2,$ where $z\sim N(0,1),$ is bounded. First, $C_f$ has full rank (hard rank), even if the input features $X$ is rank-deficient. Second, if the input features are highly correlated with effective rank $1+\epsilon$ for some small constant $\epsilon>0,$ effective rank of $C_f$ will be approximately  $1 + \alpha_f \epsilon,$ with the coefficient defined as $\alpha_f = \frac{\E f'(z)^2}{\E f(z)^2 } - 1$ with $z\sim N(0,1).$
 \end{proposition}
-\ff{this is a repeat of 3.1, probably better to number it also as 3.1}
-\AJ{It's kind of hard to replace the label A.1 with 3.1 and might be a bit messy, I just added some clarification, is it sufficient?}
+% \AJ{It's kind of hard to replace the label A.1 with 3.1 and might be a bit messy, I just added some clarification, is it sufficient?}
 
 First, observe that because each row is iid, we can also write the expected post-activation covariance based on a single sample $C_f = \E f(X) f(X)^\top,$ where elements of $x$ are standard Gaussian with covariance $\E X_i X_j = C_{ij}. $ This will streamline the proof of this proposition.  We can break this proposition into two parts: the claim on hard rank recovery and the claim on the effective rank, which will be given separately in the subsequent parts. 
 
@@ -858,7 +851,7 @@ Our investigation into LoP encompasses three primary experimental paradigms.
 
 \textbf{Neural Network Cloning experiments} study the effects of neuron duplication , using a two-stage training protocol. Initially, a base model is trained on a target task to establish baseline performance. Subsequently, this base model is expanded by a specified factor (always fixed to two), using the cloning procedures detailed later.  The expanded (cloned) model is then trained. To compare the base and cloned model, we also keep training the base model at the same time during this second phase. The results presented here are all CIFAR10 dataset, and we used 20 epochs to train the base model and 500 epochs to train the cloned model. This cycle can be iterated. Functional equivalence post-cloning is verified by ensuring the cloned model produces activations identical to its base, assessed via $R^2$ scores between corresponding layer activations. $R^2$ scores, computdd for each layer, measure if the mean of cloned units can explain the variance of all units in that block. 
 
-\textbf{Bit Flipping experiments} simulate a slowly-changing regression problem to evaluate network adaptability to gradually drifting input distributions. A target network with Linear Threshold Units (LTUs) implements $h_i = \text{LTU}(w_i^T x - \theta_i)$ and $y = w_{\text{out}}^T h + b_{\text{out}}$, where $\theta_i = (m \cdot \beta) - S_i$ and $S_i = \sum_{j: w_{ij} < 0} 1 - 0.5 \cdot w_{i,m+1}$. Input consists of $m$ bits plus a bias bit; $f$ of these bits are ``flipping bits'' changing every $T$ time steps (one randomly selected flipping bit is inverted), while the remaining $m-f$ bits are randomly sampled each step. A two-layer MLP with a configurable activation function is trained online to learn this target.\ff{define LTU operation}
+\textbf{Bit Flipping experiments} simulate a slowly-changing regression problem to evaluate network adaptability to gradually drifting input distributions. A target network with Linear Threshold Units (LTUs), where an LTU computes $\text{LTU}(s) = \mathbf{1}_{s \ge 0}$ (i.e., 1 if $s \ge 0$, 0 otherwise), implements $h_i = \text{LTU}(w_i^T x - \theta_i)$ and $y = w_{\text{out}}^T h + b_{\text{out}}$, where $\theta_i = (m \cdot \beta) - S_i$ and $S_i = \sum_{j: w_{ij} < 0} 1 - 0.5 \cdot w_{i,m+1}$. Input consists of $m$ bits plus a bias bit; $f$ of these bits are ``flipping bits'' changing every $T$ time steps (one randomly selected flipping bit is inverted), while the remaining $m-f$ bits are randomly sampled each step. A two-layer MLP with a configurable activation function is trained online to learn this target. % 
 
 \subsubsection{Core Methodologies and Implementations}
 \label{subsec:core_methodologies}
@@ -866,7 +859,7 @@ Our investigation into LoP encompasses three primary experimental paradigms.
 Several core methodologies underpin our experiments.
 
 
-\paragraph{Cloning Implementation.}  Our cloning implementation is modular. For each architecture, we first need to decide the ``free'' parameter to expand. This is the feature dimension for MLP and ViT, and channels for CNN and ResNet. After creating a base and expanded model, our cloning implementation proceeds in a modular fashion. The key implementation idea that allowed this modular design is the principle that the cloning profile of inputs and outputs of different modules must be consistent. For example if inputs A and B to a module are assumed to be cloned, and if these are output by a different modules, that module must ensure this cloning. We can think of this as a matching cloning profile between connected modules. With this design in mind, for linear layers, weights and biases are replicated according to input/output expansion factors; weights connected to cloned input neurons are scaled (e.g., by $1/\alpha_{\text{in}}$ for an input duplication factor of $\alpha_{\text{in}}$) to maintain activation magnitudes. Convolutional layers see similar expansion of input/output channels, with kernels tiled and appropriately scaled while preserving spatial dimensions. For normalization layer, if affine features are learned, their cloning will be a simple duplication for different cloned units. The same applies to modules such as patch embeddings, which require a simple duplication.  Parameterized activations (e.g., PReLU) have their parameters correspondingly duplicated or broadcast. Any other units that does not have parameters, such as softmax layer or activations without parameter, will not require any particular treatment, because it has the potential to create cloning profiles that do not match. 
+\paragraph{Cloning Implementation.}  Our cloning implementation is modular. For each architecture, we first need to decide the ``free'' parameter to expand. This is the feature dimension for MLP and ViT, and channels for CNN and ResNet. After creating a base and expanded model, our cloning implementation proceeds in a modular fashion. The key implementation idea that allowed this modular design is the principle that the cloning profile of inputs and outputs of different modules must be consistent. For example if inputs A and B to a module are assumed to be cloned, and if these are output by a different modules, that module must ensure this cloning. We can think of this as a matching cloning profile between connected modules. With this design in mind, for linear layers, weights and biases are replicated according to input/output expansion factors; weights connected to cloned input neurons are scaled (e.g., by $1/\alpha_{\text{in}}$ for an input duplication factor of $\alpha_{\text{in}}$) to maintain activation magnitudes. Convolutional layers see similar expansion of input/output channels, with kernels tiled and appropriately scaled while preserving spatial dimensions. For normalization layer, if affine features are learned, their cloning will be a simple duplication for different cloned units. The same applies to modules such as patch embeddings, which require a simple duplication.  Parameterized activations (e.g., PReLU) have their parameters correspondingly duplicated or broadcast. Any other units that does not have parameters, such as softmax layer or activations without parameter, will not require any particular treatment, because it has the potential to create cloning profiles that do not match.  
 To fix this, we implemented a clone-aware flattening operation in CNNs ensures duplicated channels remain adjacent after flattening to preserve structure for subsequent fully-connected layers.
 
 \paragraph{Noisy SGD optimizer} introduces Gaussian noise $\epsilon_t \sim \mathcal{N}(0, \sigma_t^2 \|g_t\|^2 I)$ to gradients $g_t$, where the noise scale $\sigma_t = \sigma_0 \cdot \lambda^t$ decays over time $t$ from an initial value $\sigma_0$. The values of $\sigma_0$ and $\lambda$ are hyperparameters of the optimizer. Later, we show the effect of varying them on the cloned model dynamics.
@@ -885,7 +878,7 @@ To fix this, we implemented a clone-aware flattening operation in CNNs ensures d
 % \paragraph{Model Architectures.} We evaluate four distinct neural network architectures with standardized configurations across experiments. 
 Our Multi-Layer Perceptron (MLP) consists of $5$ hidden layers with 128 units each, employing ReLU activations, batch normalization applied before activation, and $20\%$ dropout. The Convolutional Neural Network (CNN) architecture comprises 3 convolutional layers with $[64, 128, 256]$ channels respectively, using $3\times3$ kernels with stride 1 and padding 1, followed by $2\times2$ max pooling operations. The convolutional features are processed by a single fully connected layer with 512 units, with ReLU activations, batch normalization, and 10\% dropout throughout. For ResNet, we implement a ResNet-18 variant with $[2, 2, 2, 2]$ residual blocks per stage, starting with 64 base channels that double at each stage, using ReLU activations, batch normalization, and 10\% dropout. The Vision Transformer (ViT) architecture divides input images into $8\times8$ pixel patches, which are projected to $384$-dimensional embeddings and processed through $6$ transformer layers with $6$ attention heads each. The ViT employs an MLP ratio of $4.0$ (yielding hidden dimensions of 1536), GELU activations, layer normalization, and $10\%$ dropout for both general operations and attention mechanisms. All normalization layers include learnable affine parameters ($\gamma$, $\beta$), unless stated otherwise, and bias terms are enabled where applicable. Default hyperparameter configurations for each architecture can be adjusted per experiment as described in the experimental setup.
 
-\paragraph{Datasets and Preprocessing} involve standard image classification benchmarks: MNIST ($28 \times 28$ grayscale), CIFAR-10 and CIFAR-100 ($32 \times 32$ RGB with standard augmentations like random crops and flips), and Tiny ImageNet ($64 \times 64$ RGB). Standard train/test splits are used. For all the figures and results reported here, we used tiny ImageNet dataset for continual learning experiments, while for cloning, CIFAR-10 was used.  
+\paragraph{Datasets and Preprocessing} involve standard image classification benchmarks: MNIST ($28 \times 28$ grayscale), CIFAR-10 and CIFAR-100 ($32 \times 32$ RGB with standard augmentations like random crops and flips), and Tiny ImageNet ($64 \times 64$ RGB). Standard train/test splits are used. For all the figures and results reported here, we used tiny ImageNet dataset for continual learning experiments, while for cloning, CIFAR-10 was used.   
 
 \paragraph{Training Configuration} involves optimizers like Adam or SGD without momentum and no weight decay with otherwise parameters in torch. The learning rates for the continual experiments where set to $0.001$ using Adam for all architectures except for Vision Transformer, which was set to $0.0001.$ For cloning experiments with dropout, we varied the learning rate on a grid $0.01, 0.001, 0.0001.$
 
