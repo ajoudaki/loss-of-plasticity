@@ -243,7 +243,7 @@ The key message of the corollary and the example above is  that frozen features 
 To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes. 
 Each task is trained for 500 steps, and validation is performed periodically, resulting in approximately 25,000 total steps shown in the figures. 
 We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
-\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000. where are the task boundaries? is it at 2500 intervals? is the accuracy shown for the first task or average on all tasks?}
+\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000.... ?}
 \AJ{Excellent point, there was a small inconsistency here before which is now fixed (we have 40 tasks not 10), and each task is trained for 500 epochs, so the 25000 steps corresponds to this plus the validation steps. Is it important to fix the plots or just explain it in text? }
 
 
@@ -282,10 +282,10 @@ Thus, the critical question now becomes: do these features, once emerged, lead t
 
 
 \section{LoP Manifolds: Traps for Gradient Descent}
-\ff{it looks like the first time we actually use the definitions of manifold is here. maybe consider moving content of section 2 to this section}
-\AJ{do you mean the  move entire preliminary section to here or just the definitions. If we move definitions preliminary becomes one paragraph though. }
 \label{sec:existence_lop_manifold}
 In the previous section, we discussed how features characteristic of LoP, such as frozen units and duplicated representations, can emerge during training. Now, we formalize how these phenomena lead to the network's parameters being confined to LoP manifolds, restricting subsequent learning. We present a central proposition that jointly addresses LoP arising from frozen and duplicate units.
+\ff{it looks like the first time we actually use the definitions of manifold is here. maybe consider moving content of section 2 to this section}
+\AJ{do you mean the  move entire preliminary section to here or just the definitions. If we move definitions preliminary becomes one paragraph though. }
 
 The intuition is that once units become unresponsive (frozen) or perfectly redundant (cloned), they tend to remain so under standard gradient-based optimization. This persistence is key to understanding LoP as a stable or semi-stable state.
 \begin{proposition}
@@ -359,8 +359,8 @@ While a full theoretical characterization of the stability of empirically observ
     \label{fig:dropout_escapes_cloning_appendix}
 \end{figure}
 
-\ff{what is "cloning R2" in y-axis of the left plot?}
-\ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
+% \ff{what is "cloning R2" in y-axis of the left plot?}
+% \ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
 
 Both noisy SGD and dropout act as symmetry-breaking operations. In the case of dropout, both forward and backward passes are asymmetric for cloned units. For noisy SGD, the backward pass (gradient update) becomes asymmetric. This asymmetry causes the parameters of notionally cloned units to slowly diverge. Remarkably, in our MLP experiments, even a small amount of gradient noise e.g., a single step with noise magnitude $0.01$ relative to gradient norms, suffices to initiate escape from an LoP manifold, though stronger noise generally leads to faster escape. In contrast, in some other settings such as Vision Transformers, while the model could escape from the manifold with a small perturbation, it did not move very far from it. More experimental studies into this direction would be vital to better understand the stability of these LoP manifolds.  
 
@@ -396,7 +396,11 @@ This is widely supported by empirical evidence (see Appendix~\ref{app:empirical_
 \paragraph{Recovery from LoP via Perturbations.}
 What if LoP conditions, such as widespread frozen units or extensive feature cloning, have already set in? In such cases, mitigation strategies like normalization, which act proactively, may no longer be sufficient to reverse the state, as indicated by cloning experiments where normalization alone doesn't break perfect, established clones. However, similar to our discussion on manifold stability (Section~\ref{sec:existence_lop_manifold}), injecting noise into the training process can be a viable recovery strategy.
 
-The principle is that if the LoP manifold is unstable or saddle-like, perturbations can allow the optimizer to find an escape route. Noisy SGD and the more sophisticated Continual Backpropagation \citep{dohare2024loss} are examples of such mechanisms. An interesting benchmark are the ``bit-flipping'' experiments, a regression task where the current sample is a stochastic function of the previous sample. The model size is controlled to be lower than the complexity of the data generating function. Figures~\ref{fig:CBP-scale-rank} and \ref{fig:CBP-scale-dup} illustrate how aspects like rank and feature duplication are affected by the perturbed dynamics and the dimensionality of the model.   Illustrations of recovery dynamics can be found in Appendix~\ref{app:empirical_evidence_appendix}.
+The principle is that if the LoP manifold is unstable or saddle-like, perturbations can allow the optimizer to find an escape route. Noisy SGD and the more sophisticated Continual Backpropagation \citep{dohare2024loss} are examples of such mechanisms. 
+% An interesting benchmark are the ``bit-flipping'' experiments, a regression task where the current sample is a stochastic function of the previous sample. The model size is controlled to be lower than the complexity of the data generating function.
+% In Section \ref{sec:mitigation_recovery}
+An illustrative benchmark for studying adaptability is the 'bit-flipping' experiment, an online regression task where the model receives an $m$-bit input vector $x$ and must predict an output $y$. The environment is non-stationary: a subset of $f$ input bits are designated 'flipping bits,' and at regular $T$-step intervals, one of these $f$ bits is randomly inverted. The remaining $m-f$ input bits are randomly sampled at each step. The target output $y$ is generated by a fixed (but unknown to the learning model) two-layer network, and a two-layer MLP is trained to learn this continuously drifting target function. The complexity of the learning model is typically designed to be less than that of the data-generating process, thereby creating a challenging scenario for maintaining plasticity. 
+Figures~\ref{fig:CBP-scale-rank} and \ref{fig:CBP-scale-dup} illustrate how aspects like rank and feature duplication are affected by the perturbed dynamics and the dimensionality of the model. For details see Section~\ref{subsec:experiment_paradigms}.  
 \begin{figure}[!ht]
     \centering
     \includegraphics[width=0.33\linewidth]{paper/images/bf_Baseline_rankloss_plot.pdf}
@@ -414,7 +418,7 @@ The principle is that if the LoP manifold is unstable or saddle-like, perturbati
     \caption{Bit Flipping experiment on 5M samples. Duplicated structures (indicated by fraction of duplicate features at different layers/scales) emerge during training with standard Backpropagation (BP) but are less prevalent with Continual Backpropagation (CBP). As the model width is increased more duplicate features emerge. The size of the data generating function is $100$. (Other experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:CBP-scale-dup}
 \end{figure}
-\ff{details of bit flipping experiment are not defined in the main body}
+% \ff{details of bit flipping experiment are not defined in the main body}
 
 An interesting distinction arises when comparing artificially induced LoP (like explicit cloning) with naturally emerging LoP symtoms in challenging scenarios like continual learning. In controlled cloning setups (e.g., as conceptualized in Figure~\ref{fig:dropout_escapes_cloning_appendix}, dropout can be effective in breaking the artificially imposed symmetry and allowing units to diverge. In contrast, in our continual Bit Flipping experiments, the role of dropout can be mixed or even detrimental. While it might prevent some forms of LoP, it can also hinder the consolidation of new knowledge or exacerbate forgetting if it too aggressively discards learned information relevant to the new task. This suggests that the optimal strategy for maintaining or recovering plasticity might be context-dependent.
 
@@ -867,7 +871,11 @@ Our investigation into LoP encompasses three primary experimental paradigms.
 
 \textbf{Neural Network Cloning experiments} study the effects of neuron duplication , using a two-stage training protocol. Initially, a base model is trained on a target task to establish baseline performance. Subsequently, this base model is expanded by a specified factor (always fixed to two), using the cloning procedures detailed later.  The expanded (cloned) model is then trained. To compare the base and cloned model, we also keep training the base model at the same time during this second phase. The results presented here are all CIFAR10 dataset, and we used 20 epochs to train the base model and 500 epochs to train the cloned model. This cycle can be iterated. Functional equivalence post-cloning is verified by ensuring the cloned model produces activations identical to its base, assessed via $R^2$ scores between corresponding layer activations. $R^2$ scores, computdd for each layer, measure if the mean of cloned units can explain the variance of all units in that block. 
 
-\textbf{Bit Flipping experiments} simulate a slowly-changing regression problem to evaluate network adaptability to gradually drifting input distributions. A target network with Linear Threshold Units (LTUs) implements $h_i = \text{LTU}(w_i^T x - \theta_i)$ and $y = w_{\text{out}}^T h + b_{\text{out}}$, where $\theta_i = (m \cdot \beta) - S_i$ and $S_i = \sum_{j: w_{ij} < 0} 1 - 0.5 \cdot w_{i,m+1}$. Input consists of $m$ bits plus a bias bit; $f$ of these bits are ``flipping bits'' changing every $T$ time steps (one randomly selected flipping bit is inverted), while the remaining $m-f$ bits are randomly sampled each step. A two-layer MLP with a configurable activation function is trained online to learn this target.\ff{define LTU operation}
+\textbf{Bit Flipping experiments} simulate a slowly-changing regression problem to evaluate network adaptability to gradually drifting input distributions. 
+A target network with Linear Threshold Units (LTUs) implements $h_i = \text{LTU}(w_i^T x - \theta_i)$ and $y = w_{\text{out}}^T h + b_{\text{out}}$. A Linear Threshold Unit operation is defined as $\text{LTU}(z) = 1$ if $z \ge 0$, and $0$ otherwise (a Heaviside step function). For the target network, the specific thresholds are $\theta_i = (m \cdot \beta) - S_i$, and $S_i = \sum_{j: w_{ij} < 0} 1 - 0.5 \cdot w_{i,m+1}$. Input consists of $m$ bits plus a bias bit; $f$ of these bits are ``flipping bits'' changing every $T$ time steps (one randomly selected flipping bit is inverted), while the remaining $m-f$ bits are randomly sampled each step. A two-layer MLP with a configurable activation function is trained online to learn this target.
+
+
+% \ff{define LTU operation}
 
 \subsubsection{Core Methodologies and Implementations}
 \label{subsec:core_methodologies}
