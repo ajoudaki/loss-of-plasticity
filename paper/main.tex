@@ -62,6 +62,9 @@
 \newcommand{\AJ}[1]{\todo[color=green!30,size=\tiny]{AJ: #1}}
 \newcommand{\GIU}[1]{\todo[color=purple!30,size=\tiny]{GIU: #1}}
 \newcommand{\IMZ}[1]{\todo[color=red!30,size=\tiny]{IMAN: #1}}
+
+% \renewcommand{\ff}[1]{}
+% \renewcommand{\AJ}[1]{}
 %%%% Theorem environments
 \newtheorem{definition}{Definition}[section]
 \newtheorem{lemma}{Lemma}[section]
@@ -193,8 +196,8 @@ This theory reveals an important insight that non-linear activations indeed reco
 
 \begin{example}
 For $f(x) = \tanh(ax)$. If $a$ is small, $\tanh(ax) \approx ax$, behaving linearly, with $\alpha$ converging to $0.$ On the other hand, if $a$ is very large, $\tanh(ax)$ approaches a sign function, and $\alpha$ tends to infinity.  
-For $f(x) = \text{ReLU}(a x + b)$. If $b $ is a large positive shift, $f(x)$ will be mostly an affine transform $f(x) = a x + b, $ which cannot recover rank, but for non-positive shifts $b\ge 0, $ it will maintain its non-linearity. 
-% \ff{non-positive or $\le 0$?}
+For $f(x) = \text{ReLU}(a x + b)$. If $b $ is a large positive shift, $f(x)$ will be a shifted identity on most inputs $f(x) = x+b, $ which cannot recover rank, but for negative shifts $b< 0, $ it can maintain its non-linearity, and become highly non-linear for large negative shifts. 
+% \ff{non-positive or $\le 0$? I see this was commented, not sure what I'm missing}
 % You can see an illustration of this in Figure~\ref{fig:theory_tanh_az_rank}.
 \end{example}
 
@@ -219,11 +222,13 @@ $$ \lim_{k \to \infty} P(|f'_{s_k}(z)| < \epsilon) = 1, \quad \text{for } z \sim
 \end{corollary}
 
 The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Section~\ref{app:max_rank_frozen}
-\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} 
-\AJ{The detailed proof turned out to be very involved and long (5-6 pages) and is a bit incomplete, so I rephrased the sentence to we're "discussing" it not proving it. Is that ok, or you prefer to include the actual proof?}
-for a detailed discussion of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.
-\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
-\AJ{this is a very interesting point, do you have any suggestions on how to develop this idea further? }
+%\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} 
+%\AJ{The detailed proof turned out to be very involved and long (5-6 pages) and is a bit incomplete, so I rephrased the sentence to we're "discussing" it not proving it. Is that ok, or you prefer to include the actual proof?}
+%for a detailed discussion of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.
+\ff{I reviewed A.1.1, and left some comments. above comment says the detailed proof is long. do we include it in the appendix anywhere or are we just dropping it? if dropping it, we should change it from "Corollary" to "Conjecture" and provide a brief proof sketch in A.1.1.}
+%\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
+%\AJ{this is a very interesting point, do you have any suggestions on how to develop this idea further? }
+\ff{regarding connection to lazy training, I'm thinking about establishing a connection between the range of values of a,b and input value standard deviation such that we show the probability of entering the dead zone of a unit is higher during training for some initialization. just a thought, I know it's going to be challenging to prove anything like that}
 
 \begin{example}
 For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $\alpha_f.$ However, observe that in the limit of $\lim_{a \to \infty} \tanh(a x) = \text{sign}(x),$ we have $f'=0$ almost everywhere except $x=0.$ 
@@ -243,8 +248,9 @@ The key message of the corollary and the example above is  that frozen features 
 To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes. 
 Each task is trained for 500 steps, and validation is performed periodically, resulting in approximately 25,000 total steps shown in the figures. 
 We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
-\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000.... ?}
-\AJ{Excellent point, there was a small inconsistency here before which is now fixed (we have 40 tasks not 10), and each task is trained for 500 epochs, so the 25000 steps corresponds to this plus the validation steps. Is it important to fix the plots or just explain it in text? }
+%\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000.... ?}
+%\AJ{Excellent point, there was a small inconsistency here before which is now fixed (we have 40 tasks not 10), and each task is trained for 500 epochs, so the 25000 steps corresponds to this plus the validation steps. Is it important to fix the plots or just explain it in text? }
+\ff{thanks for correcting the text about number of steps. it's odd to me that we count validation steps as part of the total steps. Is the model being updated during validation? If not, can we change the plots so that the total steps is 20k?}
 
 
 The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity. 
@@ -286,6 +292,7 @@ Thus, the critical question now becomes: do these features, once emerged, lead t
 In the previous section, we discussed how features characteristic of LoP, such as frozen units and duplicated representations, can emerge during training. Now, we formalize how these phenomena lead to the network's parameters being confined to LoP manifolds, restricting subsequent learning. We present a central proposition that jointly addresses LoP arising from frozen and duplicate units.
 \ff{it looks like the first time we actually use the definitions of manifold is here. maybe consider moving content of section 2 to this section}
 \AJ{do you mean the  move entire preliminary section to here or just the definitions. If we move definitions preliminary becomes one paragraph though. }
+\ff{yes, I was thinking to drop the preliminary and move all the definitions to their corresponding sections. The remaining paragraph about the model and loss may go into what's currently section 3}
 
 The intuition is that once units become unresponsive (frozen) or perfectly redundant (cloned), they tend to remain so under standard gradient-based optimization. This persistence is key to understanding LoP as a stable or semi-stable state.
 \begin{proposition}
@@ -676,10 +683,11 @@ Figure~\ref{fig:validation_hard_rank_recovery} demonstrates that non-linear acti
     \label{fig:validation_hard_rank_recovery}
 \end{figure}
 
-The experiment uses 10,000 samples in 50-dimensional space with intrinsic rank 10. As predicted by our theory, all non-linear activations successfully increase the rank, with varying degrees of recovery. Notably, ReLU and ELU achieve nearly full rank recovery, while bounded activations like Tanh and Sigmoid show more moderate but still significant recovery.
+The experiment uses 10,000 samples in 50-dimensional space with intrinsic rank 10. \ff{are these sampled from a normal distribution? if so state the mean and variance} As predicted by our theory, all non-linear activations successfully increase the rank, with varying degrees of recovery. Notably, ReLU and ELU achieve nearly full rank recovery, while bounded activations like Tanh and Sigmoid show more moderate but still significant recovery.
 
 \paragraph{Validation 2: Effective Rank Recovery Formula.}
 Figure~\ref{fig:validation_effective_rank_formula} validates our theoretical formula for effective rank recovery, specifically that $\tilde{r}(C_f) \approx \tilde{r}(C)(1 + \alpha_f \epsilon \ln(n/\epsilon))$ for highly correlated inputs with correlation $1-\epsilon$.
+\ff{the caption says theoretical and emprical overlap but they only overlap for Tanh. We need to discuss why.}
 
 \begin{figure}[ht!]
     \centering
@@ -688,10 +696,12 @@ Figure~\ref{fig:validation_effective_rank_formula} validates our theoretical for
     \label{fig:validation_effective_rank_formula}
 \end{figure}
 
-The experiment uses 100-dimensional Gaussian data with varying correlation levels. The empirical results closely match our theoretical predictions across all tested activation functions and correlation levels, confirming the validity of our rank recovery coefficient $\alpha_f$ and its role in quantifying activation effectiveness.
+The experiment uses 100-dimensional Gaussian data with varying correlation levels. \ff{again note the normal stats.} The empirical results closely match our theoretical predictions across all tested activation functions and correlation levels, confirming the validity of our rank recovery coefficient $\alpha_f$ and its role in quantifying activation effectiveness.
 
 \paragraph{Validation 3: Emergence of Frozen States from Extreme Modulation.}
 Figure~\ref{fig:validation_frozen_states} directly validates Corollary~\ref{cor:max_alpha_frozen_formal}, showing that attempts to maximize rank recovery strength through extreme modulation paradoxically lead to frozen units.
+\ff{the y-axis title says $\alpha f$ but it should be $\alpha_f$ (missing subscript). also the middle plots say $|f|$ while it should be $|f^\prime|$}
+\ff{similar issues in Fig A.4}
 
 \begin{figure}[ht!]
     \centering
