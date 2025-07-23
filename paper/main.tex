@@ -150,8 +150,6 @@ A manifold $\mathcal{M}\subset\Theta$ induces LoP if the gradient of the loss fu
 If the conditions in Definition~\ref{def:lop} hold irrespective of the specific data distribution generating the loss $\Loss$, which we can think of as functional LoP, and is our primary area of interest. Such LoP arises from the network architecture and gradient descent dynamics alone and is particularly relevant as it persists even if the task or data distribution evolves.
 \end{remark}
 
-
-
 \section{Emergence of LoP Symptoms: A First-Principles Perspective}
 \label{sec:emergence_lop}
 \label{sec:emergence_lop_first_principles}
@@ -160,94 +158,57 @@ The capacity of a neural network to continually learn is fundamentally tied to i
 
 At a high level, effective feature learning in a deep neural network involves a delicate balance. On one hand, the network must learn a rich set of features to expand its expressive power and accurately model complex data. On the other hand, for robust generalization, there is often an implicit or explicit bias towards simpler representations \citep{valle2018deep, zhang2017understanding}. The drive towards simplification in later training stages, where within-class feature variability collapses and class means adopt specific geometric configurations, is well-documented as \emph{neural collapse}~\citep{papyan2020prevalence}. We propose that the inherent tension between these two opposing forces---the need to create rich, diverse features that nonetheless remain ``simple'' enough to generalize---can naturally lead to the emergence of frozen units and representational redundancies, the hallmarks of LoP.
 
-To make our notion of representational richness or diversity more precise, we will quantify it through the rank of the feature activations. 
-One of the main ways of measuring diversity of a set of representations is the notion of \emph{hard rank}, or simply rank of a matrix, defined as the number of linearly independent rows or columns, which equals the number of its non-zero singular values. 
-This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provides a continuous measure of rank based on the distribution of singular values, defined as $\exp(H)$ where $H$ denotes the entropy of normalized singular values $H = -\sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$ 
-% However, as the hard rank is often too stringent for practical purposes, we use the notion of effective rank~\citep{dohare2024loss}, defined as $\exp(H$ where $H$ denotes the entropy of normalized singular values $H = \sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$ 
-
-% \GIU{I think this last part does not say anything much? I would remove it and go directly to the meat.} As empirically observed (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}), and supported by theoretical analyses, this rank is dynamically shaped by the interplay of linear transformations and non-linear activations. This back-and-forth aims to learn rich features while being guided by the simplifying bias inherent in parts of the network.
+To make our notion of representational richness or diversity more precise, we will quantify it through the rank of the feature activations. One of the main ways of measuring diversity of a set of representations is the notion of \emph{hard rank}, or simply rank of a matrix, defined as the number of linearly independent rows or columns, which equals the number of its non-zero singular values. This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provides a continuous measure of rank based on the distribution of singular values, defined as $\exp(H)$ where $H$ denotes the entropy of normalized singular values $H = -\sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$
 
 
 \paragraph{Linear Layers and Rank Reduction}
 Linear layers in neural networks, which are essentially matrix multiplications (followed by a bias), inherently tend to reduce or constrain the dimensionality of representations. Let us recount several important facts about matrix products which underscore their inability to unilaterally increase rank. First, the rank of a product of matrices cannot exceed the minimum rank of any matrix in the product, i.e., $\mathrm{rank}(AB) \le \min(\mathrm{rank}(A), \mathrm{rank}(B))$. Thus, a chain of linear operations can, at best, maintain rank but often reduces it. Second, the condition number of a product of matrices can worsen compared to individual matrices, potentially making features less distinguishable and thereby reducing the effective rank. Finally,  For deep linear networks or long chains of matrix products, particularly with random matrices, there's a strong tendency for the representation to collapse towards low-rank structures, sometimes even rank-one \citep{saxe2014exact, furstenberg1963noncommuting}.
 This inherent rank-reducing nature of linear transformations means that non-linearities are crucial for creating and maintaining feature diversity.
 
-\paragraph{Non-linear Activations and Rank Recovery.}
-Non-linear activation functions are the primary mechanism by which neural networks can counteract the rank-reducing effects of linear layers and expand the dimensionality of learned representations. Informally, even if input features are highly correlated (implying low effective rank), a sufficiently non-linear activation can transform them in such a way that they become more distinct, increasing both the absolute number of independent features (hard rank) and their effective diversity.  
-To make this more formal, consider a matrix of pre-activations $X \in \R^{n \times d}$ ($n$ samples, $d$ features with $n\ge d$), where each row is independently drawn from a multivariate Gaussian distribution $\mathcal{N}(0, C)$, with $C$ being the covariance matrix (unit diagonals, off-diagonals strictly in $(-1,1)$). Let $f: \R \to \R$ be an element-wise non-linear activation function.
+\paragraph{Non-linear Activations and the Path to Freezing.}
+Non-linear activation functions are the sole mechanism by which a network can counteract the rank-reducing tendency of its linear layers. By transforming features in a non-trivial way, they can "unpack" correlated inputs, increasing the effective dimensionality and diversity of the learned representations.
 
-\begin{proposition}[Rank recovery with non-linear activations]
-\label{prop:rank_recovery_informal}
-\label{prop:hard_rank_increase_main} %Changed label to avoid conflict
-Let us assume that  $f$ is not a bounded degree polynomial, and that $\E f(z)^2,$ where $z\sim N(0,1)$ is bounded, and define post-activation covariance $C_f = \frac1n \E f(X)^\top f(X).$ First, $C_f$ has full rank, even if the input features $X$ is rank-deficient. Second, if the input features are highly correlated with effective rank $1+\epsilon$ for some small constant $\epsilon>0,$ effective rank of $C_f$ will be approximately  $1 + \alpha_f \epsilon,$ with the coefficient defined as $\alpha_f = \frac{\E f'(z)^2}{\E f(z)^2 } - 1$ with $z\sim N(0,1).$
-\end{proposition}
-The formal statement and proof details, based on Hermite polynomial expansions of $f$, are provided in Appendix~\ref{app:theory_appendix}. In light of this theory, we can think of $\alpha$ as a rank improvement strength of an activation.
+A central question is \emph{how} the network dynamically achieves this increase in feature diversity. We propose that a primary mechanism is the modulation of pre-activation statistics---specifically, their \textbf{bias and scale}. During training, the network learns to adjust the weights and biases of preceding layers, which in turn shifts and scales the distribution of inputs arriving at an activation function. This effectively customizes the operating regime of the activation for the data it processes.
 
-\begin{remark}
-\label{rem:duplicate_rank}
-    The proposition above reveals an important insight that, both in hard rank and effective rank case, as long as pre-activation correlations are within $(-1,1),$ their post-activations will be hard rank and improved effective rank. Thus, one way of countering this will be to create duplicate features, where the activation will be unable to decouple.
-    % \ff{what is "hard rank"?}
-\end{remark}
+However, this powerful mechanism harbors a fundamental trade-off that can lead directly to frozen units. Let's build this intuition with two illustrative examples:
 
-This theory reveals an important insight that non-linear activations indeed recover both hard rank and effective rank.  One natural question is, what can we say if the pre-activations deviate from standard Gaussian, e.g., if the pre-activations are distributed as $x\sim N(\mu,\sigma^2).$ This question is particularly relevant considering that training dynamics can dramatically shift distribution of pre-activations. It turns out that we can view this distributional shift as a way of modulating the activation. For example, in case of non-standard Gaussian pre-activation, we can control its mean and standard deviation into the activation, by shaping the activation $f(\mu + \sigma z)$ where $z\sim N(0,1)$. Thus, we view  changes in pre-activation statistics as a transformation the activation function itself. The following example sheds more light on this notion.
+\begin{itemize}
+    \item \textbf{The Tanh case: Decorrelation via Scaling.} Consider the $\tanh(x)$ activation. To make two similar inputs more distinct (i.e., decorrelate their representations), the network can learn to increase the \textit{scale} of its pre-activations, effectively computing $\tanh(ax)$ with a large $a$. As illustrated in Figure~\ref{fig:theory_tanh_az_rank}, a larger scale factor $a$ makes the function steeper and more effective at separating inputs near zero, thereby increasing the effective rank of the outputs. The cost, however, is that for most inputs not close to zero, the function rapidly saturates at +1 or -1, where its derivative vanishes. The pursuit of greater separation thus pushes the neuron into a "frozen" state for the majority of inputs.
 
-\begin{example}
-For $f(x) = \tanh(ax)$. If $a$ is small, $\tanh(ax) \approx ax$, behaving linearly, with $\alpha$ converging to $0.$ On the other hand, if $a$ is very large, $\tanh(ax)$ approaches a sign function, and $\alpha$ tends to infinity.  
-For $f(x) = \text{ReLU}(a x + b)$. If $b $ is a large positive shift, $f(x)$ will be mostly an affine transform $f(x) = a x + b, $ which cannot recover rank, but for non-positive shifts $b\ge 0, $ it will maintain its non-linearity. 
-% \ff{non-positive or $\le 0$?}
-% You can see an illustration of this in Figure~\ref{fig:theory_tanh_az_rank}.
-\end{example}
+    \item \textbf{The ReLU case: Decorrelation via Shifting.} Now consider $\mathrm{ReLU}(x)$. A similar effect occurs by modulating the \textit{bias}. To create a highly selective feature, the network might learn to apply a large negative bias, computing $\mathrm{ReLU}(x + b)$ with a large negative $b$. This shift ensures that only exceptionally large positive inputs will activate the neuron, making its firing a rare and informative event. The consequence is that for the vast majority of inputs, the pre-activation $x+b$ is negative, yielding an output of zero and a gradient of zero. The neuron becomes ``dead'' or ``frozen''.
+\end{itemize}
+\AJ{I think the itemize list shoudl be inste3ad written as either a paragraph, or an example, or remark, whichever works best}
+\GIU{This conclusion needs to be expanded on.}
 
 \begin{figure}[ht!]
     \centering
 \includegraphics[width=0.7\linewidth]{POC/figures/theory_tanh_az_rank.pdf} % Assuming image is in figures/
     \vspace{-.3cm}
-    \caption{Effect of input shifting on post-activation effective rank for $h_a = \tanh(a x)$, with rank-deficient $z$ ($20$ dimensional with rank $5$). \emph{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$ vs. scale $a.$ \emph{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scale $a$. }
+    \caption{Effect of input scaling on post-activation effective rank for $h_a = \tanh(a x)$, with rank-deficient input $z$ ($20$ dimensional with rank $5$). \emph{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$ vs. scale $a.$ As $a$ increases, the spectrum becomes more uniform, indicating higher diversity. \emph{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scale $a$. The rank increases with scale, but this coincides with pushing the activation towards saturation.}
     \label{fig:theory_tanh_az_rank}
 \end{figure}
 
+These examples illustrate a core dynamic: the attempt to maximize feature diversity by pushing pre-activations into the most discriminative, non-linear region of an activation function simultaneously drives them towards the saturated, zero-gradient regions. This leads us to a central hypothesis of this work:
 
-This modulation has a critical consequence, revealed by the following corollary.
+\textbf{Hypothesis.} The emergence of frozen features is not an incidental failure but a natural consequence of gradient-based optimization attempting to learn diverse, decorrelated representations. The process of modulating pre-activation bias and scale to maximize feature separation inherently forces activations into saturated regimes where they lose plasticity.
 
-\begin{corollary}
-\label{cor:max_alpha_frozen_formal}
-Suppose an activation function $f_s$ is parameterized by $s \in S$, where $S$ is a parameter space (e.g., $S = \mathbb{R}$ for scaling, $S = \mathbb{R}^2$ for scale-shift). Assume that for all $s \in S$, $f_s$ has a finite Gaussian kernel, i.e., $\E[f_s(z)^2] < \infty$ for $z \sim \mathcal{N}(0,1)$.
-If there exists a sequence of parameters $(s_k)_{k=1}^\infty \subset S$ such that: (i) The rank recovery strength $\alpha_{f_{s_k}} \to \infty$ as $k \to \infty$.
-(ii) The expected squared value remains uniformly bounded, i.e., there is a constant $M < \infty$ such that $\E[f_{s_k}(z)^2] \le M$ for all $k$.
-Then, the derivative $f'_{s_k}(z)$ tends to zero in probability as $k \to \infty$. That is, for any $\epsilon > 0$:
-$$ \lim_{k \to \infty} P(|f'_{s_k}(z)| < \epsilon) = 1, \quad \text{for } z \sim \mathcal{N}(0,1). $$
-\end{corollary}
-
-The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Section~\ref{app:max_rank_frozen}
-\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} 
-\AJ{The detailed proof turned out to be very involved and long (5-6 pages) and is a bit incomplete, so I rephrased the sentence to we're "discussing" it not proving it. Is that ok, or you prefer to include the actual proof?}
-for a detailed discussion of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.
 \ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
 \AJ{this is a very interesting point, do you have any suggestions on how to develop this idea further? }
+\ff{regarding connection to lazy training, I'm thinking about establishing a connection between the range of values of a,b and input value standard deviation such that we show the probability of entering the dead zone of a unit is higher during training for some initialization. just a thought, I know it's going to be challenging to prove anything like that}
 
-\begin{example}
-For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $\alpha_f.$ However, observe that in the limit of $\lim_{a \to \infty} \tanh(a x) = \text{sign}(x),$ we have $f'=0$ almost everywhere except $x=0.$ 
-% In the case of ReLU $f(x) = \text{relu}(ax + b),$ we can tend $\alpha_f$ to by choosing $a,b$ such that $b/a \to -\infty,$ would also imply that $f' = 0 $ with probability $1$ when $z\sim N(0,1).$
-\end{example}
+This hypothesis posits that the very mechanisms responsible for effective feature learning contain the seeds of LoP. A drive for representational richness, when pursued to its extreme, paradoxically leads to representational rigidity. This suggests that a key pathway to creating redundant or duplicate features (Remark~\ref{rem:duplicate_rank}) is to push correlations to their extremes ($\pm 1$), while the pathway to frozen units involves leveraging the non-linearity to its maximum decorrelating potential.
 
-% \GIU{This conclusion needs to be expanded on.} 
-% (Giulia's trys) 
-Taken together, Proposition \ref{prop:hard_rank_increase_main} and Corollary \ref{cor:max_alpha_frozen_formal}, tell us that activation functions are a double-edged sword when it comes to feature rank. On one hand, when the modulation is present, the non-linearity allows rank recovery for low-rank pre-activations, while on the other hand, if the modulation strength  is too high, the activation function can lead to frozen units.   
-The key message of the corollary and the example above is  that frozen features may emerge as a natural tendency towards finding rich and diverse features while learning. 
-% \GIU{Where did the ReLU example go?}
 
-\paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape.  However, moving too far in any direction may lead the network to Loss of Plasticity: aggressively increasing rank via strong non-linearity risks creating frozen units, i.e., Corollary~\ref{cor:max_alpha_frozen_formal}, while simplifying representations can lead to rank collapse or creation of duplicate features, i.e., Remark~\ref{rem:duplicate_rank}.
+\paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape. However, pushing this process to its limits leads to plasticity loss: aggressively increasing feature diversity via strong non-linearity risks creating frozen units, as per our hypothesis, while an opposing drive to simplify representations can lead to rank collapse or the creation of duplicate features.
 
 \subsection{Experimental Setup}
-% \ff{may be better as a subsection than a paragraph} 
-To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes. 
-Each task is trained for 500 steps, and validation is performed periodically, resulting in approximately 25,000 total steps shown in the figures. 
+To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes.
+Each task is trained for 500 steps, and validation is performed periodically after each task on the same classes it was trained on. 
 We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
-\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000.... ?}
-\AJ{Excellent point, there was a small inconsistency here before which is now fixed (we have 40 tasks not 10), and each task is trained for 500 epochs, so the 25000 steps corresponds to this plus the validation steps. Is it important to fix the plots or just explain it in text? }
 
 
-The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity. 
+The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity.
+\ff{the details of these experiments should be in the main body and come before the figures}
 
 \begin{figure}[!ht]
     \centering
@@ -270,16 +231,13 @@ The experimental evidence confirms these intuitions (see Appendix~\ref{app:empir
     \caption{Co-evolution of Effective rank and LoP symptoms, such as dead or duplicate units in the network during continual training. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:norm-rank-nG}
 \end{figure}
-% \ff{the details of these experiments should be in the main body and come before the figures}
-
 
 Our inquiry so far highlights two key pathways to LoP common symptoms:
-    (1) 
-    % \GIU{The duplicate features so far have only been mentioned in passing. Should spend a sentence or two to define them above.} 
-    Emergence of \textbf{duplicate features}, where distinct computational units, or groups of units, within a network layer effectively learn to become identical or highly correlated, as a potential consequence of attempting to lower representational rank, i.e.,   Remark~\ref{rem:duplicate_rank}. 
-    (2) Emergence of \textbf{frozen or dead features}, where weights and biases of a unit stop learning, as a result of attempting to maximize rank increase (leading to saturation) or to flatten the loss landscape around the current parameters, i.e., Corrolary~\ref{cor:max_alpha_frozen_formal}.
-Thus, the critical question now becomes: do these features, once emerged, lead to persistent LoP as defined by our framework (Definition~\ref{def:lop})? 
-
+    (1)
+    \GIU{The duplicate features so far have only been mentioned in passing. Should spend a sentence or two to define them above.}
+    Emergence of \textbf{duplicate features}, where distinct computational units, or groups of units, within a network layer effectively learn to become identical or highly correlated, as a potential consequence of attempting to lower representational rank.
+    (2) Emergence of \textbf{frozen or dead features}, where weights and biases of a unit stop learning, as a result of attempting to maximize rank increase (leading to saturation) or to flatten the loss landscape around the current parameters, as explained by our hypothesis.
+Thus, the critical question now becomes: do these features, once emerged, lead to persistent LoP as defined by our framework (Definition~\ref{def:lop})?
 
 \section{LoP Manifolds: Traps for Gradient Descent}
 \label{sec:existence_lop_manifold}

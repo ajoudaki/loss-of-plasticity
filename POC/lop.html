@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoP Manifold Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.26.0/plotly.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        #plot {
+            width: 100%;
+            height: 650px; /* Increased height for better view */
+            border-radius: 8px;
+            overflow: hidden; /* Ensures plot respects border radius */
+        }
+        .controls {
+            margin: 25px 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        .control-section {
+            margin-bottom: 25px;
+            padding-bottom: 25px;
+            border-bottom: 1px solid #dde2e7;
+        }
+        .control-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .section-title {
+            font-weight: 600;
+            font-size: 1.1em;
+            color: #34495e;
+            margin-bottom: 15px;
+        }
+        .control-group {
+            margin: 12px 0;
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping for smaller screens */
+            align-items: center;
+            gap: 15px;
+        }
+        label {
+            min-width: 280px; /* Adjusted for longer labels */
+            font-size: 0.95em;
+            color: #555;
+        }
+        input[type="range"] {
+            flex: 1;
+            min-width: 150px; /* Ensure range slider is usable */
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #e0e0e0;
+            outline: none;
+            border-radius: 3px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 18px; /* Adjusted for consistency */
+            height: 18px;
+            background: #007bff;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #007bff;
+        }
+        .value-display {
+            min-width: 50px;
+            text-align: center;
+            font-family: monospace;
+            background-color: #e9ecef;
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            font-size: 0.9em;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:hover {
+            background-color: #0056b3;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        .button-container {
+            text-align: center;
+            margin-top: 25px;
+        }
+        .info {
+            text-align: center;
+            margin: 15px 0;
+            color: #555;
+            font-style: italic;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        .info span {
+            font-weight: bold;
+            font-style: normal;
+            color: #17a2b8;
+        }
+        .info .traj-color {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LoP Manifold Visualization</h1>
+        <div class="info">
+            f(x,y,z) = Σ exp(-||(x,y) - μₖ||² / rₖ²) × [z-modulation term]<br>
+            <span>LoP Manifolds</span> are subspaces where gradient flow is constrained.
+            Trajectories starting on these manifolds tend to stay on them.<br>
+            <span class="traj-color" style="background-color: #4CAF50;"></span>Green: z=0 trajectories.
+            <span class="traj-color" style="background-color: #2196F3;"></span>Blue: x=y trajectories.
+            <span class="traj-color" style="background-color: #F44336;"></span>Red: x=x&#x2093; trajectories.
+            Others: varied colors.
+        </div>
+        <div class="controls">
+            <div class="control-section">
+                <div class="section-title">Gaussian Parameters</div>
+                <div class="control-group">
+                    <label for="numGaussians">Number of Gaussians:</label>
+                    <input type="range" id="numGaussians" min="1" max="20" value="5" step="1">
+                    <span class="value-display" id="numGaussiansValue">5</span>
+                </div>
+                <div class="control-group">
+                    <label for="radiusScale">Radius Scale Factor:</label>
+                    <input type="range" id="radiusScale" min="0.1" max="2.0" value="1.0" step="0.1">
+                    <span class="value-display" id="radiusScaleValue">1.0</span>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="section-title">General Visualization Options</div>
+                <div class="control-group">
+                    <label for="showIsosurfaces">Show Level Sets (Isosurfaces):</label>
+                    <input type="checkbox" id="showIsosurfaces" checked>
+                </div>
+                 <div class="control-group">
+                    <label for="numTrajectories">Number of Trajectories:</label>
+                    <input type="range" id="numTrajectories" min="0" max="30" value="10" step="1">
+                    <span class="value-display" id="numTrajectoriesValue">10</span>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="section-title">Frozen Z LoP Manifold (z=0)</div>
+                <div class="control-group">
+                    <label for="showZ0Plane">Show z=0 Plane:</label>
+                    <input type="checkbox" id="showZ0Plane" checked>
+                </div>
+                <div class="control-group">
+                    <label for="showZ0Trajectories">Show Trajectories from z=0 Plane (Green):</label>
+                    <input type="checkbox" id="showZ0Trajectories" checked>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="section-title">Symmetric LoP Manifold (x=y)</div>
+                <div class="control-group">
+                    <label for="enableXYSymmetry">Enable x=y Symmetry (Gaussian centers on x=y line):</label>
+                    <input type="checkbox" id="enableXYSymmetry">
+                </div>
+                <div class="control-group">
+                    <label for="showXYPlane">Show x=y Plane:</label>
+                    <input type="checkbox" id="showXYPlane">
+                </div>
+                <div class="control-group">
+                    <label for="showXYTrajectories">Show Trajectories from x=y Plane (Blue):</label>
+                    <input type="checkbox" id="showXYTrajectories" checked>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="section-title">Frozen X LoP Manifold (x=x&#x2093;)</div>
+                <div class="control-group">
+                    <label for="enableXFManifold">Enable x=x&#x2093; Manifold (Gaussian centers on x=x&#x2093;):</label>
+                    <input type="checkbox" id="enableXFManifold">
+                </div>
+                <div class="control-group">
+                    <label for="xFValueSlider">x&#x2093; Value:</label>
+                    <input type="range" id="xFValueSlider" min="-2.5" max="2.5" value="0" step="0.1">
+                    <span class="value-display" id="xFValueDisplay">0.0</span>
+                </div>
+                <div class="control-group">
+                    <label for="showXFPlane">Show x=x&#x2093; Plane:</label>
+                    <input type="checkbox" id="showXFPlane">
+                </div>
+                <div class="control-group">
+                    <label for="showXFTrajectories">Show Trajectories from x=x&#x2093; Plane (Red):</label>
+                    <input type="checkbox" id="showXFTrajectories" checked>
+                </div>
+            </div>
+
+            <div class="button-container">
+                <button onclick="randomizeAll()">Randomize Gaussians & Trajectories</button>
+            </div>
+        </div>
+        <div id="plot"></div>
+    </div>
+    <script>
+        // Global variables for Gaussian parameters and visualization settings
+        let gaussians = [];
+        let trajectoryStartPoints = [];
+        let trajectoryOnZ0 = [], trajectoryOnXY = [], trajectoryOnXF = []; // Track trajectory origins
+
+        let numGaussiansGlobal = 5; 
+        let radiusScale = 1.0;
+        let numTrajectoriesGlobal = 10; 
+
+        // Visualization toggles
+        let showIsosurfaces = true;
+        let showZ0Plane = true;
+        let showZ0Trajectories = true;
+        let enableXYSymmetry = false; 
+        let showXYPlane = false;
+        let showXYTrajectories = true;
+        let enableXFManifold = false; 
+        let xFValue = 0.0;
+        let showXFPlane = false;
+        let showXFTrajectories = true;
+
+        const range = 2.5; // Coordinate range for visualization
+
+        // Function to generate Gaussians respecting manifold constraints
+        function initializeGaussians(count) {
+            gaussians = [];
+            const innerRange = range * 0.8;
+            for (let i = 0; i < count; i++) {
+                let muX = (Math.random() - 0.5) * 2 * innerRange;
+                let muY = (Math.random() - 0.5) * 2 * innerRange;
+
+                if (enableXYSymmetry) { 
+                    muY = muX;
+                }
+                if (enableXFManifold) { 
+                    muX = xFValue;
+                    if (enableXYSymmetry) { 
+                        muY = xFValue;
+                    }
+                }
+
+                gaussians.push({
+                    mu: [muX, muY, 0], 
+                    r: 0.3 + Math.random() * 0.3,
+                    zType: Math.random() < 0.5 ? 'z2' : 'inv'
+                });
+            }
+        }
+
+        // Function to initialize trajectory starting points, distributing them among enabled manifolds
+        function initializeTrajectoryPoints(count) {
+            trajectoryStartPoints = [];
+            trajectoryOnZ0 = [];
+            trajectoryOnXY = [];
+            trajectoryOnXF = [];
+            const innerRange = range * 0.9;
+
+            let activeManifoldTypes = [];
+            if (showZ0Trajectories) activeManifoldTypes.push('z0');
+            if (showXYTrajectories && enableXYSymmetry) activeManifoldTypes.push('xy');
+            if (showXFTrajectories && enableXFManifold) activeManifoldTypes.push('xf');
+            
+            let numPerType = 0; 
+            if (activeManifoldTypes.length > 0) {
+                 numPerType = Math.floor( (count * 0.8) / activeManifoldTypes.length); 
+            }
+
+            let manifoldTrajCounts = {'z0': 0, 'xy': 0, 'xf': 0};
+            let currentManifoldTypeIndex = 0;
+
+            for (let i = 0; i < count; i++) {
+                let startX = (Math.random() - 0.5) * 2 * innerRange;
+                let startY = (Math.random() - 0.5) * 2 * innerRange;
+                let startZ = (Math.random() - 0.5) * 2 * innerRange;
+                let onZ0Flag = false, onXYFlag = false, onXFFlag = false;
+
+                if (activeManifoldTypes.length > 0) {
+                    const currentType = activeManifoldTypes[currentManifoldTypeIndex % activeManifoldTypes.length];
+                    if (manifoldTrajCounts[currentType] < numPerType) {
+                        if (currentType === 'z0') {
+                            startZ = 0; onZ0Flag = true;
+                        } else if (currentType === 'xy') {
+                            startX = startY = (Math.random() - 0.5) * 2 * innerRange; 
+                            onXYFlag = true;
+                        } else if (currentType === 'xf') {
+                            startX = xFValue; 
+                            onXFFlag = true;
+                        }
+                        manifoldTrajCounts[currentType]++;
+                    }
+                     currentManifoldTypeIndex++; 
+                }
+                
+                trajectoryStartPoints.push([startX, startY, startZ]);
+                trajectoryOnZ0.push(onZ0Flag);
+                trajectoryOnXY.push(onXYFlag);
+                trajectoryOnXF.push(onXFFlag);
+            }
+        }
+
+        // Randomize Gaussians and Trajectories
+        function randomizeAll() {
+            initializeGaussians(numGaussiansGlobal);
+            initializeTrajectoryPoints(numTrajectoriesGlobal);
+            updatePlot();
+        }
+
+        // Gaussian function (sum of cylindrical Gaussians with z-modulation)
+        function gaussianFunction(x, y, z) {
+            let sum = 0;
+            for (const gauss of gaussians) { 
+                const dx = x - gauss.mu[0];
+                const dy = y - gauss.mu[1];
+                const distSq = dx*dx + dy*dy;
+                const scaledRadius = gauss.r * radiusScale;
+                const gaussTerm = Math.exp(-distSq / (scaledRadius * scaledRadius));
+                const zMod = gauss.zType === 'z2' 
+                    ? (z * z) / (1 + z * z)
+                    : 1 / (1 + z * z);
+                sum += gaussTerm * zMod;
+            }
+            return sum;
+        }
+
+        // Compute gradient of the Gaussian function
+        function computeGradient(x, y, z) {
+            let gradX = 0, gradY = 0, gradZ = 0;
+            for (const gauss of gaussians) {
+                const dx = x - gauss.mu[0];
+                const dy = y - gauss.mu[1];
+                const distSq = dx*dx + dy*dy;
+                const scaledRadius = gauss.r * radiusScale;
+                const rSq = scaledRadius * scaledRadius;
+                if (rSq === 0) continue; 
+                const expTerm = Math.exp(-distSq / rSq);
+                const factor = -2 * expTerm / rSq;
+                
+                let zMod, dZmod_dz;
+                const zz = z * z; 
+                const one_plus_zz = 1 + zz;
+                if (gauss.zType === 'z2') {
+                    const denomSq = one_plus_zz * one_plus_zz;
+                    zMod = zz / one_plus_zz;
+                    dZmod_dz = denomSq === 0 ? 0 : (2 * z) / denomSq;
+                } else {
+                    zMod = 1 / one_plus_zz;
+                    dZmod_dz = one_plus_zz === 0 ? 0 : (-2 * z) / (one_plus_zz * one_plus_zz);
+                }
+                
+                gradX += factor * dx * zMod;
+                gradY += factor * dy * zMod;
+                gradZ += expTerm * dZmod_dz;
+            }
+            return [gradX, gradY, gradZ];
+        }
+
+        // Compute a single trajectory by following the gradient
+        function computeTrajectory(startPoint) {
+            const trajectory = [startPoint];
+            const stepSize = 0.02;
+            const maxSteps = 500;
+            const minGradient = 0.001;
+            let currentPoint = [...startPoint];
+
+            for (let step = 0; step < maxSteps; step++) {
+                const [gradX, gradY, gradZ] = computeGradient(...currentPoint);
+                const gradMag = Math.sqrt(gradX*gradX + gradY*gradY + gradZ*gradZ);
+
+                if (gradMag < minGradient || 
+                    Math.abs(currentPoint[0]) > range ||
+                    Math.abs(currentPoint[1]) > range ||
+                    Math.abs(currentPoint[2]) > range) {
+                    break;
+                }
+                currentPoint[0] += stepSize * gradX / gradMag;
+                currentPoint[1] += stepSize * gradY / gradMag;
+                currentPoint[2] += stepSize * gradZ / gradMag;
+                trajectory.push([...currentPoint]);
+            }
+            return trajectory;
+        }
+
+        // Generate data for isosurfaces
+        function generateIsosurfaceData() {
+            const n = 40; 
+            let x_vals = [], y_vals = [], z_vals = [], values = [];
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    for (let k = 0; k < n; k++) {
+                        const xi = -range + (2 * range * i) / (n - 1);
+                        const yi = -range + (2 * range * j) / (n - 1);
+                        const zi = -range + (2 * range * k) / (n - 1);
+                        x_vals.push(xi); y_vals.push(yi); z_vals.push(zi);
+                        values.push(gaussianFunction(xi, yi, zi));
+                    }
+                }
+            }
+            const maxValue = Math.max(...values);
+            const minValue = Math.min(...values);
+            const valueRange = maxValue - minValue;
+            return { 
+                x: x_vals, y: y_vals, z: z_vals, values, 
+                isomin: minValue + 0.1 * valueRange, 
+                isomax: minValue + 0.7 * valueRange
+            };
+        }
+        
+        // Create or update the plot
+        function updatePlot() {
+            const traces = [];
+
+            // Add isosurface if enabled
+            if (showIsosurfaces) {
+                const data = generateIsosurfaceData();
+                traces.push({
+                    type: 'isosurface',
+                    x: data.x, y: data.y, z: data.z, value: data.values,
+                    isomin: data.isomin, isomax: data.isomax,
+                    surface: { 
+                        show: true, // Explicitly ensure surface is shown
+                        count: 5,   // Reverted to original count
+                        fill: 1,    // Reverted to full fill
+                        pattern: 'all' // Reverted to all pattern (solid)
+                    },
+                    opacity: 0.6, // Reverted to original opacity
+                    // colorscale: 'Viridis', // Removed to use default isosurface coloring
+                    showscale: true,
+                    caps: { x: { show: false }, y: { show: false }, z: { show: false } },
+                    name: 'Level Sets'
+                });
+            }
+
+            const planeSize = range * 1.1; 
+            // Add z=0 plane
+            if (showZ0Plane) {
+                traces.push({
+                    type: 'surface',
+                    x: [[-planeSize, planeSize], [-planeSize, planeSize]],
+                    y: [[-planeSize, -planeSize], [planeSize, planeSize]],
+                    z: [[0, 0], [0, 0]],
+                    colorscale: [[0, 'rgba(76,175,80,0.2)'], [1, 'rgba(76,175,80,0.2)']], 
+                    showscale: false, opacity: 0.3, name: 'z=0 Plane'
+                });
+            }
+            // Add x=y plane
+            if (showXYPlane && enableXYSymmetry) {
+                 traces.push({
+                    type: 'surface',
+                    x: [[-planeSize, -planeSize], [planeSize, planeSize]], 
+                    y: [[-planeSize, -planeSize], [planeSize, planeSize]], 
+                    z: [[-planeSize, planeSize], [-planeSize, planeSize]], 
+                    colorscale: [[0, 'rgba(33,150,243,0.2)'], [1, 'rgba(33,150,243,0.2)']], 
+                    showscale: false, opacity: 0.3, name: 'x=y Plane'
+                });
+            }
+            // Add x=xF plane
+            if (showXFPlane && enableXFManifold) {
+                 traces.push({
+                    type: 'surface',
+                    x: [[xFValue, xFValue], [xFValue, xFValue]], 
+                    y: [[-planeSize, planeSize], [-planeSize, planeSize]], 
+                    z: [[-planeSize, -planeSize], [planeSize, planeSize]], 
+                    colorscale: [[0, 'rgba(244,67,54,0.2)'], [1, 'rgba(244,67,54,0.2)']], 
+                    showscale: false, opacity: 0.3, name: `x=${xFValue.toFixed(1)} Plane`
+                });
+            }
+
+            // Add trajectories
+            let countZ0 = 0, countXY = 0, countXF = 0;
+            for (let i = 0; i < numTrajectoriesGlobal; i++) {
+                // Default color: varied HSL, similar to the original user's code for non-special trajectories
+                let hue = (i * 360 / numTrajectoriesGlobal);
+                let saturation = 70;
+                let lightness = 50;
+                let color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                let lineWidth = 3; // Default line width for general trajectories
+
+                if (trajectoryOnZ0[i] && showZ0Trajectories) {
+                    color = '#4CAF50'; // Green for z=0
+                    lineWidth = 4; 
+                    countZ0++;
+                } else if (trajectoryOnXY[i] && showXYTrajectories && enableXYSymmetry) {
+                    color = '#2196F3'; // Blue for x=y
+                    lineWidth = 4; 
+                    countXY++;
+                } else if (trajectoryOnXF[i] && showXFTrajectories && enableXFManifold) {
+                    color = '#F44336'; // Red for x=xF
+                    lineWidth = 4; 
+                    countXF++;
+                }
+                
+                const trajectory = computeTrajectory(trajectoryStartPoints[i]);
+                if (trajectory.length > 1) {
+                    traces.push({
+                        type: 'scatter3d', mode: 'lines',
+                        x: trajectory.map(p => p[0]), y: trajectory.map(p => p[1]), z: trajectory.map(p => p[2]),
+                        line: { color: color, width: lineWidth },
+                        marker: { size: 1.5, color: color }, 
+                        showlegend: false, name: `Trajectory ${i+1}`
+                    });
+
+                    // Add arrow tips (cones)
+                    const numArrows = 3;
+                    const arrowInterval = Math.max(1, Math.floor(trajectory.length / (numArrows + 1)));
+                    const arrowPoints = [], arrowDirections = [];
+                    for (let j = arrowInterval; j < trajectory.length -1 && arrowPoints.length < numArrows; j += arrowInterval) {
+                         if (j > 0 && j < trajectory.length -1) { 
+                            arrowPoints.push(trajectory[j]);
+                            const [gX, gY, gZ] = computeGradient(...trajectory[j]);
+                            const gMag = Math.sqrt(gX*gX + gY*gY + gZ*gZ);
+                            if (gMag > 0.001) {
+                                arrowDirections.push([gX/gMag, gY/gMag, gZ/gMag]);
+                            } else {
+                                arrowDirections.push([0,0,0]); 
+                            }
+                        }
+                    }
+                    if (arrowPoints.length > 0 && arrowDirections.length > 0) {
+                        traces.push({
+                            type: 'cone',
+                            x: arrowPoints.map(p => p[0]), y: arrowPoints.map(p => p[1]), z: arrowPoints.map(p => p[2]),
+                            u: arrowDirections.map(d => d[0]), v: arrowDirections.map(d => d[1]), w: arrowDirections.map(d => d[2]),
+                            sizemode: 'absolute', sizeref: 0.3, 
+                            colorscale: [[0, color], [1, color]], // Cones match trajectory color
+                            showscale: false, name: `Arrows ${i+1}`
+                        });
+                    }
+                }
+            }
+            
+            let titleParts = [`${numGaussiansGlobal} Gaussians`, `${numTrajectoriesGlobal} Trajs`];
+            if (showZ0Trajectories && countZ0 > 0) titleParts.push(`${countZ0} on z=0`);
+            if (showXYTrajectories && enableXYSymmetry && countXY > 0) titleParts.push(`${countXY} on x=y`);
+            if (showXFTrajectories && enableXFManifold && countXF > 0) titleParts.push(`${countXF} on x=x\u2093`);
+
+
+            const layout = {
+                title: titleParts.join(', '),
+                scene: {
+                    xaxis: { title: 'X', range: [-range, range], zerolinecolor: 'rgba(150,150,150,0.5)' },
+                    yaxis: { title: 'Y', range: [-range, range], zerolinecolor: 'rgba(150,150,150,0.5)' },
+                    zaxis: { title: 'Z', range: [-range, range], zerolinecolor: 'rgba(150,150,150,0.5)' },
+                    camera: { eye: { x: 1.6, y: 1.6, z: 1.0 } }, 
+                    aspectmode: 'cube',
+                    bgcolor: "#fdfdfd" 
+                },
+                margin: { l: 0, r: 0, b: 0, t: 50 }, 
+                paper_bgcolor: 'rgba(0,0,0,0)', 
+                plot_bgcolor: 'rgba(0,0,0,0)'
+            };
+            Plotly.newPlot('plot', traces, layout, {responsive: true, displayModeBar: true});
+        }
+
+        // --- Event Listeners for Controls ---
+        function addListener(id, event, handlerFn, reinitGaussians = false, reinitTrajectories = false) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener(event, function(e) {
+                    handlerFn(e); 
+                    if (reinitGaussians) initializeGaussians(numGaussiansGlobal);
+                    if (reinitTrajectories) initializeTrajectoryPoints(numTrajectoriesGlobal);
+                    updatePlot();
+                });
+            }
+        }
+
+        // Gaussian Parameters
+        addListener('numGaussians', 'input', e => {
+            numGaussiansGlobal = parseInt(e.target.value);
+            document.getElementById('numGaussiansValue').textContent = numGaussiansGlobal;
+        }, true, true); 
+
+        addListener('radiusScale', 'input', e => {
+            radiusScale = parseFloat(e.target.value);
+            document.getElementById('radiusScaleValue').textContent = radiusScale.toFixed(1);
+        }, false, false); 
+
+        // General Visualization
+        addListener('showIsosurfaces', 'change', e => showIsosurfaces = e.target.checked);
+        addListener('numTrajectories', 'input', e => {
+            numTrajectoriesGlobal = parseInt(e.target.value);
+            document.getElementById('numTrajectoriesValue').textContent = numTrajectoriesGlobal;
+        }, false, true); 
+
+        // z=0 Manifold
+        addListener('showZ0Plane', 'change', e => showZ0Plane = e.target.checked);
+        addListener('showZ0Trajectories', 'change', e => {
+            showZ0Trajectories = e.target.checked;
+        }, false, true); 
+
+        // x=y Symmetric Manifold
+        addListener('enableXYSymmetry', 'change', e => {
+            enableXYSymmetry = e.target.checked;
+        }, true, true);
+        addListener('showXYPlane', 'change', e => showXYPlane = e.target.checked);
+        addListener('showXYTrajectories', 'change', e => {
+            showXYTrajectories = e.target.checked;
+        }, false, true);
+
+        // x=xF Frozen Manifold
+        addListener('enableXFManifold', 'change', e => {
+            enableXFManifold = e.target.checked;
+        }, true, true);
+        addListener('xFValueSlider', 'input', e => {
+            xFValue = parseFloat(e.target.value);
+            document.getElementById('xFValueDisplay').textContent = xFValue.toFixed(1);
+            if (enableXFManifold) { 
+                 initializeGaussians(numGaussiansGlobal);
+                 initializeTrajectoryPoints(numTrajectoriesGlobal); // Also re-init trajectories if xF changes for xF-manifold trajectories
+            }
+             // updatePlot() will be called by the generic addListener logic
+        }, false, false); // Let the main addListener call updatePlot. Re-init handled conditionally.
+        
+        // Need to ensure xFValueSlider listener calls updatePlot correctly if not re-initializing
+        // The addListener wrapper already calls updatePlot.
+        // The conditional re-initialization for xFValueSlider is now inside its specific handler.
+
+        addListener('showXFPlane', 'change', e => showXFPlane = e.target.checked);
+        addListener('showXFTrajectories', 'change', e => {
+            showXFTrajectories = e.target.checked;
+        }, false, true);
+
+        // Initial setup
+        showIsosurfaces = document.getElementById('showIsosurfaces').checked;
+        showZ0Plane = document.getElementById('showZ0Plane').checked;
+        showZ0Trajectories = document.getElementById('showZ0Trajectories').checked;
+        enableXYSymmetry = document.getElementById('enableXYSymmetry').checked;
+        showXYPlane = document.getElementById('showXYPlane').checked;
+        showXYTrajectories = document.getElementById('showXYTrajectories').checked;
+        enableXFManifold = document.getElementById('enableXFManifold').checked;
+        xFValue = parseFloat(document.getElementById('xFValueSlider').value);
+        showXFPlane = document.getElementById('showXFPlane').checked;
+        showXFTrajectories = document.getElementById('showXFTrajectories').checked;
+        numGaussiansGlobal = parseInt(document.getElementById('numGaussians').value);
+        radiusScale = parseFloat(document.getElementById('radiusScale').value);
+        numTrajectoriesGlobal = parseInt(document.getElementById('numTrajectories').value);
+        document.getElementById('xFValueDisplay').textContent = xFValue.toFixed(1);
+
+        randomizeAll(); 
+    </script>
+</body>
+</html>
