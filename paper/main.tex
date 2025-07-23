@@ -51,7 +51,7 @@
 
 % Comments:
 % \newcommand{\giulia}[1]{{\color{ForestGreen}\textbf{Giulia:} #1}} % Keep for author's internal review if needed
-%\newcommand{\giulia}[1]{} % Uncomment to hide comments
+% \newcommand{\giulia}[1]{} % Uncomment to hide comments
 
 \usepackage[textsize=tiny]{todonotes}
 % \usepackage{colortbl}
@@ -65,6 +65,7 @@
 
 % \renewcommand{\ff}[1]{}
 % \renewcommand{\AJ}[1]{}
+% \renewcommand{\GIU}[1]{}
 %%%% Theorem environments
 \newtheorem{definition}{Definition}[section]
 \newtheorem{lemma}{Lemma}[section]
@@ -153,6 +154,7 @@ A manifold $\mathcal{M}\subset\Theta$ induces LoP if the gradient of the loss fu
 If the conditions in Definition~\ref{def:lop} hold irrespective of the specific data distribution generating the loss $\Loss$, which we can think of as functional LoP, and is our primary area of interest. Such LoP arises from the network architecture and gradient descent dynamics alone and is particularly relevant as it persists even if the task or data distribution evolves.
 \end{remark}
 
+\GIU{Should we add a remark on SGD? While the full batch gradient could satisfy the manifold condition, the mini batch might not?}
 
 
 \section{Emergence of LoP Symptoms: A First-Principles Perspective}
@@ -172,10 +174,11 @@ This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provi
 
 
 \paragraph{Linear Layers and Rank Reduction}
-Linear layers in neural networks, which are essentially matrix multiplications (followed by a bias), inherently tend to reduce or constrain the dimensionality of representations. Let us recount several important facts about matrix products which underscore their inability to unilaterally increase rank. First, the rank of a product of matrices cannot exceed the minimum rank of any matrix in the product, i.e., $\mathrm{rank}(AB) \le \min(\mathrm{rank}(A), \mathrm{rank}(B))$. Thus, a chain of linear operations can, at best, maintain rank but often reduces it. Second, the condition number of a product of matrices can worsen compared to individual matrices, potentially making features less distinguishable and thereby reducing the effective rank. Finally,  For deep linear networks or long chains of matrix products, particularly with random matrices, there's a strong tendency for the representation to collapse towards low-rank structures, sometimes even rank-one \citep{saxe2014exact, furstenberg1963noncommuting}.
+Linear layers in neural networks, which are essentially matrix multiplications (followed by a bias), inherently tend to reduce or constrain the dimensionality of representations. Let us recount several important facts about matrix products which underscore their inability to unilaterally increase rank. First, the rank of a product of matrices cannot exceed the minimum rank of any matrix in the product, i.e., $\mathrm{rank}(AB) \le \min(\mathrm{rank}(A), \mathrm{rank}(B))$. Thus, a chain of linear operations can, at best, maintain rank but often reduces it. Second, the condition number of a product of matrices can worsen compared to individual matrices, potentially making features less distinguishable and thereby reducing the effective rank. Finally,  for deep linear networks or long chains of matrix products, particularly with random matrices, there's a strong tendency for the representation to collapse towards low-rank structures, sometimes even rank-one \citep{saxe2014exact, furstenberg1963noncommuting}.
 This inherent rank-reducing nature of linear transformations means that non-linearities are crucial for creating and maintaining feature diversity.
 
 \paragraph{Non-linear Activations and Rank Recovery.}
+\GIU{So, this section is crucial but not clear. In particular, (1) we should introduce the concept of "cloned units" before proposition 3.1, and say that Prop.  3.1 holds for layers with non cloned units.(2) We should give an intuition of this $\alpha$ term with a few examples (it seems to me that it becomes negative for a linear function?). Or we should get rid of $\alpha$ and present the results in a different way. (3) Corollary 3.1 is not clear at the moment.}
 Non-linear activation functions are the primary mechanism by which neural networks can counteract the rank-reducing effects of linear layers and expand the dimensionality of learned representations. Informally, even if input features are highly correlated (implying low effective rank), a sufficiently non-linear activation can transform them in such a way that they become more distinct, increasing both the absolute number of independent features (hard rank) and their effective diversity.  
 To make this more formal, consider a matrix of pre-activations $X \in \R^{n \times d}$ ($n$ samples, $d$ features with $n\ge d$), where each row is independently drawn from a multivariate Gaussian distribution $\mathcal{N}(0, C)$, with $C$ being the covariance matrix (unit diagonals, off-diagonals strictly in $(-1,1)$). Let $f: \R \to \R$ be an element-wise non-linear activation function.
 
@@ -239,6 +242,9 @@ For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $
 % (Giulia's trys) 
 Taken together, Proposition \ref{prop:hard_rank_increase_main} and Corollary \ref{cor:max_alpha_frozen_formal}, tell us that activation functions are a double-edged sword when it comes to feature rank. On one hand, when the modulation is present, the non-linearity allows rank recovery for low-rank pre-activations, while on the other hand, if the modulation strength  is too high, the activation function can lead to frozen units.   
 The key message of the corollary and the example above is  that frozen features may emerge as a natural tendency towards finding rich and diverse features while learning. 
+\GIU{This is super cool, and we should sharpen out the presentation to really bring the message home. In particular the statement of corollary 3.1 has to be clarified. I think it would be easier to say that 
+Also, for the last paragraph we could draw a small sketch that shows how these LoP symptoms are connected to the network dynamics?}
+
 % \GIU{Where did the ReLU example go?}
 
 \paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape.  However, moving too far in any direction may lead the network to Loss of Plasticity: aggressively increasing rank via strong non-linearity risks creating frozen units, i.e., Corollary~\ref{cor:max_alpha_frozen_formal}, while simplifying representations can lead to rank collapse or creation of duplicate features, i.e., Remark~\ref{rem:duplicate_rank}.
@@ -271,7 +277,7 @@ The experimental evidence confirms these intuitions (see Appendix~\ref{app:empir
     \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__rankdead_plot.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__rankdead_plot.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_rankdead_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_rankdup_plot.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_rankdead_plot.pdf}
         \vspace{-.3cm}
     \caption{Co-evolution of Effective rank and LoP symptoms, such as dead or duplicate units in the network during continual training. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:norm-rank-nG}
@@ -632,6 +638,8 @@ Let us assume $f:\mathbb{R}\to\mathbb{R}$ to be a continuous, piecewise smooth f
     \item \emph{Plateauing on both sides:} We have $\lim_{x \to \pm\infty} f(x) = C_{\pm}$ (finite constants) and $|f'(x)| = O(1/x^2)$ as $x \to \pm\infty.$
     For these functions, $\alpha_{f_{a_k,b_k}}$ grows unbounded roughly as $a_k$ when $a_k$ grow unbounded as $k$ grows, and scale not growing slower than shift $\lim_{k\to\infty} a_k/b_k \neq 0 .$
 \end{enumerate}
+
+\GIU{I'm not convinced by the above examples. Where is the proof that the effective rank grows with increased $a$ or $b$?}
 
 The given sequences $(a_k, b_k)$  will lead to $\alpha_{f_{a_k,b_k}} \to \infty$ in the limit when $k$ grows, and the limiting manipulated function has zero derivative almost everywhere with respect to the Gaussian measure. Specifically, for any $\epsilon > 0$:
 $$\lim_{k \to \infty} \mathbb{P}(f'_{a_k,b_k}(z) < \epsilon) = 1 \quad \text{for } z \sim \mathcal{N}(0,1)$$
