@@ -3,7 +3,6 @@
 # LaTeX compilation script for the paper
 # This script compiles main.tex and outputs all files to the out/ directory
 
-set -e  # Exit on any error
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,9 +23,10 @@ export TEXINPUTS="..:..//:"
 echo "Running pdflatex (1st pass)..."
 pdflatex -output-directory=out -interaction=nonstopmode main.tex
 
+
 echo "Running bibtex..."
 cd out
-bibtex main || echo "Warning: bibtex failed, continuing..."
+bibtex main 
 cd ..
 
 echo "Running pdflatex (2nd pass)..."
