@@ -104,6 +104,159 @@
     Our theoretical analysis is supported by numerical simulations and empirical observations on various neural network architectures.
 \end{abstract}
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% New Sections (drop‑in replacement for the old “Preliminary” + “LoP
+% manifolds …” + “Emergence …” parts)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% ---------------------------------------------------------------------
+\section{Background and Related Work}%
+\label{sec:background}
+% ---------------------------------------------------------------------
+
+\paragraph{Loss of Plasticity (LoP).}  
+A network is said to suffer a \emph{loss of plasticity} when, after some period of training, it can no longer acquire new information as effectively as a freshly‑initialised model of the same architecture.  LoP has been documented in a variety of continual‑learning and reinforcement‑learning settings \citep{dohare2024loss,nikishin2022primacy}.  Crucially, LoP is distinct from catastrophic forgetting: performance on \emph{past} tasks may remain intact while the ability to learn \emph{future} tasks degrades \citep{lyle2023understanding}.  Typical symptoms include exploding weight norms, growing numbers of dead (saturated) units, and a collapse of the effective rank of hidden representations \citep{dohare2021continual,papyan2020prevalence}.
+
+\paragraph{Previous explanations.}  
+Early accounts linked LoP to individual pathologies—e.g.\ weight‑norm growth or activation sparsity—but these factors alone failed to explain the phenomenon consistently \citep{lyle2022understanding}.  A more recent view connects LoP to a degeneration of the network’s \emph{neural tangent kernel} (NTK): once the NTK becomes low‑rank, many directions in function space receive negligible gradient and can no longer be learned \citep{lyle2023understanding}.  This perspective suggests that LoP is multi‑faceted: diverse surface‑level defects (dead units, duplicated features, etc.) share the common consequence of reducing the network’s effective degrees of freedom.
+
+\paragraph{Neural collapse and information bottleneck.}  
+In classification networks driven to near‑zero training error, within‑class features collapse to their class means and those means adopt a simplex‑ETF geometry—a phenomenon dubbed \emph{neural collapse} \citep{papyan2020prevalence}.  While beneficial for the \emph{current} task, such compression discards within‑class variability that may be vital when new tasks arrive \citep{bonifazi2023excessive,achille2019information}.  This aligns with the \emph{information bottleneck} view, whereby networks first fit the data and then compress latent representations, retaining only label‑relevant information \citep{shwartz2017opening}.  Extreme compression, however, hampers future adaptability.
+
+\paragraph{Spectral bias and implicit regularisation.}  
+Gradient descent exhibits a well‑known \emph{spectral bias}: low‑frequency (or top‑eigenfunction) components of the target are learned first \citep{rahaman2019spectral}.  In finite networks this corresponds to rapid growth along a few NTK eigenvectors while many others remain small, pre‑conditioning the network toward low‑rank solutions \citep{yang2025effective}.  Although such biases often promote generalisation in static settings \citep{zhou2024neural}, they also encourage representational contraction and, ultimately, LoP.
+
+\paragraph{Our contribution.}  
+We introduce \textbf{cloning}—the tendency of different units to converge onto identical features—as a \emph{causal} mechanism for LoP.  We formalise \textbf{LoP manifolds}: lower‑dimensional sub‑manifolds of weight space characterised by feature duplication or saturation.  We prove that gradient flow is \emph{tangent} to these manifolds; once the parameters land on (or near) them, standard training dynamics cannot escape.  This provides a rigorous link between observable symptoms (feature redundancy) and the loss‑of‑plasticity state.  The remainder of the paper develops this theory, shows how such manifolds inexorably arise during training, and sketches principles for mitigation.
+
+% ---------------------------------------------------------------------
+\section{LoP Manifolds: Traps for Gradient Descent}%
+\label{sec:lop_manifolds}
+% ---------------------------------------------------------------------
+
+Let $\theta\in\Theta\subset\R^{p}$ denote all trainable parameters and
+\(
+\dot\theta(t)= -\nabla_\theta\Loss\bigl(\theta(t)\bigr)
+\)
+the continuous‑time gradient flow associated with a given loss~$\Loss$.
+
+\begin{definition}[LoP manifold]\label{def:lop_manifold}
+A smooth sub‑manifold $\mathcal{M}\subset\Theta$ \emph{induces LoP} if
+\(
+\nabla_\theta\Loss(\theta)\in T_\theta\mathcal{M}
+\)
+for every $\theta\in\mathcal{M}$, where $T_\theta\mathcal{M}$ is the tangent space at~$\theta$.
+\end{definition}
+
+On such a manifold the gradient is always tangent, so gradient descent dynamics starting on~$\mathcal{M}$ remain trapped on~$\mathcal{M}$ for all time.
+
+\subsection{Cloned‑unit manifolds}
+
+We illustrate Definition \ref{def:lop_manifold} with the important case of \emph{feature cloning}.  Consider two units~$i$ and~$j$ in some layer with parameters \(w_i,w_j\).  The \emph{cloning manifold} is
+\(
+\mathcal{M}_{\mathrm{clone}}=\{\theta\mid w_i=w_j\}.
+\)
+
+\begin{proposition}[Gradient symmetry on cloned units]\label{prop:clone_symmetry}
+If the loss is invariant under permutation of units~$i$ and~$j$ and the parameters satisfy \(w_i=w_j\), then
+\(
+\nabla_{w_i}\Loss=\nabla_{w_j}\Loss
+\)
+and hence
+\(
+\frac{d}{dt}(w_i-w_j)=0.
+\)
+Consequently $\mathcal{M}_{\mathrm{clone}}$ is an LoP manifold.
+\end{proposition}
+
+\begin{proof}[Sketch]
+Permutation symmetry implies
+\(
+\Loss(\dots,w_i,\dots,w_j,\dots)=\Loss(\dots,w_j,\dots,w_i,\dots).
+\)
+Differentiating w.r.t.\ $w_i$ and using symmetry gives
+\(
+\nabla_{w_i}\Loss=\nabla_{w_j}\Loss.
+\)
+The gradient flow update therefore preserves equality of the two parameter vectors.
+\end{proof}
+
+\begin{remark}
+Feature duplication lowers the \emph{effective rank} of the network’s Jacobian/NTK. Once two features coincide, subsequent gradients act identically on them, locking in the redundancy and permanently removing one degree of freedom.
+\end{remark}
+
+\begin{example}[Linear two‑unit network]\label{ex:two_unit}
+Let \(f(x)=v_1\sigma(w_1^\top x)+v_2\sigma(w_2^\top x)\) with ReLU~$\sigma$.  
+If at some time \(w_1=w_2,\;v_1=v_2\), then by Proposition \ref{prop:clone_symmetry} the two hidden units evolve identically and the model behaves as though it had a single unit with output weight~$v_1+v_2$.
+\end{example}
+
+\subsection{Stability of LoP manifolds}
+
+\begin{definition}[Normal‑space stability]\label{def:stability}
+Let $\mathcal{M}$ be an LoP manifold and $N_\theta\mathcal{M}$ its normal space at~$\theta$.
+\begin{enumerate}[label=(\alph*)]
+    \item \emph{Stable} if \(v^\top\nabla_\theta^{2}\Loss(\theta)\,v>0\) for all \(v\in N_\theta\mathcal{M}\setminus\{0\}\).
+    \item \emph{Unstable} if the quadratic form is negative definite on the normal space.
+    \item \emph{Saddle‑type} if it has both positive and negative directions.
+\end{enumerate}
+\end{definition}
+
+Stable LoP manifolds actively \emph{attract} nearby trajectories; escaping them requires external perturbations (e.g.\ noise, dropout, weight re‑initialisation).
+
+% ---------------------------------------------------------------------
+\section{Emergence of LoP Symptoms}%
+\label{sec:emergence}
+% ---------------------------------------------------------------------
+
+Why do networks \emph{enter} LoP manifolds during ordinary training?
+We focus on a simplified fully‑connected layer
+\(
+h=f(Wx+b)
+\)
+and track the effective rank of the activation matrix over training time.
+
+\paragraph{Phase I – rank expansion.}
+Early in training, loss reduction is achieved by \emph{creating new features}.  
+For non‑linear $f$, the mapping \(x\mapsto h(x)\) can increase rank; see Proposition~\ref{prop:rank_increase} below.  
+Empirically, effective rank rises in a staircase pattern, each jump accompanying a drop in training loss \citep{yang2025effective}.
+
+\begin{proposition}[Rank increase via non‑linearity]\label{prop:rank_increase}
+Let \(h(x)=f(Wx+b)\) with element‑wise activation~$f$.  
+If a fraction \(1-\rho_{\text{dup}}\) of rows of~$W$ are distinct and \(f\) is non‑linear (measured by a coefficient \(\zeta(f)>0\)), then
+\(
+\mathrm{rank}\bigl(h(X)\bigr)\ge \mathrm{rank}(X)+
+C\bigl(1-\rho_{\text{dup}}\bigr)\zeta(f)
+\)
+for some constant $C$.
+\end{proposition}
+
+\paragraph{Phase II – rank compression.}
+Once the training error is near zero, further decreases in \(\Loss\) are achieved not by inventing new features but by \emph{compressing} existing ones:
+within‑class variance shrinks, features align with class means, and the effective rank plateaus or diminishes.  
+This is the neural‑collapse regime \citep{papyan2020prevalence}.  
+Linear layers, regularisers, and the implicit bias of SGD all favour such low‑rank solutions \citep{zhou2024neural}.
+
+\paragraph{Net result.}
+The opposing forces—non‑linear rank expansion versus linear rank compression—drive the network first toward richer, then toward progressively poorer, representations.  
+When compression wins, cloned features and dead units proliferate, the NTK becomes low‑rank, and the system lands on the LoP manifolds described in \S\ref{sec:lop_manifolds}.
+
+\begin{figure}[t]
+    \centering
+    % ---- replace the 4‑panel figure from the previous draft ----
+    \includegraphics[width=\linewidth]{paper/images/mlp_act__dead_fraction_plot.pdf}
+    \caption{Illustrative emergence of LoP symptoms over extended training (MLP, Tiny‑ImageNet sequence).  Left to right: fraction of dead/duplicate units increases; effective rank of the penultimate layer rises then plateaus; within‑class variance collapses; accuracy on new tasks saturates.  Together these curves mirror the transition from the rank‑expansion to the rank‑compression regime.}
+    \label{fig:emergence_lop_symptoms_cl}
+\end{figure}
+
+Figure \ref{fig:emergence_lop_symptoms_cl} (moved here from the original “Emergence” section) synthesises these observations: effective rank (second panel) initially grows, then flattens as dead/duplicate units accumulate (first panel); simultaneously, performance on unseen tasks ceases to improve (fourth panel).
+
+\paragraph{Take‑away.}
+Standard training on a \emph{single} task naturally steers the network toward low‑rank, highly symmetric configurations.  
+Because such configurations constitute LoP manifolds—and are often \emph{stable} in the sense of Definition \ref{def:stability}—the model remains stuck there, unable to exploit its nominal capacity when the task distribution later changes.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
 \section{Introduction}
 % (Content from original draft - appears generally fine, ensure it leads into the new structure)
 The extraordinary success of back-propagation in training deep neural networks often relies on two implicit, yet critical, assumptions. First, \emph{stationarity}: the data distribution encountered during training is assumed to be identical, or very similar, to the distribution faced during deployment, rendering post-training adaptation minimal or absent. Second, \emph{single random initialization}: diversity and exploration potential are primarily introduced through a single random initialization of network parameters, a resource that is progressively consumed by optimization and not replenished. These assumptions falter when an artificial agent must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, often termed continual or lifelong learning, presents a significant challenge known as the stability-plasticity dilemma \citep{abraham2005memory, chaudhry2018riemannian}: the system must be stable enough to retain previously acquired knowledge, yet plastic enough to integrate new information effectively.
@@ -121,17 +274,15 @@ The central proposition advanced in this work is that the tendency of gradient-b
 % \GIU{okay general comments on the new structure: I like it, the sections feel less chaotic, they are more homogeneous and complete The link between the section and an overview of the paper contributions is missing. Although I usually like the papers that take their time to tell you a story, I think it would help the reader to understand how the story is spread out. In particular I would say in the introduction something like "First, in section 3 we show how typical symptoms of LoP can emerge naturally during training with GD" and "Subsequently, in Section 4, we prove how the emergence of this attributes leads the network to permanently lose plasticity" You could even change the tone of the introduction entirely and be more "aggressive" in a sense, with a clear list of contributions like "we prove this ... we show that..." in bullet points. But I personally like the softer open question style that we have now}
 
 To systematically address this, our investigation unfolds as follows.
-In Section~\ref{sec:preliminaries}, we establish the necessary mathematical preliminaries, including our dynamical systems-based definition of LoP.
 Section~\ref{sec:emergence_lop} then delves into how characteristics commonly associated with LoP, such as frozen units and representational redundancies, can naturally emerge from the interplay of linear transformations and non-linear activations during standard gradient-based training.
 Building on this, Section~\ref{sec:existence_lop_manifold} formalizes the concept of LoP manifolds, proving that these emergent features can indeed trap gradient descent dynamics, thereby leading to a persistent loss of plasticity.
 We then explore practical implications in Section~\ref{sec:mitigation_recovery}, discussing strategies to prevent the formation of these LoP states or to recover plasticity once they have manifested.
 Finally, Section~\ref{sec:discussion} summarizes our findings, highlights the fundamental tension between generalization in static settings and adaptability in dynamic ones, and outlines promising avenues for future research towards truly continual learning systems.
 % \GIU{Nice!!}
 
-
-\section{Preliminaries}
-\label{sec:preliminaries}
-In this section, we lay the groundwork for our analysis by defining Loss of Plasticity (LoP) within a dynamical systems framework and recalling the standard definitions for feed-forward neural networks and back-propagation. The stability of LoP manifolds, a crucial concept for understanding their persistence, will be discussed later in Section~\ref{sec:existence_lop_manifold}.
+\section{LoP Manifolds: Traps for Gradient Descent}
+\label{sec:existence_lop_manifold}
+Let us lay the groundwork for our analysis by defining Loss of Plasticity (LoP) within a dynamical systems framework and recalling the standard definitions for feed-forward neural networks and back-propagation. The stability of LoP manifolds, a crucial concept for understanding their persistence, will be discussed later in Section~\ref{sec:existence_lop_manifold}.
 
 Let $\theta\in\Theta\subseteq\R^p$ represent the parameters of a neural network. We consider training on a stream of data $\{(x_i,y_i)\}_{i=1}^N$ using gradient descent or its stochastic variants. The objective is typically to minimize a loss $\sum_{i=1}^N \Loss(\hat{y}_\theta(x_i),y_i),$ which we can succinctly refer to as $\Loss(\theta)$. The learning dynamics can be idealized by the continuous-time gradient flow:
 \begin{equation}
@@ -150,97 +301,6 @@ A manifold $\mathcal{M}\subset\Theta$ induces LoP if the gradient of the loss fu
 If the conditions in Definition~\ref{def:lop} hold irrespective of the specific data distribution generating the loss $\Loss$, which we can think of as functional LoP, and is our primary area of interest. Such LoP arises from the network architecture and gradient descent dynamics alone and is particularly relevant as it persists even if the task or data distribution evolves.
 \end{remark}
 
-\section{Emergence of LoP Symptoms: A First-Principles Perspective}
-\label{sec:emergence_lop}
-\label{sec:emergence_lop_first_principles}
-
-The capacity of a neural network to continually learn is fundamentally tied to its ability to maintain a diverse and adaptable set of internal representations. However, as reported extensively in LoP literature, prolonged training or sequential task learning often leads to two critical detrimental phenomena: the emergence of frozen or dead units that cease to update their parameters, and a diminishing diversity of representations, where features become redundant or collapse into a lower-dimensional space \citep{dohare2021continual, lyle2022understanding, nikishin2022primacy}. In this section, we adopt a first-principles approach to understand why these LoP-inducing features might naturally arise as a consequence of the learning dynamics in deep neural networks.
-
-At a high level, effective feature learning in a deep neural network involves a delicate balance. On one hand, the network must learn a rich set of features to expand its expressive power and accurately model complex data. On the other hand, for robust generalization, there is often an implicit or explicit bias towards simpler representations \citep{valle2018deep, zhang2017understanding}. The drive towards simplification in later training stages, where within-class feature variability collapses and class means adopt specific geometric configurations, is well-documented as \emph{neural collapse}~\citep{papyan2020prevalence}. We propose that the inherent tension between these two opposing forces---the need to create rich, diverse features that nonetheless remain ``simple'' enough to generalize---can naturally lead to the emergence of frozen units and representational redundancies, the hallmarks of LoP.
-
-To make our notion of representational richness or diversity more precise, we will quantify it through the rank of the feature activations. One of the main ways of measuring diversity of a set of representations is the notion of \emph{hard rank}, or simply rank of a matrix, defined as the number of linearly independent rows or columns, which equals the number of its non-zero singular values. This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provides a continuous measure of rank based on the distribution of singular values, defined as $\exp(H)$ where $H$ denotes the entropy of normalized singular values $H = -\sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$
-
-
-\paragraph{Linear Layers and Rank Reduction}
-Linear layers in neural networks, which are essentially matrix multiplications (followed by a bias), inherently tend to reduce or constrain the dimensionality of representations. Let us recount several important facts about matrix products which underscore their inability to unilaterally increase rank. First, the rank of a product of matrices cannot exceed the minimum rank of any matrix in the product, i.e., $\mathrm{rank}(AB) \le \min(\mathrm{rank}(A), \mathrm{rank}(B))$. Thus, a chain of linear operations can, at best, maintain rank but often reduces it. Second, the condition number of a product of matrices can worsen compared to individual matrices, potentially making features less distinguishable and thereby reducing the effective rank. Finally,  For deep linear networks or long chains of matrix products, particularly with random matrices, there's a strong tendency for the representation to collapse towards low-rank structures, sometimes even rank-one \citep{saxe2014exact, furstenberg1963noncommuting}.
-This inherent rank-reducing nature of linear transformations means that non-linearities are crucial for creating and maintaining feature diversity.
-
-\paragraph{Non-linear Activations and the Path to Freezing.}
-Non-linear activation functions are the sole mechanism by which a network can counteract the rank-reducing tendency of its linear layers. By transforming features in a non-trivial way, they can "unpack" correlated inputs, increasing the effective dimensionality and diversity of the learned representations.
-
-A central question is \emph{how} the network dynamically achieves this increase in feature diversity. We propose that a primary mechanism is the modulation of pre-activation statistics---specifically, their \textbf{bias and scale}. During training, the network learns to adjust the weights and biases of preceding layers, which in turn shifts and scales the distribution of inputs arriving at an activation function. This effectively customizes the operating regime of the activation for the data it processes.
-
-However, this powerful mechanism harbors a fundamental trade-off that can lead directly to frozen units. Let's build this intuition with two illustrative examples:
-
-\begin{itemize}
-    \item \textbf{The Tanh case: Decorrelation via Scaling.} Consider the $\tanh(x)$ activation. To make two similar inputs more distinct (i.e., decorrelate their representations), the network can learn to increase the \textit{scale} of its pre-activations, effectively computing $\tanh(ax)$ with a large $a$. As illustrated in Figure~\ref{fig:theory_tanh_az_rank}, a larger scale factor $a$ makes the function steeper and more effective at separating inputs near zero, thereby increasing the effective rank of the outputs. The cost, however, is that for most inputs not close to zero, the function rapidly saturates at +1 or -1, where its derivative vanishes. The pursuit of greater separation thus pushes the neuron into a "frozen" state for the majority of inputs.
-
-    \item \textbf{The ReLU case: Decorrelation via Shifting.} Now consider $\mathrm{ReLU}(x)$. A similar effect occurs by modulating the \textit{bias}. To create a highly selective feature, the network might learn to apply a large negative bias, computing $\mathrm{ReLU}(x + b)$ with a large negative $b$. This shift ensures that only exceptionally large positive inputs will activate the neuron, making its firing a rare and informative event. The consequence is that for the vast majority of inputs, the pre-activation $x+b$ is negative, yielding an output of zero and a gradient of zero. The neuron becomes ``dead'' or ``frozen''.
-\end{itemize}
-\AJ{I think the itemize list shoudl be inste3ad written as either a paragraph, or an example, or remark, whichever works best}
-\GIU{This conclusion needs to be expanded on.}
-
-\begin{figure}[ht!]
-    \centering
-\includegraphics[width=0.7\linewidth]{POC/figures/theory_tanh_az_rank.pdf} % Assuming image is in figures/
-    \vspace{-.3cm}
-    \caption{Effect of input scaling on post-activation effective rank for $h_a = \tanh(a x)$, with rank-deficient input $z$ ($20$ dimensional with rank $5$). \emph{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$ vs. scale $a.$ As $a$ increases, the spectrum becomes more uniform, indicating higher diversity. \emph{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scale $a$. The rank increases with scale, but this coincides with pushing the activation towards saturation.}
-    \label{fig:theory_tanh_az_rank}
-\end{figure}
-
-These examples illustrate a core dynamic: the attempt to maximize feature diversity by pushing pre-activations into the most discriminative, non-linear region of an activation function simultaneously drives them towards the saturated, zero-gradient regions. This leads us to a central hypothesis of this work:
-
-\textbf{Hypothesis.} The emergence of frozen features is not an incidental failure but a natural consequence of gradient-based optimization attempting to learn diverse, decorrelated representations. The process of modulating pre-activation bias and scale to maximize feature separation inherently forces activations into saturated regimes where they lose plasticity.
-
-\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
-\AJ{this is a very interesting point, do you have any suggestions on how to develop this idea further? }
-\ff{regarding connection to lazy training, I'm thinking about establishing a connection between the range of values of a,b and input value standard deviation such that we show the probability of entering the dead zone of a unit is higher during training for some initialization. just a thought, I know it's going to be challenging to prove anything like that}
-
-This hypothesis posits that the very mechanisms responsible for effective feature learning contain the seeds of LoP. A drive for representational richness, when pursued to its extreme, paradoxically leads to representational rigidity. This suggests that a key pathway to creating redundant or duplicate features (Remark~\ref{rem:duplicate_rank}) is to push correlations to their extremes ($\pm 1$), while the pathway to frozen units involves leveraging the non-linearity to its maximum decorrelating potential.
-
-
-\paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape. However, pushing this process to its limits leads to plasticity loss: aggressively increasing feature diversity via strong non-linearity risks creating frozen units, as per our hypothesis, while an opposing drive to simplify representations can lead to rank collapse or the creation of duplicate features.
-
-\subsection{Experimental Setup}
-To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes.
-Each task is trained for 500 steps, and validation is performed periodically after each task on the same classes it was trained on. 
-We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
-
-
-The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity.
-\ff{the details of these experiments should be in the main body and come before the figures}
-
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=0.23\linewidth]{paper/images/mlp_act__dead_fraction_plot.pdf}
-    \includegraphics[width=0.23\linewidth]{paper/images/cnn_act__dead_fraction_plot.pdf}
-    \includegraphics[width=0.23\linewidth]{paper/images/resnet_block_dead_fraction_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_plot.pdf}
-        \vspace{-.3cm}
-    \caption{Causes and symptoms of Loss of Plasticity emerging during continual learning. The plots illustrate (across different architectures like MLP, CNN, ResNet, and ViT from left to right) an increase in the fraction of dead or duplicate units during training, coincidental with a decrease in training accuracy. These are key indicators of LoP. (Details of experimental setup in Appendix~\ref{app:empirical_evidence_appendix}).}
-    \label{fig:emergence_lop_symptoms_cl}
-\end{figure}
-
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__rankdead_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__rankdead_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_rankdead_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_rankdup_plot.pdf}
-        \vspace{-.3cm}
-    \caption{Co-evolution of Effective rank and LoP symptoms, such as dead or duplicate units in the network during continual training. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
-    \label{fig:norm-rank-nG}
-\end{figure}
-
-Our inquiry so far highlights two key pathways to LoP common symptoms:
-    (1)
-    \GIU{The duplicate features so far have only been mentioned in passing. Should spend a sentence or two to define them above.}
-    Emergence of \textbf{duplicate features}, where distinct computational units, or groups of units, within a network layer effectively learn to become identical or highly correlated, as a potential consequence of attempting to lower representational rank.
-    (2) Emergence of \textbf{frozen or dead features}, where weights and biases of a unit stop learning, as a result of attempting to maximize rank increase (leading to saturation) or to flatten the loss landscape around the current parameters, as explained by our hypothesis.
-Thus, the critical question now becomes: do these features, once emerged, lead to persistent LoP as defined by our framework (Definition~\ref{def:lop})?
-
-\section{LoP Manifolds: Traps for Gradient Descent}
-\label{sec:existence_lop_manifold}
 In the previous section, we discussed how features characteristic of LoP, such as frozen units and duplicated representations, can emerge during training. Now, we formalize how these phenomena lead to the network's parameters being confined to LoP manifolds, restricting subsequent learning. We present a central proposition that jointly addresses LoP arising from frozen and duplicate units.
 \ff{it looks like the first time we actually use the definitions of manifold is here. maybe consider moving content of section 2 to this section}
 \AJ{do you mean the  move entire preliminary section to here or just the definitions. If we move definitions preliminary becomes one paragraph though. }
@@ -321,6 +381,145 @@ While a full theoretical characterization of the stability of empirically observ
 % \ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
 
 Both noisy SGD and dropout act as symmetry-breaking operations. In the case of dropout, both forward and backward passes are asymmetric for cloned units. For noisy SGD, the backward pass (gradient update) becomes asymmetric. This asymmetry causes the parameters of notionally cloned units to slowly diverge. Remarkably, in our MLP experiments, even a small amount of gradient noise e.g., a single step with noise magnitude $0.01$ relative to gradient norms, suffices to initiate escape from an LoP manifold, though stronger noise generally leads to faster escape. In contrast, in some other settings such as Vision Transformers, while the model could escape from the manifold with a small perturbation, it did not move very far from it. More experimental studies into this direction would be vital to better understand the stability of these LoP manifolds.  
+
+
+
+
+\section{Emergence of Loss of Plasticity}
+
+We begin by analyzing a simplified one-layer fully-connected network to build intuition for how rank dynamics arise. Consider a single affine layer $z = W x + b$ (with weight matrix $W \in \mathbb{R}^{m \times d}$) followed by a non-linear activation $f$ applied elementwise, giving output $h = f(z) \in \mathbb{R}^m$. We assume for now that $f$ is a simple, standard activation (e.g. ReLU or sigmoid) without any additional normalization; later sections will consider the effects of normalizing pre-activation statistics (mean and std). Let $\{x_i\}_{i=1}^N$ be the inputs (feature vectors) passing through this layer during training. To study the expressive capacity of $h$, we examine the effective rank of the set of output activations $\{h(x_i)\}^N$. By effective rank, we mean the dimensionality of the subspace (in $\mathbb{R}^m$) that these output vectors approximately span -- intuitively, how many independent directions of variation the layer's outputs have. If many output neurons are redundant or highly correlated in their activations, the effective rank will be lower than $m$ (even if $m$ neurons exist). Conversely, if outputs occupy a high-dimensional region, the effective rank will approach $m$.
+
+A key factor influencing $r_{\text{eff}} = \mathrm{Rank}\{h(x_i)\}$ is whether different neurons produce distinct features or just duplicate each other. We define the \textit{duplicate fraction} $\rho_{\text{dup}}$ as the fraction of neurons that are effectively redundant -- for example, neurons that produce identical outputs across all inputs (up to scaling) would count toward this fraction. If $\rho_{\text{dup}}$ is close to 1, it means most neurons aren't contributing new directions (they might be "dead" or simply copying other neurons' behavior), thus limiting the output rank. Conversely, $1-\rho_{\text{dup}}$ represents the proportion of neurons that provide unique information. Another factor is the non-linearity of $f$. If $f$ were purely linear (i.e. $f(u)=au$ for some constant $a$), then the layer $h=f(Wx)$ would be an affine transformation equivalent to $aW x$, and it could not create any new directions beyond the column space of $W$. A truly non-linear $f$, however, can introduce curvature or piecewise-linear breaks that allow outputs from different neurons to span a richer space than the original linear map. We will denote by $\zeta(f)$ a positive measure of the activation's non-linearity (for instance, the deviation of $f$ from any affine function on the range of $z$ values encountered). By definition, $\zeta(f)=0$ for a linear activation, and $\zeta(f)>0$ for non-linear activations like ReLU, sigmoid, etc.
+
+\textbf{Proposition 1 (Rank Increase through Non-Linearity).} \textit{Consider the one-layer mapping $h(x)=f(Wx+b)$ as above. Let $r_{\text{in}}=\mathrm{Rank}\{x_i\}$ be the rank (intrinsic dimensionality) of the inputs and $r_{\text{out}}=\mathrm{Rank}\{h(x_i)\}$ be the rank of the outputs. Under mild conditions on $f$ and $W$, we have}
+
+$$r_{\text{out}} \;\geq\; r_{\text{in}}.$$
+
+\textit{Moreover, the increase in rank ($\Delta r = r_{\text{out}} - r_{\text{in}}$) is bounded below by a constant times $(1-\rho_{\text{dup}})\,\zeta(f)$. In other words, if a fraction $(1-\rho_{\text{dup}})$ of neurons are non-duplicates and $f$ is sufficiently non-linear, the layer's output will have strictly higher effective rank than its input:}
+
+$${\Delta r} \;\geq\; C \,\big(1-\rho_{\text{dup}}\big)\,\zeta(f),$$
+
+\textit{for some constant $C>0$ depending on the data distribution and $W$ (assuming those non-duplicate neurons have weight vectors in "general position").}
+
+\textbf{Proof Sketch:} If $f$ were linear, then $h(x)=W'x$ for some $W'$, and clearly $r_{\text{out}}= \mathrm{Rank}(W'\{x_i\})\leq r_{\text{in}}$. Non-linearity permits $h(x)$ to escape the confines of any single linear subspace. For intuition, consider the case of one input dimension ($d=1$) and two output neurons ($m=2$) with distinct weights/biases. If $f$ is linear, $h(x)$ traces a line in $\mathbb{R}^2$ as $x$ varies, so $r_{\text{out}}=1$. But if $f$ is non-linear (say, sigmoid or ReLU), the curve $(h_1(x), h_2(x))$ in $\mathbb{R}^2$ will generally be two-dimensional -- the outputs are no longer proportional to each other, yielding $r_{\text{out}}=2$. In the general case, one can analyze the Jacobian $J(x)=\partial h/\partial x = \mathrm{diag}(f'(Wx+b))\,W$. For a non-linear $f$, the diagonal matrix $\mathrm{diag}(f'(Wx+b))$ varies with $x$ and can introduce rank-boosting effects. In particular, as long as there exist inputs where different neurons are in different activation regimes (e.g. one neuron is saturated while another is in the linear region of ReLU, etc.), the rows of $J(x)$ corresponding to those neurons will be linearly independent. Geometrically, this means the mapping $x \mapsto h(x)$ \textit{folds} the input space in a way that creates new independent directions in the output. If $(1-\rho_{\text{dup}})m$ neurons have distinct weight vectors and do not all saturate in unison, one can show that at many points $x$ the Jacobian has full column rank $d$, and often can even exceed $d$ locally by leveraging non-linearity (up to $m$ dimensions of variation). Thus $r_{\text{out}}$ is at least $r_{\text{in}}$, and the gap $\Delta r$ is larger when more neurons are unique and $f$ is more nonlinear. (A detailed proof is provided in Appendix, where we quantify $C\,\zeta(f)$ via the minimum angle between any two neuron response curves.) $\square$
+
+The lower bound in Proposition 1 highlights two failure modes for increasing rank: (i) If $f$ is (approximately) linear, then $\zeta(f)\approx 0$ and we cannot gain rank; $h(x)$ stays in the same subspace as $Wx$. (ii) If many neurons are duplicates or degenerate (e.g. many ReLU neurons never activate or have identical weights), then $1-\rho_{\text{dup}}$ is small and again $\Delta r$ may be zero. These correspond to intuitive scenarios: a network with linear activations is just a linear model (no new features created), and a network with many identical/redundant neurons is effectively smaller than it appears. In later sections, we will see that training dynamics can inadvertently lead to case (ii) -- many neurons becoming redundant -- which then limits the network's ability to further increase rank and learn new features. This redundancy is one of the early signs of the phenomenon we call \textbf{Loss of Plasticity}.
+
+Suppose $x$ is 2-dimensional and we have $m=3$ ReLU neurons with weight vectors $w_1=(1,0)$, $w_2=(0,1)$, $w_3=(1,1)$ (and zero biases for simplicity). The input data $\{x_i\}$ spans $\mathbb{R}^2$ (so $r_{\text{in}}=2$). The pre-activations are $z_i = W x_i$, and the outputs are $h_i = \max\{0, z_i\}$. It's easy to see that $h(x) = f(Wx)$ in this case can produce outputs spanning $\mathbb{R}^3$: for instance, $x=(1,1)$ yields $h=(1,1,2)$, $x=(1,-1)$ yields $h=(1,0,0)$, and $x=(-1,1)$ yields $h=(0,1,0)$. These three output vectors are linearly independent in $\mathbb{R}^3$, so $r_{\text{out}}=3$. Here $r_{\text{out}} > r_{\text{in}}$ (3 > 2) -- the ReLU non-linearity allowed the output to "break out" of the 2D input subspace. If, by contrast, $f$ were linear (identity), then all outputs $h(x)$ would lie in the column space of $W$, which is at most 2-dimensional; or if we had chosen $w_3=(1,1)$ to duplicate one of the others, the outputs would lie in a effectively 2D subspace as well. This toy example aligns with Proposition 1: $\rho_{\text{dup}}=0$ (all neurons unique) and $\zeta(f)$ for ReLU is nonzero, so we get a rank boost. In general, increasing the diversity of neuron weights and using a non-linear $f$ can increase effective rank of representations.
+
+Having established that non-linear layers can expand the dimensionality of representations, we now consider the training dynamics and how a tension arises between increasing and decreasing rank in a deep network. The central thesis is that the symptoms of \textbf{Loss of Plasticity} -- a gradual inability to represent new features or concepts as training progresses -- naturally emerge from the competing forces in standard training dynamics. On one hand, the network (especially its non-linear hidden layers) is driven to increase feature rank in order to fit the data and reduce loss. On the other hand, the optimization (especially in the linear output layers) pushes the network toward lower rank configurations that simplify the classification task at hand. We will argue that these two forces are simultaneously active during training: initially, increasing feature rank is vital to learn the target function, but as the training error vanishes, decreasing the rank (collapsing features) can further improve classification performance on the current data. This tug-of-war -- higher rank vs. lower rank -- underlies the emergence of Loss of Plasticity.
+
+During the early-to-mid stages of training, as the network is trying to reduce the loss, new features and directions in representation space are continually created. Our analysis above already indicated that a non-linear layer can generate new dimensions; indeed, recent studies have observed that as the loss decreases, the effective rank of internal representations tends to increase, often in a staged or punctuated manner~\cite{yang2025effective}. In particular, Yang et al.~\cite{yang2025effective} introduce the notion of $\epsilon$-rank (a quantifiable effective rank for neural activations) and report a universal staircase phenomenon: the training process (with SGD) shows that whenever the loss makes a significant drop, the $\epsilon$-rank of the features jumps up, followed by periods of plateaus~\cite{yang2025effective}. In fact, they prove that to achieve a lower loss bound, a higher rank is essential, establishing a negative correlation between the attainable loss and the network's feature rank~\cite{yang2025effective}. Qualitatively, if the network's features were constrained to a too-low dimensional subspace, it would hit a plateau in loss; to further reduce error, the network must find new independent directions (increasing $\epsilon$-rank). This resonates with our Proposition 1: the training process will leverage the non-linear layers to spawn new features (hence higher rank) as needed to fit the data. This is conceptually related to the observed spectral bias of deep networks -- they tend to learn simple patterns first, then progressively finer details~\cite{rahaman2019spectral}. Early in training, the "simplest" explanation (which often corresponds to low-complexity or low-rank structure) is learned; but as needed, the network will gradually incorporate higher-frequency or more complex components of the target function~\cite{rahaman2019spectral}, which corresponds to utilizing additional directions in feature space. In other words, early training finds a low-dimensional solution that explains part of the data, and subsequent training steps add dimensions (complexity) to capture remaining nuances.
+
+However, a countervailing force emerges, especially in the later stages of training: the network begins to compress its representations, effectively reducing the rank of its feature space. Once the training error reaches (near) zero -- meaning the network can perfectly classify the training examples -- any further push to minimize the loss (e.g. cross-entropy loss continuing to decrease confidence margins) does not require finding new directions of variation (the classes are already separated). Instead, the optimal strategy (under the current loss) is to tighten and simplify the representations. This behavior is strikingly exemplified by the phenomenon of Neural Collapse in classification networks. During the so-called terminal phase of training (after the training error vanishes), the last-layer features and classifier head undergo a dramatic collapse to a simple, low-dimensional geometry~\cite{papyan2020prevalence}. Empirically, all training samples' penultimate-layer features for a given class collapse to that class's mean vector (within-class variance vanishes), and these class mean vectors themselves arrange into an equiangular tight frame (essentially, the class means become $K$ well-separated points in a $K-1$ dimensional subspace for $K$ classes)~\cite{papyan2020prevalence}. Meanwhile, the linear classifier's weight vectors align with these class means. In practical terms, the network's final feature representation becomes extremely low-rank -- effectively, rank $K$ (or $K-1$) for a $K$-class problem. This Neural Collapse behavior has been observed in many settings~\cite{papyan2020prevalence} and analyzed theoretically under simplified models. It improves current task performance (it maximizes classification margins and symmetry between classes), but it also implies that the network has thrown away any features not needed for class discrimination. All variability within each class (which might have captured nuances of the input or potential other tasks) is eliminated in the representation~\cite{papyan2020prevalence}. In information-theoretic terms, the network at this stage has formed a minimal sufficient representation for the labels -- an extreme case of the information bottleneck principle. Indeed, the information bottleneck theory of deep learning posits that as training progresses, once fitting is achieved, the layers enter a compression phase, forgetting extraneous details of $X$ while preserving information about $Y$~\cite{shwartz2017opening}. Empirical evidence suggests that in standard deep training, most of the epochs are spent on this compression phase rather than on initial error reduction~\cite{shwartz2017opening}. The network becomes highly specialized to the training task, distilling the data into a low-dimensional form that is optimally discriminative for the given labels (and often beneficial for generalization and robustness on that task~\cite{papyan2020prevalence}).
+
+We can now see why the linear and non-linear parts of the network seem to take opposing roles in the rank dynamics. The linear layers (especially the final classification layer) naturally favor low-rank solutions. A linear map cannot increase the rank of its input; at best it preserves or reduces it. In fact, if the final layer is a linear classifier mapping the penultimate features to $K$ output logits, the output space is at most $K$-dimensional. This creates a pressure for the penultimate features themselves to lie in a $K$-dimensional subspace -- any component orthogonal to that subspace would be "invisible" to the classifier and thus wasted from the loss perspective. Gradient descent with weight decay or other regularization further exacerbates this by encouraging weight vectors to align and drop unnecessary components, introducing a low-rank bias~\cite{zhou2024neural}. Recent theoretical work has shown that in deep networks with common regularizers, gradient descent tends to find solutions of even lower rank than the Neural Collapse configuration -- the regularization pushes feature/weight spaces towards degenerate (lower-than-$K$) subspaces beyond the simplex ETF structure~\cite{zhou2024neural}. In other words, the linear layers and weight decay implicitly drive the network toward even smaller effective dimensionality as training continues. This aligns with the intuition that collapsing features (removing variability) can improve the purity of class separation and reduce the loss, as long as the collapsed dimensions are those not needed for the current classification task.
+
+In contrast, the non-linear layers (the hidden layers with activations) are the ones that can generate new feature directions and thus counteract the collapse, at least up to a point. During the earlier training, each non-linear transformation can expand the feature space (by Proposition 1), allowing the network to discover new combinations of input features that help discriminate classes. Even later in training, if the network encounters new patterns or if the current features prove insufficient, the hidden layers are the only mechanism by which the model can increase its effective rank (since linear layers alone cannot do it). We saw from Yang et al.'s work that in a fixed network architecture, typically each successive hidden layer ends up with a higher $\epsilon$-rank than the previous~\cite{yang2025effective}. This stacking of increasingly higher-rank representations is precisely how deep models build complex features from simpler ones. It is the non-linear transformations that keep the network's representational capacity open-ended. If at any point these non-linear layers saturate or become redundant (many neurons duplicating each other's behavior), the upward expansion of rank halts -- and the network might become stuck with whatever representation it has formed so far.
+
+The Loss of Plasticity can now be understood as an imbalance in the above two forces as training reaches maturity. In an ideal scenario, a network would retain enough slack in its representations to accommodate new concepts -- that is, even after fitting the current task, it would have unused neurons or dimensions that could be repurposed for future tasks or classes. But standard training does not explicitly encourage such slack; rather, it is laser-focused on the present task's loss. Consequently, what tends to happen is that by the end of training, the network has used its non-linear layers to carve out just enough feature dimensions to solve the task, and then allowed the linear layers to collapse and refine those dimensions, discarding the rest. All neurons become highly specialized for the current classes (many may even become functionally duplicates if the classes do not require differentiated features, increasing $\rho_{\text{dup}}$). The outcome is a low-rank, task-specialized representation -- which is exactly what we see in Neural Collapse. This state yields excellent performance on the training (and often test) data for that task. However, it is brittle in the face of new tasks: since the features lie on a very low-dimensional manifold, any new class or concept that doesn't align with those existing dimensions will be hard to represent without retraining large portions of the network. The network has lost its plasticity in the sense that it can no longer easily grow new independent features.
+
+It is worth noting that this collapse of representation is not just a theoretical musing, but has been directly observed in continual learning experiments. For instance, Dohare et al.~\cite{dohare2024loss} demonstrate that when standard deep networks are trained sequentially on a stream of tasks, they gradually lose the ability to learn new tasks altogether, even if catastrophic forgetting is addressed -- a phenomenon they name loss of plasticity. They show that after enough tasks, a network "learns no better than a shallow network" on new data~\cite{dohare2024loss}. Crucially, they find that plasticity can be maintained only if some form of new diversity is continually injected into the model (e.g. by randomly re-initializing a small fraction of neurons during training)~\cite{dohare2024loss}. In the absence of such measures, the gradient descent training by itself is not enough to keep the network's representational space rich; the optimization will greedily collapse it to solve the tasks at hand~\cite{dohare2024loss}. This empirical finding strongly supports our thesis: the standard training dynamics inherently trade off plasticity for performance, yielding a progressively lower-rank solution unless countered by an external source of variability.
+
+In a deep network trained on classification, there is a perpetual interplay between expansion and compression of feature space:
+
+\begin{itemize}
+\item \textit{Expansion:} Whenever the current representation is insufficient to reduce the loss, the non-linear layers respond by expanding the rank, creating new feature directions. This continues until the classes become separable and the loss plateaus. This process is driven by the need to fit the data -- as encapsulated by the spectral bias idea and evidenced by jumps in $\epsilon$-rank accompanying loss improvements~\cite{yang2025effective}. Each hidden layer contributes by increasing $\epsilon$-rank relative to the previous one~\cite{yang2025effective}, building up a hierarchy of features.
+
+\item \textit{Compression:} Once separability is achieved (zero training error), further training (especially under a cross-entropy or similar loss that encourages confidence) drives the network to compress the representations. The linear layers (and even hidden layers, via backprop) now work to reduce within-class variability and align features with the simplest possible decision boundaries. The effective dimensionality of each class's data collapses (approaching 1 per class in the extreme case)~\cite{papyan2020prevalence}. This improves the margin and reduces the loss even further, and is aligned with regularization biases that favor simpler (low-rank) solutions~\cite{zhou2024neural}. In information terms, the network discards input information not needed for $Y$~\cite{shwartz2017opening}, achieving a tighter bottleneck.
+\end{itemize}
+
+These two forces are not sequential strictly, but rather concurrent: even as early as mid-training, one can observe some compression happening (e.g. elimination of noisy directions), and even late in training, if a new difficult example is introduced, the network might still generate a new feature. But overall, the net effect is that by the end of training on a fixed task, compression dominates expansion. The final equilibrium is a low-rank representation finely tuned for the task -- reaping the benefits of Neural Collapse (fast classification, robustness on current data) at the cost of plasticity (difficulty in accommodating anything outside the current data distribution).
+
+The emergence of Loss of Plasticity implies that even without any explicit multi-task or continual learning scenario, a network can become unwittingly over-specialized through normal training. The same mechanisms that give deep nets high performance -- the reduction of intra-class variance and focus on discriminative features -- also reduce the space of features available for future learning. In the classical regime we've considered here (fixed architecture, standard supervised training on a closed set of classes), Loss of Plasticity manifests as a network that has effectively used up its representational capacity. Linear layers and non-linear layers have played complementary roles in this: the linear parts compress the features towards the label categories, while the non-linear parts have exhausted their ability to invent new features relevant to those categories. The symptoms of Loss of Plasticity are therefore natural byproducts of standard training dynamics. In later sections, we will discuss how one might mitigate this by encouraging feature diversity or by modulating activations (for instance, using the mean and standard deviation of pre-activations to adaptively normalize $f$). For now, the key takeaway is the fundamental trade-off: a network that excels at its current task (low loss, collapsed high-confidence features) is intrinsically less prepared to learn a new task than one with more scattered, high-rank representations. Understanding this trade-off through the lens of rank dynamics connects threads from neural network theory -- from spectral bias in function learning to neural collapse in classification to information bottleneck in representation learning -- all of which support the bigger picture that expanding and compressing features are both essential, yet ultimately conflicting, aspects of deep learning.
+
+
+\section{Emergence of LoP Symptoms: A First-Principles Perspective (old section)}
+\label{sec:emergence_lop}
+\label{sec:emergence_lop_first_principles}
+
+The capacity of a neural network to continually learn is fundamentally tied to its ability to maintain a diverse and adaptable set of internal representations. However, as reported extensively in LoP literature, prolonged training or sequential task learning often leads to two critical detrimental phenomena: the emergence of frozen or dead units that cease to update their parameters, and a diminishing diversity of representations, where features become redundant or collapse into a lower-dimensional space \citep{dohare2021continual, lyle2022understanding, nikishin2022primacy}. In this section, we adopt a first-principles approach to understand why these LoP-inducing features might naturally arise as a consequence of the learning dynamics in deep neural networks.
+
+At a high level, effective feature learning in a deep neural network involves a delicate balance. On one hand, the network must learn a rich set of features to expand its expressive power and accurately model complex data. On the other hand, for robust generalization, there is often an implicit or explicit bias towards simpler representations \citep{valle2018deep, zhang2017understanding}. The drive towards simplification in later training stages, where within-class feature variability collapses and class means adopt specific geometric configurations, is well-documented as \emph{neural collapse}~\citep{papyan2020prevalence}. We propose that the inherent tension between these two opposing forces---the need to create rich, diverse features that nonetheless remain `simple'' enough to generalize---can naturally lead to the emergence of frozen units and representational redundancies, the hallmarks of LoP.
+
+To make our notion of representational richness or diversity more precise, we will quantify it through the rank of the feature activations. One of the main ways of measuring diversity of a set of representations is the notion of \emph{hard rank}, or simply rank of a matrix, defined as the number of linearly independent rows or columns, which equals the number of its non-zero singular values. This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provides a continuous measure of rank based on the distribution of singular values, defined as $\exp(H)$ where $H$ denotes the entropy of normalized singular values $H = -\sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$
+
+
+\paragraph{Linear Layers and Rank Reduction}
+Linear layers in neural networks, which are essentially matrix multiplications (followed by a bias), inherently tend to reduce or constrain the dimensionality of representations. Let us recount several important facts about matrix products which underscore their inability to unilaterally increase rank. First, the rank of a product of matrices cannot exceed the minimum rank of any matrix in the product, i.e., $\mathrm{rank}(AB) \le \min(\mathrm{rank}(A), \mathrm{rank}(B))$. Thus, a chain of linear operations can, at best, maintain rank but often reduces it. Second, the condition number of a product of matrices can worsen compared to individual matrices, potentially making features less distinguishable and thereby reducing the effective rank. Finally,  For deep linear networks or long chains of matrix products, particularly with random matrices, there's a strong tendency for the representation to collapse towards low-rank structures, sometimes even rank-one \citep{saxe2014exact, furstenberg1963noncommuting}.
+This inherent rank-reducing nature of linear transformations means that non-linearities are crucial for creating and maintaining feature diversity.
+
+\paragraph{Non-linear Activations and the Path to Freezing.}
+Non-linear activation functions are the sole mechanism by which a network can counteract the rank-reducing tendency of its linear layers. By transforming features in a non-trivial way, they can "unpack" correlated inputs, increasing the effective dimensionality and diversity of the learned representations.
+
+A central question is \emph{how} the network dynamically achieves this increase in feature diversity. We propose that a primary mechanism is the modulation of pre-activation statistics---specifically, their \textbf{bias and scale}. During training, the network learns to adjust the weights and biases of preceding layers, which in turn shifts and scales the distribution of inputs arriving at an activation function. This effectively customizes the operating regime of the activation for the data it processes.
+
+However, this powerful mechanism harbors a fundamental trade-off that can lead directly to frozen units. Let's build this intuition with two illustrative examples:
+
+\begin{itemize}
+    \item \textbf{The Tanh case: Decorrelation via Scaling.} Consider the $\tanh(x)$ activation. To make two similar inputs more distinct (i.e., decorrelate their representations), the network can learn to increase the \textit{scale} of its pre-activations, effectively computing $\tanh(ax)$ with a large $a$. As illustrated in Figure~\ref{fig:theory_tanh_az_rank}, a larger scale factor $a$ makes the function steeper and more effective at separating inputs near zero, thereby increasing the effective rank of the outputs. The cost, however, is that for most inputs not close to zero, the function rapidly saturates at +1 or -1, where its derivative vanishes. The pursuit of greater separation thus pushes the neuron into a "frozen" state for the majority of inputs.
+
+    \item \textbf{The ReLU case: Decorrelation via Shifting.} Now consider $\mathrm{ReLU}(x)$. A similar effect occurs by modulating the \textit{bias}. To create a highly selective feature, the network might learn to apply a large negative bias, computing $\mathrm{ReLU}(x + b)$ with a large negative $b$. This shift ensures that only exceptionally large positive inputs will activate the neuron, making its firing a rare and informative event. The consequence is that for the vast majority of inputs, the pre-activation $x+b$ is negative, yielding an output of zero and a gradient of zero. The neuron becomes `dead'' or frozen''.
+\end{itemize}
+\AJ{I think the itemize list shoudl be inste3ad written as either a paragraph, or an example, or remark, whichever works best}
+\GIU{This conclusion needs to be expanded on.}
+
+\begin{figure}[ht!]
+    \centering
+\includegraphics[width=0.7\linewidth]{POC/figures/theory_tanh_az_rank.pdf} % Assuming image is in figures/
+    \vspace{-.3cm}
+    \caption{Effect of input scaling on post-activation effective rank for $h_a = \tanh(a x)$, with rank-deficient input $z$ ($20$ dimensional with rank $5$). \emph{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$ vs. scale $a.$ As $a$ increases, the spectrum becomes more uniform, indicating higher diversity. \emph{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scale $a$. The rank increases with scale, but this coincides with pushing the activation towards saturation.}
+    \label{fig:theory_tanh_az_rank}
+\end{figure}
+
+These examples illustrate a core dynamic: the attempt to maximize feature diversity by pushing pre-activations into the most discriminative, non-linear region of an activation function simultaneously drives them towards the saturated, zero-gradient regions. This leads us to a central hypothesis of this work:
+
+\textbf{Hypothesis.} The emergence of frozen features is not an incidental failure but a natural consequence of gradient-based optimization attempting to learn diverse, decorrelated representations. The process of modulating pre-activation bias and scale to maximize feature separation inherently forces activations into saturated regimes where they lose plasticity.
+
+\ff{I feel like there is a connection to lazy training, especially because this can easily happen at infinite limits with improper scalings and starting from random full-rank inits}
+\AJ{this is a very interesting point, do you have any suggestions on how to develop this idea further? }
+\ff{regarding connection to lazy training, I'm thinking about establishing a connection between the range of values of a,b and input value standard deviation such that we show the probability of entering the dead zone of a unit is higher during training for some initialization. just a thought, I know it's going to be challenging to prove anything like that}
+
+This hypothesis posits that the very mechanisms responsible for effective feature learning contain the seeds of LoP. A drive for representational richness, when pursued to its extreme, paradoxically leads to representational rigidity. This suggests that a key pathway to creating redundant or duplicate features (Remark~\ref{rem:duplicate_rank}) is to push correlations to their extremes ($\pm 1$), while the pathway to frozen units involves leveraging the non-linearity to its maximum decorrelating potential.
+
+
+\paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape. However, pushing this process to its limits leads to plasticity loss: aggressively increasing feature diversity via strong non-linearity risks creating frozen units, as per our hypothesis, while an opposing drive to simplify representations can lead to rank collapse or the creation of duplicate features.
+
+\subsection{Experimental Setup}
+To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes.
+Each task is trained for 500 steps, and validation is performed periodically after each task on the same classes it was trained on. 
+We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
+
+
+The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity.
+\ff{the details of these experiments should be in the main body and come before the figures}
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.23\linewidth]{paper/images/mlp_act__dead_fraction_plot.pdf}
+    \includegraphics[width=0.23\linewidth]{paper/images/cnn_act__dead_fraction_plot.pdf}
+    \includegraphics[width=0.23\linewidth]{paper/images/resnet_block_dead_fraction_plot.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_plot.pdf}
+        \vspace{-.3cm}
+    \caption{Causes and symptoms of Loss of Plasticity emerging during continual learning. The plots illustrate (across different architectures like MLP, CNN, ResNet, and ViT from left to right) an increase in the fraction of dead or duplicate units during training, coincidental with a decrease in training accuracy. These are key indicators of LoP. (Details of experimental setup in Appendix~\ref{app:empirical_evidence_appendix}).}
+    \label{fig:emergence_lop_symptoms_cl}
+\end{figure}
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__rankdead_plot.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__rankdead_plot.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_rankdead_plot.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_rankdup_plot.pdf}
+        \vspace{-.3cm}
+    \caption{Co-evolution of Effective rank and LoP symptoms, such as dead or duplicate units in the network during continual training. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
+    \label{fig:norm-rank-nG}
+\end{figure}
+
+Our inquiry so far highlights two key pathways to LoP common symptoms:
+    (1) Emergence of \textbf{duplicate features}, where distinct computational units, or groups of units, within a network layer effectively learn to become identical or highly correlated, as a potential consequence of attempting to lower representational rank.
+    (2) Emergence of \textbf{frozen or dead features}, where weights and biases of a unit stop learning, as a result of attempting to maximize rank increase (leading to saturation) or to flatten the loss landscape around the current parameters, as explained by our hypothesis.
+Thus, the critical question now becomes: do these features, once emerged, lead to persistent LoP as defined by our framework (Definition~\ref{def:lop})?
 
 
 \section{Mitigation and Recovery Strategies}
