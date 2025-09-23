@@ -32,8 +32,8 @@ cd ..
 echo "Running pdflatex (2nd pass)..."
 pdflatex -output-directory=out -interaction=nonstopmode main.tex
 
-echo "Running pdflatex (3rd pass)..."
-pdflatex -output-directory=out -interaction=nonstopmode main.tex
+# echo "Running pdflatex (3rd pass)..."
+# pdflatex -output-directory=out -interaction=nonstopmode main.tex
 
 echo ""
 echo "Compilation complete!"

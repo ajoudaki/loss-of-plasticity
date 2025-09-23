@@ -1,4 +1,3 @@
-
 \documentclass{article}
 
 % NeurIPS 2025 formatting
@@ -109,153 +108,6 @@
 % manifolds …” + “Emergence …” parts)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% ---------------------------------------------------------------------
-\section{Background and Related Work}%
-\label{sec:background}
-% ---------------------------------------------------------------------
-
-\paragraph{Loss of Plasticity (LoP).}  
-A network is said to suffer a \emph{loss of plasticity} when, after some period of training, it can no longer acquire new information as effectively as a freshly‑initialised model of the same architecture.  LoP has been documented in a variety of continual‑learning and reinforcement‑learning settings \citep{dohare2024loss,nikishin2022primacy}.  Crucially, LoP is distinct from catastrophic forgetting: performance on \emph{past} tasks may remain intact while the ability to learn \emph{future} tasks degrades \citep{lyle2023understanding}.  Typical symptoms include exploding weight norms, growing numbers of dead (saturated) units, and a collapse of the effective rank of hidden representations \citep{dohare2021continual,papyan2020prevalence}.
-
-\paragraph{Previous explanations.}  
-Early accounts linked LoP to individual pathologies—e.g.\ weight‑norm growth or activation sparsity—but these factors alone failed to explain the phenomenon consistently \citep{lyle2022understanding}.  A more recent view connects LoP to a degeneration of the network’s \emph{neural tangent kernel} (NTK): once the NTK becomes low‑rank, many directions in function space receive negligible gradient and can no longer be learned \citep{lyle2023understanding}.  This perspective suggests that LoP is multi‑faceted: diverse surface‑level defects (dead units, duplicated features, etc.) share the common consequence of reducing the network’s effective degrees of freedom.
-
-\paragraph{Neural collapse and information bottleneck.}  
-In classification networks driven to near‑zero training error, within‑class features collapse to their class means and those means adopt a simplex‑ETF geometry—a phenomenon dubbed \emph{neural collapse} \citep{papyan2020prevalence}.  While beneficial for the \emph{current} task, such compression discards within‑class variability that may be vital when new tasks arrive \citep{bonifazi2023excessive,achille2019information}.  This aligns with the \emph{information bottleneck} view, whereby networks first fit the data and then compress latent representations, retaining only label‑relevant information \citep{shwartz2017opening}.  Extreme compression, however, hampers future adaptability.
-
-\paragraph{Spectral bias and implicit regularisation.}  
-Gradient descent exhibits a well‑known \emph{spectral bias}: low‑frequency (or top‑eigenfunction) components of the target are learned first \citep{rahaman2019spectral}.  In finite networks this corresponds to rapid growth along a few NTK eigenvectors while many others remain small, pre‑conditioning the network toward low‑rank solutions \citep{yang2025effective}.  Although such biases often promote generalisation in static settings \citep{zhou2024neural}, they also encourage representational contraction and, ultimately, LoP.
-
-\paragraph{Our contribution.}  
-We introduce \textbf{cloning}—the tendency of different units to converge onto identical features—as a \emph{causal} mechanism for LoP.  We formalise \textbf{LoP manifolds}: lower‑dimensional sub‑manifolds of weight space characterised by feature duplication or saturation.  We prove that gradient flow is \emph{tangent} to these manifolds; once the parameters land on (or near) them, standard training dynamics cannot escape.  This provides a rigorous link between observable symptoms (feature redundancy) and the loss‑of‑plasticity state.  The remainder of the paper develops this theory, shows how such manifolds inexorably arise during training, and sketches principles for mitigation.
-
-% ---------------------------------------------------------------------
-\section{LoP Manifolds: Traps for Gradient Descent}%
-\label{sec:lop_manifolds}
-% ---------------------------------------------------------------------
-
-Let $\theta\in\Theta\subset\R^{p}$ denote all trainable parameters and
-\(
-\dot\theta(t)= -\nabla_\theta\Loss\bigl(\theta(t)\bigr)
-\)
-the continuous‑time gradient flow associated with a given loss~$\Loss$.
-
-\begin{definition}[LoP manifold]\label{def:lop_manifold}
-A smooth sub‑manifold $\mathcal{M}\subset\Theta$ \emph{induces LoP} if
-\(
-\nabla_\theta\Loss(\theta)\in T_\theta\mathcal{M}
-\)
-for every $\theta\in\mathcal{M}$, where $T_\theta\mathcal{M}$ is the tangent space at~$\theta$.
-\end{definition}
-
-On such a manifold the gradient is always tangent, so gradient descent dynamics starting on~$\mathcal{M}$ remain trapped on~$\mathcal{M}$ for all time.
-
-\subsection{Cloned‑unit manifolds}
-
-We illustrate Definition \ref{def:lop_manifold} with the important case of \emph{feature cloning}.  Consider two units~$i$ and~$j$ in some layer with parameters \(w_i,w_j\).  The \emph{cloning manifold} is
-\(
-\mathcal{M}_{\mathrm{clone}}=\{\theta\mid w_i=w_j\}.
-\)
-
-\begin{proposition}[Gradient symmetry on cloned units]\label{prop:clone_symmetry}
-If the loss is invariant under permutation of units~$i$ and~$j$ and the parameters satisfy \(w_i=w_j\), then
-\(
-\nabla_{w_i}\Loss=\nabla_{w_j}\Loss
-\)
-and hence
-\(
-\frac{d}{dt}(w_i-w_j)=0.
-\)
-Consequently $\mathcal{M}_{\mathrm{clone}}$ is an LoP manifold.
-\end{proposition}
-
-\begin{proof}[Sketch]
-Permutation symmetry implies
-\(
-\Loss(\dots,w_i,\dots,w_j,\dots)=\Loss(\dots,w_j,\dots,w_i,\dots).
-\)
-Differentiating w.r.t.\ $w_i$ and using symmetry gives
-\(
-\nabla_{w_i}\Loss=\nabla_{w_j}\Loss.
-\)
-The gradient flow update therefore preserves equality of the two parameter vectors.
-\end{proof}
-
-\begin{remark}
-Feature duplication lowers the \emph{effective rank} of the network’s Jacobian/NTK. Once two features coincide, subsequent gradients act identically on them, locking in the redundancy and permanently removing one degree of freedom.
-\end{remark}
-
-\begin{example}[Linear two‑unit network]\label{ex:two_unit}
-Let \(f(x)=v_1\sigma(w_1^\top x)+v_2\sigma(w_2^\top x)\) with ReLU~$\sigma$.  
-If at some time \(w_1=w_2,\;v_1=v_2\), then by Proposition \ref{prop:clone_symmetry} the two hidden units evolve identically and the model behaves as though it had a single unit with output weight~$v_1+v_2$.
-\end{example}
-
-\subsection{Stability of LoP manifolds}
-
-\begin{definition}[Normal‑space stability]\label{def:stability}
-Let $\mathcal{M}$ be an LoP manifold and $N_\theta\mathcal{M}$ its normal space at~$\theta$.
-\begin{enumerate}[label=(\alph*)]
-    \item \emph{Stable} if \(v^\top\nabla_\theta^{2}\Loss(\theta)\,v>0\) for all \(v\in N_\theta\mathcal{M}\setminus\{0\}\).
-    \item \emph{Unstable} if the quadratic form is negative definite on the normal space.
-    \item \emph{Saddle‑type} if it has both positive and negative directions.
-\end{enumerate}
-\end{definition}
-
-Stable LoP manifolds actively \emph{attract} nearby trajectories; escaping them requires external perturbations (e.g.\ noise, dropout, weight re‑initialisation).
-
-% ---------------------------------------------------------------------
-\section{Emergence of LoP Symptoms}%
-\label{sec:emergence}
-% ---------------------------------------------------------------------
-
-Why do networks \emph{enter} LoP manifolds during ordinary training?
-We focus on a simplified fully‑connected layer
-\(
-h=f(Wx+b)
-\)
-and track the effective rank of the activation matrix over training time.
-
-\paragraph{Phase I – rank expansion.}
-Early in training, loss reduction is achieved by \emph{creating new features}.  
-For non‑linear $f$, the mapping \(x\mapsto h(x)\) can increase rank; see Proposition~\ref{prop:rank_increase} below.  
-Empirically, effective rank rises in a staircase pattern, each jump accompanying a drop in training loss \citep{yang2025effective}.
-
-\begin{proposition}[Rank increase via non‑linearity]\label{prop:rank_increase}
-Let \(h(x)=f(Wx+b)\) with element‑wise activation~$f$.  
-If a fraction \(1-\rho_{\text{dup}}\) of rows of~$W$ are distinct and \(f\) is non‑linear (measured by a coefficient \(\zeta(f)>0\)), then
-\(
-\mathrm{rank}\bigl(h(X)\bigr)\ge \mathrm{rank}(X)+
-C\bigl(1-\rho_{\text{dup}}\bigr)\zeta(f)
-\)
-for some constant $C$.
-\end{proposition}
-
-\paragraph{Phase II – rank compression.}
-Once the training error is near zero, further decreases in \(\Loss\) are achieved not by inventing new features but by \emph{compressing} existing ones:
-within‑class variance shrinks, features align with class means, and the effective rank plateaus or diminishes.  
-This is the neural‑collapse regime \citep{papyan2020prevalence}.  
-Linear layers, regularisers, and the implicit bias of SGD all favour such low‑rank solutions \citep{zhou2024neural}.
-
-\paragraph{Net result.}
-The opposing forces—non‑linear rank expansion versus linear rank compression—drive the network first toward richer, then toward progressively poorer, representations.  
-When compression wins, cloned features and dead units proliferate, the NTK becomes low‑rank, and the system lands on the LoP manifolds described in \S\ref{sec:lop_manifolds}.
-
-\begin{figure}[t]
-    \centering
-    % ---- replace the 4‑panel figure from the previous draft ----
-    \includegraphics[width=\linewidth]{paper/images/mlp_act__dead_fraction_plot.pdf}
-    \caption{Illustrative emergence of LoP symptoms over extended training (MLP, Tiny‑ImageNet sequence).  Left to right: fraction of dead/duplicate units increases; effective rank of the penultimate layer rises then plateaus; within‑class variance collapses; accuracy on new tasks saturates.  Together these curves mirror the transition from the rank‑expansion to the rank‑compression regime.}
-    \label{fig:emergence_lop_symptoms_cl}
-\end{figure}
-
-Figure \ref{fig:emergence_lop_symptoms_cl} (moved here from the original “Emergence” section) synthesises these observations: effective rank (second panel) initially grows, then flattens as dead/duplicate units accumulate (first panel); simultaneously, performance on unseen tasks ceases to improve (fourth panel).
-
-\paragraph{Take‑away.}
-Standard training on a \emph{single} task naturally steers the network toward low‑rank, highly symmetric configurations.  
-Because such configurations constitute LoP manifolds—and are often \emph{stable} in the sense of Definition \ref{def:stability}—the model remains stuck there, unable to exploit its nominal capacity when the task distribution later changes.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 
 \section{Introduction}
 % (Content from original draft - appears generally fine, ensure it leads into the new structure)
@@ -279,6 +131,27 @@ Building on this, Section~\ref{sec:existence_lop_manifold} formalizes the concep
 We then explore practical implications in Section~\ref{sec:mitigation_recovery}, discussing strategies to prevent the formation of these LoP states or to recover plasticity once they have manifested.
 Finally, Section~\ref{sec:discussion} summarizes our findings, highlights the fundamental tension between generalization in static settings and adaptability in dynamic ones, and outlines promising avenues for future research towards truly continual learning systems.
 % \GIU{Nice!!}
+
+
+\subsection{Background and Related Work}%
+\label{sec:background}
+% ---------------------------------------------------------------------
+
+\paragraph{Loss of Plasticity (LoP).}  
+A network is said to suffer a \emph{loss of plasticity} when, after some period of training, it can no longer acquire new information as effectively as a freshly‑initialised model of the same architecture.  LoP has been documented in a variety of continual‑learning and reinforcement‑learning settings \citep{dohare2024loss,nikishin2022primacy}.  Crucially, LoP is distinct from catastrophic forgetting: performance on \emph{past} tasks may remain intact while the ability to learn \emph{future} tasks degrades \citep{lyle2023understanding}.  Typical symptoms include exploding weight norms, growing numbers of dead (saturated) units, and a collapse of the effective rank of hidden representations \citep{dohare2021continual,papyan2020prevalence}.
+
+\paragraph{Previous explanations.}  
+Early accounts linked LoP to individual pathologies—e.g.\ weight‑norm growth or activation sparsity—but these factors alone failed to explain the phenomenon consistently \citep{lyle2022understanding}.  A more recent view connects LoP to a degeneration of the network’s \emph{neural tangent kernel} (NTK): once the NTK becomes low‑rank, many directions in function space receive negligible gradient and can no longer be learned \citep{lyle2023understanding}.  This perspective suggests that LoP is multi‑faceted: diverse surface‑level defects (dead units, duplicated features, etc.) share the common consequence of reducing the network’s effective degrees of freedom.
+
+\paragraph{Neural collapse and information bottleneck.}  
+In classification networks driven to near‑zero training error, within‑class features collapse to their class means and those means adopt a simplex‑ETF geometry—a phenomenon dubbed \emph{neural collapse} \citep{papyan2020prevalence}.  While beneficial for the \emph{current} task, such compression discards within‑class variability that may be vital when new tasks arrive \citep{bonifazi2023excessive,achille2019information}.  This aligns with the \emph{information bottleneck} view, whereby networks first fit the data and then compress latent representations, retaining only label‑relevant information \citep{shwartz2017opening}.  Extreme compression, however, hampers future adaptability.
+
+\paragraph{Spectral bias and implicit regularisation.}  
+Gradient descent exhibits a well‑known \emph{spectral bias}: low‑frequency (or top‑eigenfunction) components of the target are learned first \citep{rahaman2019spectral}.  In finite networks this corresponds to rapid growth along a few NTK eigenvectors while many others remain small, pre‑conditioning the network toward low‑rank solutions \citep{yang2025effective}.  Although such biases often promote generalisation in static settings \citep{zhou2024neural}, they also encourage representational contraction and, ultimately, LoP.
+
+\paragraph{Our contribution.}  
+We introduce \textbf{cloning}—the tendency of different units to converge onto identical features—as a \emph{causal} mechanism for LoP.  We formalise \textbf{LoP manifolds}: lower‑dimensional sub‑manifolds of weight space characterised by feature duplication or saturation.  We prove that gradient flow is \emph{tangent} to these manifolds; once the parameters land on (or near) them, standard training dynamics cannot escape.  This provides a rigorous link between observable symptoms (feature redundancy) and the loss‑of‑plasticity state.  The remainder of the paper develops this theory, shows how such manifolds inexorably arise during training, and sketches principles for mitigation.
+
 
 \section{LoP Manifolds: Traps for Gradient Descent}
 \label{sec:existence_lop_manifold}
