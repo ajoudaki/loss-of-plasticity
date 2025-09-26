@@ -335,9 +335,9 @@ While a full theoretical characterization of the stability of empirically observ
 
 \begin{figure}[!h]
     \centering
-    \includegraphics[width=0.24\linewidth]{cloning_R2_plot.pdf }
-    \includegraphics[width=0.24\linewidth]{cloning_losses_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{cloning_rank_plot.pdf}
+    \includegraphics[width=0.3\linewidth]{paper/images/mlp_cloning_r2_plot.pdf }
+    \includegraphics[width=0.3\linewidth]{paper/images/mlp_cloning_losses_plot.pdf}
+    \includegraphics[width=0.3\linewidth]{paper/images/mlp_cloning_rank_plot.pdf}
     \vspace{-.3cm}
     \caption{Cloning experiments on MLPs where hidden layer units are duplicated (cloning factor of 2 from a base model). 'Cloning R2 Score' (left) indicates functional identity of cloned units (higher means stronger cloning). 'Losses' (middle) compares the training loss of the cloned model ('Cloned Loss') and the original model ('Base Loss'). 'Rank' (right) refers to effective rank. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:enter-label} %TODO: Figure label was duplicated, consider making labels more specific if needed.
@@ -902,15 +902,15 @@ This subsection includes placeholder figures for concepts discussed in the main 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.2\linewidth]{paper/images/act__dead_fraction_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/mlp_act__saturated_frac_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__dead_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_dead_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/vit_block_saturated_frac_normalizations_barplot.pdf} \\
-    \includegraphics[width=0.2\linewidth]{paper/images/act__dup_fraction_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/mlp_act__dup_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__dup_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_dup_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/vit_block_dup_fraction_normalizations_barplot.pdf} \\
-    \includegraphics[width=0.2\linewidth]{paper/images/act__train_acc_p_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/mlp_act__train_acc_p_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__train_acc_p_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_train_acc_p_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/vit_block_train_acc_p_normalizations_barplot.pdf}
@@ -930,7 +930,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dup_fraction_layerwise.pdf}\includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dup_fraction_layerwise.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dup_fraction_all_layers.pdf}\includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dup_fraction_layerwise.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_dup_fraction_layerwise.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_layerwise.pdf}
     \caption{Emergence of duplicate units layer-wise during training without normalization and no dropout. This figure shows the increasing fraction of duplicate units as training progresses, a symptom of LoP. }
@@ -939,7 +939,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dead_fraction_layerwise.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dead_fraction_all_layers.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dead_fraction_layerwise.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_dead_fraction_layerwise.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/vit_block_saturated_frac_layerwise.pdf}
