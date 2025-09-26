@@ -3,7 +3,9 @@
 
 % NeurIPS 2025 formatting
 %\usepackage{neurips_2025}
-\usepackage[preprint]{neurips_2025} % Ensure this is the desired option (preprint, final, etc.)
+% \usepackage{neurips_2025} % Ensure this is the desired option (preprint, final, etc.)
+\usepackage{iclr2026_conference,times}
+
 % \usepackage{neurips_2025} 
 \usepackage{natbib}
 \bibliographystyle{plainnat} % Moved from end of doc to preamble for consistency
@@ -63,9 +65,9 @@
 \newcommand{\GIU}[1]{\todo[color=purple!30,size=\tiny]{GIU: #1}}
 \newcommand{\IMZ}[1]{\todo[color=red!30,size=\tiny]{IMAN: #1}}
 
-% \renewcommand{\ff}[1]{}
-% \renewcommand{\AJ}[1]{}
-% \renewcommand{\GIU}[1]{}
+\renewcommand{\ff}[1]{}
+\renewcommand{\AJ}[1]{}
+\renewcommand{\GIU}[1]{}
 %%%% Theorem environments
 \newtheorem{definition}{Definition}[section]
 \newtheorem{lemma}{Lemma}[section]
@@ -77,7 +79,7 @@
 \numberwithin{figure}{section}
 
 
-\title{Barriers for Learning in an Evolving World: \\a Mathematical Understanding of Loss of Plasticity}
+\title{Barriers for Learning in an Evolving World: \\Mathematical Understanding of Loss of Plasticity}
 
 \author{%
   Amir Joudaki$^{1}$ \And
@@ -104,36 +106,68 @@
 \begin{abstract}
     Standard deep learning models excel when trained on stationary datasets but often falter in non-stationary environments where continuous adaptation is crucial. This paradigm struggle is significantly due to the degradation of future learning capacity, a phenomenon termed loss of plasticity (LoP). This work undertakes a first-principles investigation into the mechanisms underlying LoP in gradient-based models. We propose a formal definition of LoP grounded in dynamical systems theory, identifying stable manifolds in the parameter space that act as traps for gradient trajectories. Our analysis details two specific mechanisms leading to such traps: frozen units arising from activation saturation and cloned-unit manifolds resulting from representational redundancy. Furthermore, we explore conditions under which architectural choices or targeted perturbations might prevent or mitigate this plasticity collapse.
     A core finding of our theoretical framework is the revelation of a fundamental tension: properties widely considered beneficial for generalization in conventional, static learning regimes, often characterized by distinct training and deployment phases, such as the emergence of low-rank representations or inherent simplicity biases, appear to directly contribute to LoP in continual learning scenarios.
-    % \GIU{I think this last part of the abstract is a bit vague and redundant, I would remove it.}By mathematically characterizing these barriers, this work pinpoints critical representational properties that hinder continuous learning, providing a clear direction for developing truly adaptive artificial intelligence.
     Our theoretical analysis is supported by numerical simulations and empirical observations on various neural network architectures.
 \end{abstract}
 
 \section{Introduction}
 % (Content from original draft - appears generally fine, ensure it leads into the new structure)
-The extraordinary success of back-propagation in training deep neural networks often relies on two implicit, yet critical, assumptions. First, \emph{stationarity}: the data distribution encountered during training is assumed to be identical, or very similar, to the distribution faced during deployment, rendering post-training adaptation minimal or absent. Second, \emph{single random initialization}: diversity and exploration potential are primarily introduced through a single random initialization of network parameters, a resource that is progressively consumed by optimization and not replenished. These assumptions falter when an artificial agent must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, often termed continual or lifelong learning, presents a significant challenge known as the stability-plasticity dilemma \citep{abraham2005memory, chaudhry2018riemannian}: the system must be stable enough to retain previously acquired knowledge, yet plastic enough to integrate new information effectively.
+The extraordinary success of back-propagation in training deep neural networks often relies on two implicit assumptions. First, \emph{stationarity} is assumed. This means that the data distribution encountered during training is similar to the distribution faced during deployment. As a result, post-training adaptation is minimal or absent. Second, a \emph{single random initialization} of network parameters is the main source of diversity and exploration potential, a resource that is progressively consumed by optimization and not replenished. These assumptions falter when an artificial agent must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, commonly referred to as continual or lifelong learning, presents the stability-plasticity dilemma \citep{abraham2005memory, chaudhry2018riemannian}. This dilemma demands that the system must be stable enough to retain previously acquired knowledge, yet plastic enough to effectively integrate new information.
 
-Empirically, standard deep networks subjected to long sequences of tasks or slowly drifting data streams often exhibit a decline in their learning capability \citep{dohare2024loss, berariu2021plasticity, dohare2021continual, nikishin2022primacy, lyle2023understanding}. This phenomenon, termed loss of plasticity (LoP), is distinct from catastrophic forgetting \citep{mccloskey1989catastrophic, ratcliff1990connectionist, french1999catastrophic}, where new learning overwrites old knowledge. LoP specifically refers to the diminished ability to learn new information effectively over time. Common symptoms include exploding weight magnitudes \citep{nikishin2022primacy}, activation saturation, the emergence of ``dead'' ReLU units (whose upstream parameters cease to update) \citep{nair2010rectified, sokar2023dormant, dohare2021continual, lyle2022understanding}, a collapse in the effective rank of hidden layer representations indicating reduced feature diversity \citep{papyan2020prevalence, huh2022lowrank, kumar2020implicit, gulcehre2022empirical}, and redundancy or diminishing contributions from network components like attention heads or filters \citep{lyle2023understanding}. Many of these issues have been highlighted in recent studies focusing on LoP \citep{dohare2023maintaining, kumar2024regenerative, ash2020warmstarting}.
+Empirically, standard deep networks subjected to long sequences of tasks or slowly drifting data streams often exhibit a decline in their learning capability \citep{dohare2024loss, berariu2021plasticity, dohare2021continual, nikishin2022primacy, lyle2023understanding}. This phenomenon, termed \textit{Loss of Plasticity (LoP)}, is distinct from catastrophic forgetting \citep{mccloskey1989catastrophic, ratcliff1990connectionist, french1999catastrophic}, where new learning overwrites old knowledge. LoP specifically refers to the diminished ability to learn new information effectively over time. Common symptoms include exploding weight magnitudes \citep{nikishin2022primacy}, activation saturation, the emergence of ``dead'' ReLU units (whose upstream parameters cease to update) \citep{nair2010rectified, sokar2023dormant, dohare2021continual, lyle2022understanding}, a collapse in the effective rank of hidden layer representations indicating reduced feature diversity \citep{papyan2020prevalence, huh2022lowrank, kumar2020implicit, gulcehre2022empirical}, and redundancy or diminishing contributions from network components like attention heads or filters \citep{lyle2023understanding}. Many of these issues have been highlighted in recent studies focusing on LoP \citep{dohare2023maintaining, kumar2024regenerative, ash2020warmstarting}.
 
-\citet{dohare2024loss} argue compellingly that such failures are intrinsically linked to the back-propagation algorithm itself. They posit that gradient descent, optimized for transient, single-task learning, relies heavily on the initial random state for exploration, a resource that is consumed and not replenished during prolonged training. Their work demonstrates that standard deep learning methods can lose plasticity until they perform comparably to linear networks, and suggests that maintaining plasticity requires mechanisms beyond pure gradient descent, such as continually injecting diversity via methods like their proposed continual backpropagation.
+\citet{dohare2024loss} argue that such failures are intrinsically linked to the back-propagation algorithm itself. They posit that gradient descent optimized for transient single-task learning relies heavily on the initial random state for exploration, a resource that is consumed and not replenished during prolonged training. Their work demonstrates that standard deep learning methods can lose plasticity until they perform comparably to linear networks and suggests that maintaining plasticity requires mechanisms beyond pure gradient descent such as continually injecting diversity via methods like their proposed continual backpropagation.
 
+\vspace{-5pt}
 \paragraph{Goal of this paper.}
-Motivated by observations about LoP, our paper revisits the dynamics of gradient descent and back-propagation through the lens of dynamical systems theory. We seek to answer the fundamental question:
+Motivated by observations about LoP, our paper revisits the dynamics of gradient descent and back-propagation through the lens of dynamical systems theory. We seek to answer the question:
 \begin{quote}
 \emph{What structural features inherent in gradient flow dynamics inevitably lead to LoP, and how might we design algorithms or architectures capable of perpetual adaptation?}
 \end{quote}
-The central proposition advanced in this work is that the tendency of gradient-based optimization to favor low-rank or ``simple'' representations lies at the heart of plasticity loss. While properties like low effective rank and simplicity bias are often associated with improved generalization in the standard two-phase learning paradigm \citep{huh2022lowrank, papyan2020prevalence, zhang2017understanding}, we argue that these very properties become detrimental in continual learning settings. By reducing the effective dimensionality of the network's feature space, they limit its capacity to adapt to novel information, thus contributing to the LoP observed by \citep{dohare2024loss} and others. Our work aims to provide a formal mathematical understanding of these mechanisms.
+The central proposition advanced in this work is that the tendency of gradient-based optimization to favor low-rank or ``simple'' representations lies at the heart of LoP. While properties like low effective rank and simplicity bias are often associated with improved generalization in the standard two-phase learning paradigm \citep{huh2022lowrank, papyan2020prevalence, zhang2017understanding}, we argue that these very properties become detrimental in continual learning settings. By reducing the effective dimensionality of the network's feature space, they limit its capacity to adapt to novel information, thus contributing to the LoP observed by \citep{dohare2024loss} and others. Our work aims to provide a formal mathematical understanding of these mechanisms.
 % \GIU{okay general comments on the new structure: I like it, the sections feel less chaotic, they are more homogeneous and complete The link between the section and an overview of the paper contributions is missing. Although I usually like the papers that take their time to tell you a story, I think it would help the reader to understand how the story is spread out. In particular I would say in the introduction something like "First, in section 3 we show how typical symptoms of LoP can emerge naturally during training with GD" and "Subsequently, in Section 4, we prove how the emergence of this attributes leads the network to permanently lose plasticity" You could even change the tone of the introduction entirely and be more "aggressive" in a sense, with a clear list of contributions like "we prove this ... we show that..." in bullet points. But I personally like the softer open question style that we have now}
 
-To systematically address this, our investigation unfolds as follows.
-In Section~\ref{sec:preliminaries}, we establish the necessary mathematical preliminaries, including our dynamical systems-based definition of LoP.
-Section~\ref{sec:emergence_lop} then delves into how characteristics commonly associated with LoP, such as frozen units and representational redundancies, can naturally emerge from the interplay of linear transformations and non-linear activations during standard gradient-based training.
-Building on this, Section~\ref{sec:existence_lop_manifold} formalizes the concept of LoP manifolds, proving that these emergent features can indeed trap gradient descent dynamics, thereby leading to a persistent loss of plasticity.
-We then explore practical implications in Section~\ref{sec:mitigation_recovery}, discussing strategies to prevent the formation of these LoP states or to recover plasticity once they have manifested.
-Finally, Section~\ref{sec:discussion} summarizes our findings, highlights the fundamental tension between generalization in static settings and adaptability in dynamic ones, and outlines promising avenues for future research towards truly continual learning systems.
-% \GIU{Nice!!}
+% To systematically address this, our investigation unfolds as follows.
+% In Section~\ref{sec:preliminaries}, we establish the necessary mathematical preliminaries, including our dynamical systems-based definition of LoP.
+% Section~\ref{sec:emergence_lop} then delves into how characteristics commonly associated with LoP, such as frozen units and representational redundancies, can naturally emerge from the interplay of linear transformations and non-linear activations during standard gradient-based training.
+% Building on this, Section~\ref{sec:existence_lop_manifold} formalizes the concept of LoP manifolds, proving that these emergent features can indeed trap gradient descent dynamics, thereby leading to a persistent loss of plasticity.
+% We then explore practical implications in Section~\ref{sec:mitigation_recovery}, discussing strategies to prevent the formation of these LoP states or to recover plasticity once they have manifested.
+% Finally, Section~\ref{sec:discussion} summarizes our findings, highlights the fundamental tension between generalization in static settings and adaptability in dynamic ones, and outlines promising avenues for future research towards truly continual learning systems.
+% % \GIU{Nice!!}
 
 
-\section{Preliminaries}
+% \section{Preliminaries}
+
+\subsection{Background and Related Work}%
+\label{sec:background}
+% ---------------------------------------------------------------------
+
+\paragraph{Loss of Plasticity (LoP).}  
+A network is said to suffer a {loss of plasticity} when, after some period of training, it can no longer acquire new information as effectively as a freshly‑initialised model of the same architecture.  LoP has been documented in a variety of continual‑learning and reinforcement‑learning settings~\citep{dohare2024loss,nikishin2022primacy}.  Crucially, LoP is distinct from catastrophic forgetting: performance on {past} tasks may remain intact while the ability to learn {future} tasks degrades~\citep{lyle2023understanding}.  Typical symptoms include exploding weight norms, growing numbers of dead (saturated) units, and a collapse of the effective rank of hidden representations~\citep{dohare2021continual,papyan2020prevalence}.
+
+\vspace{-7pt}
+\paragraph{Previous explanations.}  
+Early accounts linked LoP to individual pathologies, e.g., weight‑norm growth or activation sparsity. However, these factors alone failed to consistently explain the phenomenon~\citep{lyle2022understanding}.  A more recent view connects LoP to a degeneration of the network’s {neural tangent kernel} (NTK) that is once the NTK becomes low‑rank, many directions in function space receive negligible gradient and can no longer be learned~\citep{lyle2023understanding}.  This perspective suggests that LoP is multi‑faceted with diverse surface‑level defects (e.g., dead units, duplicated features) sharing the common consequence of reducing the network’s effective degrees of freedom.
+
+\vspace{-7pt}
+\paragraph{Geometric Singularities and Learning Dynamics.}
+The connection between overparameterization, reduced dimensionality, and learning difficulties has deep roots in the analysis of neural network geometry. Hierarchical models exhibit {singularities}—regions in parameter space where the mapping from parameters to function is not unique (e.g., due to unit duplication or vanishing). Foundational work by \citet{fukumizu2000local} and \citet{amari2006singularities} demonstrated that these singularities cause the Fisher Information Matrix to degenerate, leading to slow learning dynamics (plateaus) as gradient descent is attracted to these regions.
+
+\vspace{-7pt}
+\paragraph{Implicit Bias and Stochastic Dynamics.}
+Recent work has highlighted how the optimization algorithm itself contributes to the collapse towards simpler representations. \citet{chen2023stochastic} analyzed the implicit bias of Stochastic Gradient Descent (SGD), showing that gradient noise induces an attractive force towards these singular regions (termed "Invariant Sets"). This "Stochastic Collapse" suggests that the tendency towards LoP states is exacerbated by the stochastic nature of the optimization process, even if the regions are unstable under deterministic gradient descent. Furthermore, it is crucial to distinguish between different aspects of LoP; \citet{lee2024s} empirically demonstrated that maintaining {trainability} (ability to fit new data) does not guarantee {generalizability} (performance on unseen data), emphasizing the need for methods that restore genuine plasticity.
+
+\vspace{-7pt}
+\paragraph{Neural collapse and information bottleneck.}  
+In classification networks driven to near‑zero training error, within‑class features collapse to their class means and those means adopt a simplex‑ETF geometry—a phenomenon dubbed {neural collapse}~\citep{papyan2020prevalence}.  While beneficial for the {current} task, such compression discards within‑class variability that may be vital when new tasks arrive. This aligns with the {information bottleneck} view\citep{shwartz2017opening}, whereby networks first fit the data and then compress latent representations, retaining only label‑relevant information~\citep{shwartz2017opening}.  Extreme compression, however, hampers future adaptability.
+
+% \paragraph{Spectral bias and implicit regularisation.}  Gradient descent exhibits a well‑known \emph{spectral bias}: low‑frequency (or top‑eigenfunction) components of the target are learned first~\citep{ra haman2019spectral}.  In finite networks this corresponds to rapid growth along a few NTK eigenvectors while many others remain small, pre‑conditioning the network toward low‑rank solutions~\citep{yang2025effective}.  Although such biases often promote generalisation in static settings~\citep{zhou2024neural}, they also encourage representational contraction and, ultimately, LoP.
+
+% \paragraph{Our contribution.}  
+% We introduce \textbf{cloning}—the tendency of different units to converge onto identical features—as a \emph{causal} mechanism for LoP.  We formalise \textbf{LoP manifolds}: lower‑dimensional sub‑manifolds of weight space characterised by feature duplication or saturation.  We prove that gradient flow is \emph{tangent} to these manifolds; once the parameters land on (or near) them, standard training dynamics cannot escape.  This provides a rigorous link between observable symptoms (feature redundancy) and the loss‑of‑plasticity state.  The remainder of the paper develops this theory, shows how such manifolds inexorably arise during training, and sketches principles for mitigation.
+
+
+\section{LoP Manifolds: Traps for Gradient Descent}
+\label{sec:existence_lop_manifold}
 \label{sec:preliminaries}
 In this section, we lay the groundwork for our analysis by defining Loss of Plasticity (LoP) within a dynamical systems framework and recalling the standard definitions for feed-forward neural networks and back-propagation. The stability of LoP manifolds, a crucial concept for understanding their persistence, will be discussed later in Section~\ref{sec:existence_lop_manifold}.
 
@@ -156,6 +190,102 @@ If the conditions in Definition~\ref{def:lop} hold irrespective of the specific 
 
 \GIU{Should we add a remark on SGD? While the full batch gradient could satisfy the manifold condition, the mini batch might not?}
 
+Given these definitions, we can formalize existence of these LoP manifolds, restricting subsequent learning. We present a central proposition that jointly addresses LoP arising from frozen and duplicate units.
+
+The intuition is that once units become unresponsive (frozen) or perfectly redundant (cloned), they tend to remain so under standard gradient-based optimization. This persistence is key to understanding LoP as a stable or semi-stable state.
+
+
+\begin{proposition}
+\label{prop:frozen_duplicate_lop}
+Let $G=(V,E)$ be the network’s computational DAG and let $\theta=\{\theta_{uv}:(u\to v)\in E\}\in\Theta$ denote the edge parameters.
+
+\begin{enumerate}
+\item \textbf{Frozen-unit manifold $\mathcal{M}_F$.}
+Assume there exists $F\subset V$ such that, for all finite inputs encountered, each $v\in F$ is persistently saturated ($f'(z_v)=0$). Then the gradients w\.r.t. all incoming parameters to $v$ vanish on any mini-batch, so those coordinates remain fixed; writing the linear constraints as $\theta_{\mathrm{in}}(v)=\mathrm{const}$ for all $v\in F$, the affine subspace $\mathcal{M}_F:=\{\theta:\ \theta_{\mathrm{in}}(v)=\mathrm{const}\ \forall v\in F\}$ satisfies $\nabla\mathcal{L}(\theta)\in T_\theta\mathcal{M}_F$ and GD/SGD updates initialized in $\mathcal{M}_F$ remain in $\mathcal{M}_F$.
+
+\item \textbf{Cloning manifold $\mathcal{M}_C$.}
+Assume a partitioning of nodes into disjoint blocks $\{S_1,\dots,S_k\}$ exists with following properties. For every ordered block pair $(S_i,S_j)$, we have the linear equalities $\sum_{v\in S_j}\theta_{uv}=\sum_{v\in S_j}\theta_{u'v}$ for all $u,u'\in S_i$ (equal row-sums) and $\sum_{u\in S_i}\theta_{uv}=\sum_{u\in S_i}\theta_{uv'}$ for all $v,v'\in S_j$ (equal column-sums). Let $\mathcal{M}_C$ be the affine subspace of $\Theta$ consisting of all $\theta$ satisfying these constraints. If $\theta\in\mathcal{M}_C$, then (i) all units within any block share the same forward values on any input, (ii) all units within any block share the same backpropagated errors on any input, and therefore (iii) the per-edge gradients are constant across edges connecting the same block pair, i.e., for any $(u,v)$ and $(u',v')$ with $u,u'\in S_i$ and $v,v'\in S_j$, $\partial \mathcal{L}/\partial \theta_{uv}=\partial \mathcal{L}/\partial \theta_{u'v'}$. Hence $\nabla\mathcal{L}(\theta)\in T_\theta\mathcal{M}_C$ and GD/SGD updates initialized in $\mathcal{M}_C$ remain in $\mathcal{M}_C$.
+\end{enumerate}
+
+Both $\mathcal{M}_F$ and $\mathcal{M}_C$ are linear LoP manifolds in the sense of Def.~\ref{def:lop}. Formal proofs and further details are provided in Appendix~\ref{app:cloning_manifold_details}.
+\end{proposition}
+
+\vspace{-5pt}
+\paragraph{Intuition.}
+(i) \emph{Frozen units.} If a unit stays in a regime with \(f'(z_v)=0\) for all finite inputs (e.g., \(\tanh\) with very large \(\lVert\theta_{\mathrm{in}}(v)\rVert\) or ReLU with a large negative bias), then \(\partial \mathcal{L}/\partial \theta_{\mathrm{in}}(v)\approx 0\); its incoming parameters are fixed, so updates are tangent to \(\mathcal{M}_F\).
+(ii) \emph{Cloning via redistribution.} Row/column-sum equalities mean total in/out weight is uniformly redistributed within each block pair \((S_i,S_j)\). Collapsing blocks to super-nodes makes forward activations and back-errors identical within blocks; per-edge gradients \(h(u)\,\delta(v)\) are therefore constant on \(S_i\times S_j\) and obey the same equalities. Hence the gradient is tangent to \(\mathcal{M}_C\), and first-order updates remain on both manifolds.
+
+
+
+\begin{remark}
+It is important to note that the Duplicate Manifold $\mathcal{M}_D$ (defined formally via Incoming and Outgoing Equitable partitions in Appendix~\ref{app:cloning_manifold_details}) represents a significant generalization of the cloning concepts typically discussed in literature. Prior analyses of singularities \citep{fukumizu2000local} or invariant sets \citep{chen2023stochastic} generally define cloned units by requiring their associated weights to be strictly identical (the block-wise constant condition in our terminology). Our framework proves that invariance under gradient descent holds even under the relaxed condition of equitability, where individual weights may differ as long as specific incoming and outgoing sums are maintained. This significantly broadens the class of structures identified as LoP manifolds.
+\end{remark}
+
+% \begin{remark}
+% The LoP manifolds described in Proposition~\ref{prop:frozen_duplicate_lop} are \emph{functional}, in that they do not depend on any particular data or label distribution.\GIU{To me it seems that only condition 2 (Duplicate Units) is functional, since for frozen units there might still be a part of the input space where they activate.} For frozen units, if saturation is persistent (e.g., ReLU with consistently negative pre-activation), the zero gradient condition holds for any data. For duplicate units, if the cloning conditions on weights are met, the symmetry of activations and gradients holds for any input data and label distribution. Thus, these are functional LoP, not data-dependent ones.
+% \end{remark}
+
+\begin{remark}
+The cloning LoP manifold naturally lends itself to gradient descent and stochastic gradient descent, regardless of the order which we process the samples, will remain strictly within the manifold. This extends to virtually all variations of gradient descent based optimizations, namely Stochastic Gradient Descent (SGD), SGD with momentum, and Adam, as long as the optimizer is initialized at the onset of cloning. The only exception to this is weigh decay which could break some symmetries. This fact can be empirically observed across our cloning experiments, showing that across a wide range of optimization schemes the model remains trapped onto to the LoP manifold.
+% The only exception is weight decay, as w all might violate the symmetry assumptions that were inherent to the proof of this theorem.
+\end{remark}
+
+To empirically test the stability of such manifolds and potential escape mechanisms, we conduct \emph{cloning experiments}, where a base model, namely an MLP, is first trained on a task, then, an larger model is constructed by expanding the base model (across width for MLP; channels for CNNs/ResNets; and feature dimension ViTs), with the weights of the cloned model initialized in such a way that its activations are copies of the base model, effectively creating blocks of units that have identical activations. At this point, we resume training both base and cloned model on the same task, and track their training trajectory via the loss curve, effective rank of representations, and cloning $R^2$ score. Figure~\ref{fig:cloning_perfect_appendix} shows results from such experiments on MLPs, investigating dynamics within and escapes from these LoP manifolds.
+
+Empirical validation of these claims, such as showing perfect cloning under specific initializations  or the persistence of dead units, can be found in Figure~\ref{fig:cloning_perfect_appendix} and Appendix~\ref{app:empirical_evidence_appendix}. One notable observation is that, despite the fact that Adam violates the symmetry conditions required for Proposition~\ref{prop:frozen_duplicate_lop}, the empirical evidence showed that it is often unable to escape the manifold nervertheless. This evidence suggests that a stronger theory might exist to explain this.
+
+
+\vspace{-5pt}
+\paragraph{Stability of LoP manifolds.}
+% \GIU{Added a paragraph here}
+While Proposition~\ref{prop:frozen_duplicate_lop} establishes the \emph{existence} of LoP manifolds under exact conditions (perfect saturation, perfect cloning), in practice, these conditions might only be approximately reached during training. This leads to the question of whether  near-LoP states will move back closer to the LoP manifold under gradient descent dynamics, or will they move away from it. To address this, we introduce the notion of the stability of an LoP manifold.
+
+\begin{definition}[Stability of LoP Manifold]
+\label{def:lop_stability_main}
+Let $\mathcal{M}$ be an LoP manifold and $N_\theta\mathcal{M}$ be the normal space to $\mathcal{M}$ at $\theta \in \mathcal{M}$. The stability of $\mathcal{M}$ is characterized by the Hessian $\nabla_\theta^2\Loss(\theta)$ in directions normal to $\mathcal{M}$:
+\begin{itemize}
+    \item \textbf{Stable LoP:} $\forall v\in N_\theta\mathcal{M}\setminus\{0\}: v^\top\nabla_\theta^2\Loss(\theta)v > 0$. (Perturbations revert to LoP)
+    \item \textbf{Unstable LoP:} $\forall v\in N_\theta\mathcal{M}\setminus\{0\}: v^\top\nabla_\theta^2\Loss(\theta)v < 0$. (Perturbations  escape LoP)
+    \item \textbf{Saddle LoP:} $\exists v_1,v_2\in N_\theta\mathcal{M}$ s.t. $v_1^\top\nabla_\theta^2\Loss v_1>0$ and $v_2^\top\nabla_\theta^2\Loss v_2<0$. (Escape is direction-dependent)
+\end{itemize}
+\end{definition}
+
+\begin{remark}
+Stability in the normal space to the manifold (convexity of the loss in these directions) does not imply that the loss is convex in general (i.e., also within the manifold or in other directions). These conditions are local characterizations of the loss landscape geometry around the manifold.
+\end{remark}
+
+To understand the practical implications of these stability types, consider injecting a small perturbation $\Delta\theta$ that pushes the parameters $\theta$ slightly off the manifold $\mathcal{M}$. If $\mathcal{M}$ is stable, the subsequent gradient steps $-\nabla \Loss(\theta+\Delta\theta)$ will tend to project back towards $\mathcal{M}$. If $\mathcal{M}$ is unstable, these steps will tend to move further away. For a saddle LoP manifold, escape depends on the direction of the initial perturbation relative to the eigenvectors of the Hessian in the normal space.
+
+Therefore, a \emph{stable} LoP manifold actively resists escape while an unstable manifold is the easiest to escape. A saddle manifold presents a mixed scenario, where random perturbations may or may not escape depending on the perturbation vector being in a positively or negative space orientation. 
+
+
+\vspace{-5pt}
+\paragraph{Escaping the LoP manifolds with perturbations.}
+% \GIU{I added a paragraph here}
+While a full theoretical characterization of the stability of empirically observed LoP manifolds is beyond the scope of this work, our empirical investigations suggest that these manifolds are often unstable or saddle-like. This is evidenced by the fact that certain types of noise or symmetry-breaking operations can help models escape them. We highlight two common perturbations:
+(1) \emph{Noisy SGD} is a modification of SGD that adds Gaussian noise to the computed gradients before parameter updates. The magnitude of this injected noise is typically proportional to the norm of the gradient, with its initial relative strength, which will decay by some factor over successive steps. By applying this noise after cloning, we can see if the model can escape the LoP manifold, or instead it will revert back to the manifold. 
+% Adding noise to gradient updates (e.g., Gaussian noise $\mathcal{N}(0, \sigma^2 I)$) can push parameters off the manifold. If the manifold is unstable or saddle, subsequent noiseless steps might then lead away from it.
+(2) \emph{Dropout} introduces stochasticity in the forward and backward passes by randomly zeroing activations. For cloned units, this breaks the symmetry because different clones might be active in different dropout masks, leading to divergent gradient updates. This is supported by experiments where dropout helps a model escape an artificially induced cloning manifold (see Figure~\ref{fig:dropout_escapes_cloning_appendix}).
+    
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.3\linewidth]{paper/images/mlp_cloning_r2_plot.pdf }
+    \includegraphics[width=0.3\linewidth]{paper/images/mlp_cloning_losses_plot.pdf}
+    \includegraphics[width=0.3\linewidth]{paper/images/mlp_cloning_rank_plot.pdf}
+    \vspace{-.3cm}
+    \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. 
+    \textbf{Left}: Cloning $R^2$ score quantifies the proportion of variance in individual unit activations within a cloned block that is explained by the mean activation of that block. An $R^2$ score of 1 indicates perfect cloning (units in a block are nearly identical), while a 0 score indicates no explained variance. See Section~\ref{subsec:core_methodologies} (Appendix~\ref{app:empirical_evidence_appendix}) for the precise formula and calculation details.
+    \textbf{Middle}: Training loss comparison. \emph{Cloned loss} refers to the loss of the cloned model during its training phase, while \emph{base loss}  refers to the loss of the original base model, which continues training for comparison.
+    \textbf{Right}: Effective rank evolution showing representational diversity.}
+    \label{fig:cloning_perfect_appendix}
+    \label{fig:dropout_escapes_cloning_appendix}
+\end{figure}
+
+% \ff{what is "cloning R2" in y-axis of the left plot?}
+% \ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
+
+Both noisy SGD and dropout act as symmetry-breaking operations. In the case of dropout, both forward and backward passes are asymmetric for cloned units. For noisy SGD, the backward pass (gradient update) becomes asymmetric. This asymmetry causes the parameters of notionally cloned units to slowly diverge. Remarkably, in our MLP experiments, even a small amount of gradient noise e.g., a single step with noise magnitude $0.01$ relative to gradient norms, suffices to initiate escape from an LoP manifold, though stronger noise generally leads to faster escape. In contrast, in settings such as Vision Transformers, while the model could escape from the manifold with a small perturbation, it did not move very far from it. More experimental studies into this direction would be vital to better understand the stability of these LoP manifolds.  
 
 \section{Emergence of LoP Symptoms: A First-Principles Perspective}
 \label{sec:emergence_lop}
@@ -167,20 +297,23 @@ At a high level, effective feature learning in a deep neural network involves a 
 
 To make our notion of representational richness or diversity more precise, we will quantify it through the rank of the feature activations. 
 One of the main ways of measuring diversity of a set of representations is the notion of \emph{hard rank}, or simply rank of a matrix, defined as the number of linearly independent rows or columns, which equals the number of its non-zero singular values. 
-This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provides a continuous measure of rank based on the distribution of singular values, defined as $\exp(H)$ where $H$ denotes the entropy of normalized singular values $H = -\sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$ 
+This is in contrast to \emph{effective rank}~\citep{dohare2024loss}, which provides a continuous measure of rank based on the distribution of singular values, defined as $\exp(H)$ where $H$ denotes the entropy of normalized singular values $H = -\sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$ \GIU{Here it would be nice to have an example of range of value of the effective rank.}
 % However, as the hard rank is often too stringent for practical purposes, we use the notion of effective rank~\citep{dohare2024loss}, defined as $\exp(H$ where $H$ denotes the entropy of normalized singular values $H = \sum_k p_i \log p_i, \; p_i = e_i/\sum_k e_i.$ 
 
 % \GIU{I think this last part does not say anything much? I would remove it and go directly to the meat.} As empirically observed (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}), and supported by theoretical analyses, this rank is dynamically shaped by the interplay of linear transformations and non-linear activations. This back-and-forth aims to learn rich features while being guided by the simplifying bias inherent in parts of the network.
 
 
+\vspace{-5pt}
 \paragraph{Linear Layers and Rank Reduction}
 Linear layers in neural networks, which are essentially matrix multiplications (followed by a bias), inherently tend to reduce or constrain the dimensionality of representations. Let us recount several important facts about matrix products which underscore their inability to unilaterally increase rank. First, the rank of a product of matrices cannot exceed the minimum rank of any matrix in the product, i.e., $\mathrm{rank}(AB) \le \min(\mathrm{rank}(A), \mathrm{rank}(B))$. Thus, a chain of linear operations can, at best, maintain rank but often reduces it. Second, the condition number of a product of matrices can worsen compared to individual matrices, potentially making features less distinguishable and thereby reducing the effective rank. Finally,  for deep linear networks or long chains of matrix products, particularly with random matrices, there's a strong tendency for the representation to collapse towards low-rank structures, sometimes even rank-one \citep{saxe2014exact, furstenberg1963noncommuting}.
 This inherent rank-reducing nature of linear transformations means that non-linearities are crucial for creating and maintaining feature diversity.
 
+\vspace{-5pt}
 \paragraph{Non-linear Activations and Rank Recovery.}
-\GIU{So, this section is crucial but not clear. In particular, (1) we should introduce the concept of "cloned units" before proposition 3.1, and say that Prop.  3.1 holds for layers with non cloned units.(2) We should give an intuition of this $\alpha$ term with a few examples (it seems to me that it becomes negative for a linear function?). Or we should get rid of $\alpha$ and present the results in a different way. (3) Corollary 3.1 is not clear at the moment.}
-Non-linear activation functions are the primary mechanism by which neural networks can counteract the rank-reducing effects of linear layers and expand the dimensionality of learned representations. Informally, even if input features are highly correlated (implying low effective rank), a sufficiently non-linear activation can transform them in such a way that they become more distinct, increasing both the absolute number of independent features (hard rank) and their effective diversity.  
+Non-linear activation functions are the primary mechanism by which neural networks can counteract the rank-reducing effects of linear layers and expand the dimensionality of learned representations. 
+Informally, even if input features are highly correlated (implying low effective rank), a sufficiently non-linear activation can transform them in such a way that they become more distinct, increasing both the absolute number of independent features (hard rank) and their effective diversity.  
 To make this more formal, consider a matrix of pre-activations $X \in \R^{n \times d}$ ($n$ samples, $d$ features with $n\ge d$), where each row is independently drawn from a multivariate Gaussian distribution $\mathcal{N}(0, C)$, with $C$ being the covariance matrix (unit diagonals, off-diagonals strictly in $(-1,1)$). Let $f: \R \to \R$ be an element-wise non-linear activation function.
+\GIU{So, this section is crucial but not clear. In particular, (1) we should introduce the concept of "cloned units" before proposition 3.1, and say that Prop.  3.1 holds for layers with non cloned units.(2) We should give an intuition of this $\alpha$ term with a few examples (it seems to me that it becomes negative for a linear function?). Or we should get rid of $\alpha$ and present the results in a different way. (3) Corollary 3.1 is not clear at the moment.}
 
 \begin{proposition}[Rank recovery with non-linear activations]
 \label{prop:rank_recovery_informal}
@@ -204,15 +337,6 @@ For $f(x) = \text{ReLU}(a x + b)$. If $b $ is a large positive shift, $f(x)$ wil
 % You can see an illustration of this in Figure~\ref{fig:theory_tanh_az_rank}.
 \end{example}
 
-\begin{figure}[ht!]
-    \centering
-\includegraphics[width=0.7\linewidth]{POC/figures/theory_tanh_az_rank.pdf} % Assuming image is in figures/
-    \vspace{-.3cm}
-    \caption{Effect of input shifting on post-activation effective rank for $h_a = \tanh(a x)$, with rank-deficient $z$ ($20$ dimensional with rank $5$). \emph{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$ vs. scale $a.$ \emph{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scale $a$. }
-    \label{fig:theory_tanh_az_rank}
-\end{figure}
-
-
 This modulation has a critical consequence, revealed by the following corollary.
 
 \begin{corollary}
@@ -224,7 +348,7 @@ Then, the derivative $f'_{s_k}(z)$ tends to zero in probability as $k \to \infty
 $$ \lim_{k \to \infty} P(|f'_{s_k}(z)| < \epsilon) = 1, \quad \text{for } z \sim \mathcal{N}(0,1). $$
 \end{corollary}
 
-The above corollary is stating that if we continuously adjust an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), this process often drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Section~\ref{app:max_rank_frozen}
+The above corollary states that continuously adjusting an activation function, e.g., by shifting or scaling its pre-activations, to maximize its rank recovery strength ($\alpha$), drives the activation into a regime where its derivative is zero for almost all inputs, hence becoming ``frozen'' and stop learning. You can see Section~\ref{app:max_rank_frozen}
 %\ff{can we have a more direct reference to the proof? I think this was originally so bc we didn't have the proofs at the time of submission, but we can fix it now} 
 %\AJ{The detailed proof turned out to be very involved and long (5-6 pages) and is a bit incomplete, so I rephrased the sentence to we're "discussing" it not proving it. Is that ok, or you prefer to include the actual proof?}
 %for a detailed discussion of this corollary. We can get a better intuitive understanding of this statement by going back to the example of Tanh activation.
@@ -242,21 +366,23 @@ For $f(x) = \tanh(ax)$, the larger values of $a$ will lead to larger values of $
 % (Giulia's trys) 
 Taken together, Proposition \ref{prop:hard_rank_increase_main} and Corollary \ref{cor:max_alpha_frozen_formal}, tell us that activation functions are a double-edged sword when it comes to feature rank. On one hand, when the modulation is present, the non-linearity allows rank recovery for low-rank pre-activations, while on the other hand, if the modulation strength  is too high, the activation function can lead to frozen units.   
 The key message of the corollary and the example above is  that frozen features may emerge as a natural tendency towards finding rich and diverse features while learning. 
-\GIU{This is super cool, and we should sharpen out the presentation to really bring the message home. In particular the statement of corollary 3.1 has to be clarified. I think it would be easier to say that 
+\GIU{This is super cool, and we should sharpen out the presentation to really bring the message home. In particular the statement of corollary 3.1 has to be clarified.
 Also, for the last paragraph we could draw a small sketch that shows how these LoP symptoms are connected to the network dynamics?}
 
 % \GIU{Where did the ReLU example go?}
 
+\vspace{-5pt}
 \paragraph{The Emergence of LoP Symptoms from Optimization Dynamics.} The symptoms of LoP---frozen units and diminished representational diversity (via rank collapse or feature duplication)---can be seen as natural outcomes of the network's learning dynamics. By learning to modulate pre-activation statistics and feature correlations, the network navigates the trade-off between generating rich, high-dimensional features necessary for complex tasks and simplifying representations, perhaps to improve generalization or to settle into stable attractors in the loss landscape.  However, moving too far in any direction may lead the network to Loss of Plasticity: aggressively increasing rank via strong non-linearity risks creating frozen units, i.e., Corollary~\ref{cor:max_alpha_frozen_formal}, while simplifying representations can lead to rank collapse or creation of duplicate features, i.e., Remark~\ref{rem:duplicate_rank}.
 
 \subsection{Experimental Setup}
 % \ff{may be better as a subsection than a paragraph} 
 To validate our theoretical insights, we conducted experiments across four architectures (MLP, CNN, ResNet, ViT) on continual learning tasks using Tiny ImageNet dataset, which consists of 200 classes. Each architecture was trained on a sequence of 40 tasks, with each task containing a disjoint subset of 5 classes. 
-Each task is trained for 500 steps, and validation is performed periodically, resulting in approximately 25,000 total steps shown in the figures. 
+Each task is trained for 500 steps, and validation is performed periodically, resulting in 20,000 total training steps. 
 We tracked the emergence of LoP symptoms including dead units (neurons with near-zero activations), duplicate units (highly correlated neurons with correlation > 0.95), and effective rank degradation. All experiments used Adam optimizer with learning rate 0.001 (0.0001 for ViT), and results are averaged over 5 random seeds. Full experimental details are provided in Appendix~\ref{app:empirical_evidence_appendix}.
 %\ff{the text says it is training sequentially on 10 tasks but the plots are showing steps going up to 25000.... ?}
 %\AJ{Excellent point, there was a small inconsistency here before which is now fixed (we have 40 tasks not 10), and each task is trained for 500 epochs, so the 25000 steps corresponds to this plus the validation steps. Is it important to fix the plots or just explain it in text? }
 \ff{thanks for correcting the text about number of steps. it's odd to me that we count validation steps as part of the total steps. Is the model being updated during validation? If not, can we change the plots so that the total steps is 20k?}
+\GIU{For Fartash: the model is not updated during validation, it's a wandb thing, that it updates its internal counter with every call to the server. We updated the plots to show the task rather than the confusing "steps" variable.}
 
 
 The experimental evidence confirms these intuitions (see Appendix~\ref{app:empirical_evidence_appendix} and Figures~\ref{fig:emergence_lop_symptoms_cl}, \ref{fig:norm-rank-nG}, \ref{fig:dupfrac-LoP}, \ref{fig:dupfrac-LoP-dead-dup}): depending on the architecture, we observe that a degradation in the model performance is concomitant with the emergence of duplicate or frozen units, and a corresponding decrese in representational diversity. 
@@ -266,7 +392,7 @@ The experimental evidence confirms these intuitions (see Appendix~\ref{app:empir
     \includegraphics[width=0.23\linewidth]{paper/images/mlp_act__dead_fraction_plot.pdf}
     \includegraphics[width=0.23\linewidth]{paper/images/cnn_act__dead_fraction_plot.pdf}
     \includegraphics[width=0.23\linewidth]{paper/images/resnet_block_dead_fraction_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_plot.pdf}
+    \includegraphics[width=0.23\linewidth]{paper/images/vit_block_dup_fraction_plot.pdf}
         \vspace{-.3cm}
     \caption{Causes and symptoms of Loss of Plasticity emerging during continual learning. The plots illustrate (across different architectures like MLP, CNN, ResNet, and ViT from left to right) an increase in the fraction of dead or duplicate units during training, coincidental with a decrease in training accuracy. These are key indicators of LoP. (Details of experimental setup in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:emergence_lop_symptoms_cl}
@@ -293,89 +419,6 @@ Our inquiry so far highlights two key pathways to LoP common symptoms:
 Thus, the critical question now becomes: do these features, once emerged, lead to persistent LoP as defined by our framework (Definition~\ref{def:lop})? 
 
 
-\section{LoP Manifolds: Traps for Gradient Descent}
-\label{sec:existence_lop_manifold}
-In the previous section, we discussed how features characteristic of LoP, such as frozen units and duplicated representations, can emerge during training. Now, we formalize how these phenomena lead to the network's parameters being confined to LoP manifolds, restricting subsequent learning. We present a central proposition that jointly addresses LoP arising from frozen and duplicate units.
-\ff{it looks like the first time we actually use the definitions of manifold is here. maybe consider moving content of section 2 to this section}
-\AJ{do you mean the  move entire preliminary section to here or just the definitions. If we move definitions preliminary becomes one paragraph though. }
-\ff{yes, I was thinking to drop the preliminary and move all the definitions to their corresponding sections. The remaining paragraph about the model and loss may go into what's currently section 3}
-
-The intuition is that once units become unresponsive (frozen) or perfectly redundant (cloned), they tend to remain so under standard gradient-based optimization. This persistence is key to understanding LoP as a stable or semi-stable state.
-\begin{proposition}
-\label{prop:frozen_duplicate_lop}
-Let $\theta \in \Theta$ be the parameters of a neural network.
-\begin{enumerate}
-    \item \textbf{Frozen Units:} Let $\theta_F$ corresponds to the incoming weights and biases of units that are consistently saturated, i.e., their activation function's derivative is zero for all inputs encountered, where $F \subset [p]$ denotes those subset of parameters, then the gradient $\nabla_{\theta_F} \Loss(\theta)$ is zero. The parameter trajectory becomes confined to a manifold $\mathcal{M}_F = \{ \theta' \in \Theta \mid \theta'_F = \theta_{F0} \}$, where $\theta_{F0}$ are the values at which saturation occurred. This is an affine LoP manifold.
-
-    \item \textbf{Duplicate manifold:} Let us suppose we can partition the units of a network to a number of blocks, where within each block the units are perfectly cloned (i.e., they compute identical functions due to symmetric weight configurations and identical activation functions, and receive identical error signals), their  parameters of the model will be constrained such that their updates maintain this symmetry. The parameter trajectory becomes confined to an affine LoP manifold $\mathcal{M}_D$ where this symmetry is preserved (e.g., weights remain identical or maintain specific sum relations). The dimension of $\mathcal{M}_D$ is the number of connections between the partitions, which can be significantly lower than the raw parameter count.
-\end{enumerate}
-In both cases, the gradient $\nabla_\theta \Loss(\theta)$ is tangent to $\mathcal{M}_F$ or $\mathcal{M}_D$ respectively, satisfying Definition~\ref{def:lop}.
-% \GIU{Remove these parenthesis, mention the proof in the appendix.}
-Detailed conditions for duplicate cloning and its proof are given in  Appendix~\ref{app:empirical_evidence_appendix}. 
-\end{proposition}
-
-% \begin{remark}
-% The LoP manifolds described in Proposition~\ref{prop:frozen_duplicate_lop} are \emph{functional}, in that they do not depend on any particular data or label distribution.\GIU{To me it seems that only condition 2 (Duplicate Units) is functional, since for frozen units there might still be a part of the input space where they activate.} For frozen units, if saturation is persistent (e.g., ReLU with consistently negative pre-activation), the zero gradient condition holds for any data. For duplicate units, if the cloning conditions on weights are met, the symmetry of activations and gradients holds for any input data and label distribution. Thus, these are functional LoP, not data-dependent ones.
-% \end{remark}
-
-\begin{remark}
-The cloning LoP manifold naturally lends itself to gradient descent and stochastic gradient descent, regardless of the order which we process the samples, will remain strictly within the manifold. However, Stochastic Gradient Descent (SGD) with momentum or adaptive scaling such as Adam, or regularization techniques such as weight decay, all might violate the symmetry assumptions that were inherent to the proof of this theorem.
-\end{remark}
-
-To empirically test the stability of such manifolds and potential escape mechanisms, we conduct \emph{cloning experiments}, where a base model, namely an MLP, is first trained on a task, then, an larger model is constructed by expanding the base model (across width for MLP; channels for CNNs/ResNets; and feature dimension ViTs), with the weights of the cloned model initialized in such a way that its activations are copies of the base model, effectively creating blocks of units that have identical activations. At this point, we resume training both base and cloned model on the same task, and track their training trajectory via the loss curve, effective rank of representations, and cloning $R^2$ score. Figure~\ref{fig:cloning_perfect_appendix} shows results from such experiments on MLPs, investigating dynamics within and escapes from these LoP manifolds.
-
-Empirical validation of these claims, such as showing perfect cloning under specific initializations  or the persistence of dead units, can be found in Figure~\ref{fig:cloning_perfect_appendix} and Appendix~\ref{app:empirical_evidence_appendix}. One notable observation is that, despite the fact that Adam violates the symmetry conditions required for Proposition~\ref{prop:frozen_duplicate_lop}, the empirical evidence showed that it is often unable to escape the manifold nervertheless. This evidence suggests that a stronger theory might exist to explain this.
-
-
-\paragraph{Stability of LoP manifolds.}
-% \GIU{Added a paragraph here}
-While Proposition~\ref{prop:frozen_duplicate_lop} establishes the \emph{existence} of LoP manifolds under exact conditions (perfect saturation, perfect cloning), in practice, these conditions might only be approximately reached during training. This leads to the question of whether  near-LoP states will move back closer to the LoP manifold under gradient descent dynamics, or will they move away from it. To address this, we introduce the notion of the stability of an LoP manifold.
-
-\begin{definition}[Stability of LoP Manifold]
-\label{def:lop_stability_main}
-Let $\mathcal{M}$ be an LoP manifold and $N_\theta\mathcal{M}$ be the normal space to $\mathcal{M}$ at $\theta \in \mathcal{M}$. The stability of $\mathcal{M}$ is characterized by the Hessian $\nabla_\theta^2\Loss(\theta)$ in directions normal to $\mathcal{M}$:
-\begin{itemize}
-    \item \textbf{Stable LoP:} $\forall v\in N_\theta\mathcal{M}\setminus\{0\}: v^\top\nabla_\theta^2\Loss(\theta)v > 0$. (Perturbations revert to LoP)
-    \item \textbf{Unstable LoP:} $\forall v\in N_\theta\mathcal{M}\setminus\{0\}: v^\top\nabla_\theta^2\Loss(\theta)v < 0$. (Perturbations  escape LoP)
-    \item \textbf{Saddle LoP:} $\exists v_1,v_2\in N_\theta\mathcal{M}$ s.t. $v_1^\top\nabla_\theta^2\Loss v_1>0$ and $v_2^\top\nabla_\theta^2\Loss v_2<0$. (Escape is direction-dependent)
-\end{itemize}
-\end{definition}
-
-\begin{remark}
-Stability in the normal space to the manifold (convexity of the loss in these directions) does not imply that the loss is convex in general (i.e., also within the manifold or in other directions). These conditions are local characterizations of the loss landscape geometry around the manifold.
-\end{remark}
-
-To understand the practical implications of these stability types, consider injecting a small perturbation $\Delta\theta$ that pushes the parameters $\theta$ slightly off the manifold $\mathcal{M}$. If $\mathcal{M}$ is stable, the subsequent gradient steps $-\nabla \Loss(\theta+\Delta\theta)$ will tend to project back towards $\mathcal{M}$. If $\mathcal{M}$ is unstable, these steps will tend to move further away. For a saddle LoP manifold, escape depends on the direction of the initial perturbation relative to the eigenvectors of the Hessian in the normal space.
-
-Therefore, the strongest form of LoP corresponds to a \emph{stable} LoP manifold, as it actively resists escape. An unstable manifold is the easiest to escape. A saddle manifold presents a mixed scenario, where random perturbations may or may not escape depending on the perturbation vector being in a positively or negative space orientation. 
-
-
-\paragraph{Escaping the LoP manifolds with perturbations.}
-% \GIU{I added a paragraph here}
-While a full theoretical characterization of the stability of empirically observed LoP manifolds is beyond the scope of this work, our empirical investigations suggest that these manifolds are often unstable or saddle-like. This is evidenced by the fact that certain types of noise or symmetry-breaking operations can help models escape them. We highlight two common perturbations:
-(1) \emph{Noisy SGD} is a modification of SGD that adds Gaussian noise to the computed gradients before parameter updates. The magnitude of this injected noise is typically proportional to the norm of the gradient, with its initial relative strength, which will decay by some factor over successive steps. By applying this noise after cloning, we can see if the model can escape the LoP manifold, or instead it will revert back to the manifold. 
-% Adding noise to gradient updates (e.g., Gaussian noise $\mathcal{N}(0, \sigma^2 I)$) can push parameters off the manifold. If the manifold is unstable or saddle, subsequent noiseless steps might then lead away from it.
-(2) \emph{Dropout} introduces stochasticity in the forward and backward passes by randomly zeroing activations. For cloned units, this breaks the symmetry because different clones might be active in different dropout masks, leading to divergent gradient updates. This is supported by experiments where dropout helps a model escape an artificially induced cloning manifold (see Figure~\ref{fig:dropout_escapes_cloning_appendix}).
-    
-
-\begin{figure}[!ht]
-    \centering
-    \includegraphics[width=0.24\linewidth]{cloning_R2_plot.pdf }
-    \includegraphics[width=0.24\linewidth]{cloning_losses_plot.pdf}
-    \includegraphics[width=0.24\linewidth]{cloning_rank_plot.pdf}
-    \vspace{-.3cm}
-    \caption{Cloning MLPs experiments. The empirical data validates Proposition~\ref{prop:frozen_duplicate_lop} on duplicate manifold LoP. The cloned network dynamics remain confined in the base network manifold when using SGD, however using Noisy SGD or Dropout the dynamics can escape the manifold. 
-    \textbf{Left}: Cloning $R^2$ score quantifies the proportion of variance in individual unit activations within a cloned block that is explained by the mean activation of that block. An $R^2$ score of 1 indicates perfect cloning (units in a block are nearly identical), while a 0 score indicates no explained variance. See Section~\ref{subsec:core_methodologies} (Appendix~\ref{app:empirical_evidence_appendix}) for the precise formula and calculation details.
-    \textbf{Middle}: Training loss comparison. \emph{Cloned loss} refers to the loss of the cloned model during its training phase, while \emph{base loss}  refers to the loss of the original base model, which continues training for comparison.
-    \textbf{Right}: Effective rank evolution showing representational diversity.}
-    \label{fig:cloning_perfect_appendix}
-    \label{fig:dropout_escapes_cloning_appendix}
-\end{figure}
-
-% \ff{what is "cloning R2" in y-axis of the left plot?}
-% \ff{I can't find a clear definition of a "cloned model". what is a cloned loss? I think text is using duplicate/cloned interchangably, let's stick to one and then for these experiments clarify in the text or caption how many blocks the model has}
-
-Both noisy SGD and dropout act as symmetry-breaking operations. In the case of dropout, both forward and backward passes are asymmetric for cloned units. For noisy SGD, the backward pass (gradient update) becomes asymmetric. This asymmetry causes the parameters of notionally cloned units to slowly diverge. Remarkably, in our MLP experiments, even a small amount of gradient noise e.g., a single step with noise magnitude $0.01$ relative to gradient norms, suffices to initiate escape from an LoP manifold, though stronger noise generally leads to faster escape. In contrast, in some other settings such as Vision Transformers, while the model could escape from the manifold with a small perturbation, it did not move very far from it. More experimental studies into this direction would be vital to better understand the stability of these LoP manifolds.  
 
 
 \section{Mitigation and Recovery Strategies}
@@ -385,6 +428,7 @@ Having discussed the emergence of LoP symtoms and the existence of LoP manifolds
 
 
 
+\vspace{-5pt}
 \paragraph{Preventing LoP with Normalization.}
 As established in Section~\ref{sec:emergence_lop}, one primary cause for activations becoming frozen is their pre-activations drifting into saturated regions. It is therefore natural to expect that normalization layers like Batch Normalization (BN) or Layer Normalization (LN) can help prevent this. By standardizing pre-activation statistics, these layers can keep activations operating in their more dynamic, non-linear range. Even with learnable affine parameters ($\gamma, \beta$) after normalization, these parameters often act to maintain pre-activations within a ``healthy'' range, rather than pushing them into extreme values that cause saturation (e.g., consistently negative for ReLU).
 
@@ -399,27 +443,33 @@ This is widely supported by empirical evidence (see Appendix~\ref{app:empirical_
     \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__eff_rank_normalizations_plot.pdf}
     \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_eff_rank_normalizations_plot.pdf}
 \includegraphics[width=0.24\linewidth]{paper/images/vit_block_eff_rank_normalizations_plot.pdf}
-    
+
+    \vspace{-.3cm}
     \caption{Evolution of the Effective rank during training for architectures with and without normalization layers. Dotted lines represent normalization with affine parameters. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:norm-rank}
 \end{figure}
 
 
 
+\vspace{-5pt}
 \paragraph{Recovery from LoP via Perturbations.}
-What if LoP conditions, such as widespread frozen units or extensive feature cloning, have already set in? In such cases, mitigation strategies like normalization, which act proactively, may no longer be sufficient to reverse the state, as indicated by cloning experiments where normalization alone doesn't break perfect, established clones. However, similar to our discussion on manifold stability (Section~\ref{sec:existence_lop_manifold}), injecting noise into the training process can be a viable recovery strategy.
+What if LoP conditions, such as widespread frozen units or extensive feature cloning, have already set in? In such cases, mitigation strategies like normalization, which act proactively, may no longer be sufficient to reverse the state, as indicated by cloning experiments where normalization alone doesn't break perfect, established clones.\GIU{Do we have such experiments?} However, similar to our discussion on manifold stability (Section~\ref{sec:existence_lop_manifold}), injecting noise into the training process can be a viable recovery strategy.
 
 The principle is that if the LoP manifold is unstable or saddle-like, perturbations can allow the optimizer to find an escape route. Noisy SGD and the more sophisticated Continual Backpropagation \citep{dohare2024loss} are examples of such mechanisms. 
 % An interesting benchmark are the ``bit-flipping'' experiments, a regression task where the current sample is a stochastic function of the previous sample. The model size is controlled to be lower than the complexity of the data generating function.
 % In Section \ref{sec:mitigation_recovery}
 An illustrative benchmark for studying adaptability is the 'bit-flipping' experiment, an online regression task where the model receives an $m$-bit input vector $x$ and must predict an output $y$. The environment is non-stationary: a subset of $f$ input bits are designated 'flipping bits,' and at regular $T$-step intervals, one of these $f$ bits is randomly inverted. The remaining $m-f$ input bits are randomly sampled at each step. The target output $y$ is generated by a fixed (but unknown to the learning model) two-layer network, and a two-layer MLP is trained to learn this continuously drifting target function. The complexity of the learning model is typically designed to be less than that of the data-generating process, thereby creating a challenging scenario for maintaining plasticity. 
-Figures~\ref{fig:CBP-scale-rank} and \ref{fig:CBP-scale-dup} illustrate how aspects like rank and feature duplication are affected by the perturbed dynamics and the dimensionality of the model. For details see Section~\ref{subsec:experiment_paradigms}.  
+
+\GIU{Added this!}In order to demonstrate the recovery potential of noise injection, we design an experiment where the first half of 5M samples is processed by plain Stochastic Gradient Descent (SGD) and in the second half we switch the learning rule to Continual Backpropagation (CBP). 
+Figure~\ref{fig:CBP-scale-rank} clearly shows a reversal in trend when the switch happens: whereas SGD causes the representations' rank to drop and the online training loss to increase, CBP amplifies the features' rank and reduces the online training loss, effectively \emph{recovering plasticity.}
+Additionally \ref{fig:CBP-scale-dup} illustrates how aspects like rank and feature duplication are affected by the dimensionality of the model. The disparity between SGD and CBP is only increased by the model size, hinting that the model scale might aggravate the symptoms of LoP. For details see Section~\ref{subsec:experiment_paradigms}.  
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.33\linewidth]{paper/images/bf_Baseline_rankloss_plot.pdf}
-    \includegraphics[width=0.33\linewidth]{paper/images/bf_CBP_rankloss_plot.pdf}
+    \includegraphics[width=0.55\linewidth]{paper/images/bf_switching_rankloss_plot.pdf}
+    
         \vspace{-.3cm}
-    \caption{Bit Flipping experiment on 5M samples. Low rank structures emerge during training with standard Backpropagation (BP) while the rank remains stable with Continual Backpropagation (CBP), suggesting CBP helps maintain representational diversity. (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
+    \caption{Bit Flipping experiment on 5M samples, switching from SGD to CBP at 2.5M samples. Low rank structures emerge during training with standard Backpropagation (SGD), but after the switch Continual Backpropagation (CBP) is able to recover representational diversity, suggesting that CBP-like training could be effective for cloning too.
+    (Experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:CBP-scale-rank}
 \end{figure}
 \begin{figure}[!ht]
@@ -428,12 +478,12 @@ Figures~\ref{fig:CBP-scale-rank} and \ref{fig:CBP-scale-dup} illustrate how aspe
     \includegraphics[width=0.23\linewidth]{paper/images/bf_Duplicate Fraction_CBP_barplot.pdf}
     \includegraphics[width=0.23\linewidth]{paper/images/bf_Loss_CBP_barplot.pdf}
     \vspace{-.3cm}
-    \caption{Bit Flipping experiment on 5M samples. Duplicated structures (indicated by fraction of duplicate features at different layers/scales) emerge during training with standard Backpropagation (BP) but are less prevalent with Continual Backpropagation (CBP). As the model width is increased more duplicate features emerge. The size of the data generating function is $100$. (Other experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
+    \caption{Bit Flipping experiment on 5M samples, switching from SGD to CBP at 2.5M samples. For each of the two phases, we show the average over the last 100K steps. Duplicated structures (indicated by fraction of duplicate features at different layers/scales) emerge during training with standard Backpropagation (BP) but Continual Backpropagation (CBP) is able to decouple the cloned units. As the model width is increased more duplicate features emerge. The size of the data generating function is $100$. (Other experimental details in Appendix~\ref{app:empirical_evidence_appendix}).}
     \label{fig:CBP-scale-dup}
 \end{figure}
 % \ff{details of bit flipping experiment are not defined in the main body}
 
-An interesting distinction arises when comparing artificially induced LoP (like explicit cloning) with naturally emerging LoP symtoms in challenging scenarios like continual learning. In controlled cloning setups (e.g., as conceptualized in Figure~\ref{fig:dropout_escapes_cloning_appendix}, dropout can be effective in breaking the artificially imposed symmetry and allowing units to diverge. In contrast, in our continual Bit Flipping experiments, the role of dropout can be mixed or even detrimental. While it might prevent some forms of LoP, it can also hinder the consolidation of new knowledge or exacerbate forgetting if it too aggressively discards learned information relevant to the new task. This suggests that the optimal strategy for maintaining or recovering plasticity might be context-dependent.
+An interesting distinction arises when comparing artificially induced LoP (like explicit cloning) with naturally emerging LoP symptoms in challenging scenarios like continual learning. In controlled cloning setups (e.g., as conceptualized in Figure~\ref{fig:dropout_escapes_cloning_appendix}, dropout can be effective in breaking the artificially imposed symmetry and allowing units to diverge. In contrast, in our continual Bit Flipping experiments, the role of dropout can be mixed or even detrimental. While it might prevent some forms of LoP, it can also hinder the consolidation of new knowledge or exacerbate forgetting if it too aggressively discards learned information relevant to the new task. This suggests that the optimal strategy for maintaining or recovering plasticity might be context-dependent.
 
 
 \section{Conclusion}
@@ -725,6 +775,15 @@ Figure~\ref{fig:validation_modulation_2d_comprehensive} provides a comprehensive
 
 \begin{figure}[ht!]
     \centering
+\includegraphics[width=0.7\linewidth]{POC/figures/theory_tanh_az_rank.pdf} % Assuming image is in figures/
+    \vspace{-.3cm}
+    \caption{Effect of input shifting on post-activation effective rank for $h_a = \tanh(a x)$, with rank-deficient $z$ ($20$ dimensional with rank $5$). \emph{Left:} Normalized eigenvalue spectra of $\mathrm{Cov}(h)$ vs. scale $a.$ \emph{Right:} Effective rank of $\mathrm{Cov}(h)$ vs. scale $a$. }
+    \label{fig:theory_tanh_az_rank}
+\end{figure}
+
+
+\begin{figure}[ht!]
+    \centering
     \includegraphics[width=\linewidth]{validation_modulation_2d_comprehensive.pdf}
     \caption{Comprehensive 2D analysis of modulation effects on activation functions. Each row shows a different activation function (ReLU, SELU, Tanh, Sigmoid) with their modulation scheme. \textbf{Column 1:} Heatmaps of frozen fraction as a function of scale $a$ and shift $b$. Red regions indicate parameter combinations leading to frozen/dead units. \textbf{Column 2:} Heatmaps of rank recovery strength $\alpha_f$ (capped at 10 for visualization). \textbf{Column 3:} Activation function shapes showing both $f(x)$ (blue) and $f'(x)$ (red dashed). \textbf{Column 4:} Trade-off analysis showing the correlation between $\alpha_f$ and frozen fraction, with colors indicating $\log_{10}(a)$. The analysis reveals that half-vanishing activations (ReLU, SELU) and plateauing activations (Tanh, Sigmoid) exhibit different pathways to frozen states, but all show the fundamental tension between rank recovery and maintaining gradient flow discussed in Section~\ref{sec:emergence_lop}.}
     \label{fig:validation_modulation_2d_comprehensive}
@@ -944,15 +1003,15 @@ This subsection includes placeholder figures for concepts discussed in the main 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.2\linewidth]{paper/images/act__dead_fraction_normalizations_barplot.pdf}
-    \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__dead_fraction_normalizations_barplot.pdf}
-    \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_dead_fraction_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/mlp_act__saturated_frac_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__saturated_frac_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_saturated_frac_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/vit_block_saturated_frac_normalizations_barplot.pdf} \\
-    \includegraphics[width=0.2\linewidth]{paper/images/act__dup_fraction_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/mlp_act__dup_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__dup_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_dup_fraction_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/vit_block_dup_fraction_normalizations_barplot.pdf} \\
-    \includegraphics[width=0.2\linewidth]{paper/images/act__train_acc_p_normalizations_barplot.pdf}
+    \includegraphics[width=0.2\linewidth]{paper/images/mlp_act__train_acc_p_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/cnn_act__train_acc_p_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/resnet_block_train_acc_p_normalizations_barplot.pdf}
     \includegraphics[width=0.2\linewidth]{paper/images/vit_block_train_acc_p_normalizations_barplot.pdf}
@@ -972,19 +1031,20 @@ This subsection includes placeholder figures for concepts discussed in the main 
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dup_fraction_layerwise.pdf}\includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dup_fraction_layerwise.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_dup_fraction_layerwise.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_layerwise.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dup_fraction_all_layers.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dup_fraction_all_layers.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_dup_fraction_all_layers.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_dup_fraction_all_layers.pdf}
     \caption{Emergence of duplicate units layer-wise during training without normalization and no dropout. This figure shows the increasing fraction of duplicate units as training progresses, a symptom of LoP. }
     \label{fig:dupfrac-LoP-layerwise}
 \end{figure}
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dead_fraction_layerwise.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dead_fraction_layerwise.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_dead_fraction_layerwise.pdf}
-    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_saturated_frac_layerwise.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/mlp_act__dead_fraction_all_layers.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/cnn_act__dead_fraction_all_layers.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/resnet_block_dead_fraction_all_layers.pdf}
+    \includegraphics[width=0.24\linewidth]{paper/images/vit_block_saturated_frac_all_layers.pdf}
     \caption{Emergence of dead or saturated units layer-wise during training without normalization and no dropout. This figure shows the increasing fraction of dead units as training progresses, a symptom of LoP.}
     \label{fig:dupfrac-LoP}
 \end{figure}
@@ -1000,7 +1060,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \includegraphics[width=0.3\linewidth]{paper/images/cnn_cloning_rank_plot.pdf}
     
     \includegraphics[width=0.3\linewidth]{paper/images/resnet_cloning_r2_plot.pdf}
-    \includegraphics[width=0.3\linewidth]{paper/images/resnet_cloning_losses_plot.pdf}
+    \includegraphics[width=0.33\linewidth]{paper/images/resnet_cloning_losses_plot.pdf}
     \includegraphics[width=0.3\linewidth]{paper/images/resnet_cloning_rank_plot.pdf}
 
     
@@ -1061,6 +1121,7 @@ This subsection includes placeholder figures for concepts discussed in the main 
     \label{fig:cloning-dropout}
 \end{figure}
 
+\newpage
 
 \begin{figure}
     \centering
