@@ -1,5 +1,5 @@
 # @package _global_.metrics
-metrics_frequency: 5
+metrics_frequency: 1
 dead_threshold: 0.95
 corr_threshold: 0.95
 saturation_threshold: 1e-4
