@@ -434,11 +434,13 @@ def create_task_dataloaders(
         Dictionary mapping task IDs to data loaders
     """
     task_dataloaders = {}
+
+    multiprocessing_context = 'spawn' if os.name == 'nt' else 'fork'
     
     for task_id, (train_subset, val_subset) in enumerate(zip(partitioned_train_datasets, partitioned_val_datasets)):
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers, multiprocessing_context='fork')
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, multiprocessing_context='fork')
-        
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers, multiprocessing_context=multiprocessing_context)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, multiprocessing_context=multiprocessing_context)
+
         # Fixed batches for metrics
         fixed_batch_size = 500
         fixed_train = Subset(train_subset, range(min(fixed_batch_size, len(train_subset))))
