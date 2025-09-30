@@ -5,7 +5,7 @@ corr_threshold: 0.95
 saturation_threshold: 1e-4
 saturation_percentage: 0.99
 gaussianity_method: "shapiro"  # Options: "shapiro", "ks", "anderson", "kurtosis"
-log_activation_histograms: true
+log_activation_histograms: false
 # List of string patterns to filter which layers to monitor
 # If empty, all layers will be monitored
 # For cloning experiments, we need to monitor hidden layers
