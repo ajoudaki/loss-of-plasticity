@@ -48,6 +48,18 @@ def measure_dead_neurons(layer_act, dead_threshold=0.95):
     dead_fraction = dead_mask.float().mean().item()
     return dead_fraction
 
+def measure_mean_abs_off_diag_correlation(layer_act, epsilon=1e-12):
+    """Measure mean absolute off-diagonal correlation coefficient."""
+    flattened_act = flatten_activations(layer_act)  # (B, D)
+    D = flattened_act.shape[1]
+    flattened_act = flattened_act - flattened_act.mean(dim=0, keepdim=True)
+    corr_matrix = torch.matmul(flattened_act.t(), flattened_act)  # (D, D)
+    corr_diag = torch.diag(corr_matrix).sqrt() + epsilon
+    corr_matrix = corr_matrix / corr_diag / corr_diag.unsqueeze(1)
+    mean_abs_off_diag_correlation = corr_matrix.abs().sum().item() - D
+    mean_abs_off_diag_correlation /= (D * (D - 1))
+    return mean_abs_off_diag_correlation
+
 def measure_duplicate_neurons(layer_act, corr_threshold):
     """Measure fraction of neurons that are duplicates of others."""
     flattened_act = flatten_activations(layer_act)
@@ -420,12 +432,13 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         
         # Compute all metrics for this layer
         metrics[layer_name] = {
-            'dead_fraction': measure_dead_neurons(act, dead_threshold),
-            'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
-            'eff_rank': measure_effective_rank(act, seed=seed),
-            'stable_rank': measure_stable_rank(act, seed=seed),
-            'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
-            'non_gaussianity': measure_gaussianity(act, seed=seed, method=gaussianity_method),
+            # 'dead_fraction': measure_dead_neurons(act, dead_threshold),
+            # 'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
+            # 'eff_rank': measure_effective_rank(act, seed=seed),
+            # 'stable_rank': measure_stable_rank(act, seed=seed),
+            # 'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
+            # 'non_gaussianity': measure_gaussianity(act, seed=seed, method=gaussianity_method),
+            'mean_abs_off_diag_correlation': measure_mean_abs_off_diag_correlation(act)
         }
         
         # Add metrics to the metrics_log for wandb if enabled
