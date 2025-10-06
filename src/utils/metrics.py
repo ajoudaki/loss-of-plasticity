@@ -1,4 +1,6 @@
 import torch
+from torch import autograd
+from torch.nn.utils import parameters_to_vector
 import numpy as np
 from scipy import stats
 import re
@@ -338,6 +340,91 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
     return mean_non_gaussianity
 
 
+
+@torch.no_grad()
+def _flatten_params(params):
+    return torch.cat([p.detach().reshape(-1) for p in params if p.requires_grad])
+
+def _hvp_from_grads(flat_grads, params, v):
+    """
+    Compute (H @ v) where H = d/dθ [∇_θ L], using precomputed ∇_θ L.
+    flat_grads must come from autograd.grad(loss, params, create_graph=True).
+    """
+    # g^T v
+    gv = (flat_grads * v).sum()
+    # ∇_θ (g^T v) = H v
+    hv = autograd.grad(gv, params, retain_graph=True)
+    return parameters_to_vector(hv)
+
+def get_top_hessian_eig(loss, params, n_iters=50, tol=1e-6, device=None):
+    """
+    Power iteration to estimate the eigenvalue of H with largest |λ|.
+    loss: scalar tensor (do not call backward() on this loss; we need its graph).
+    params: iterable of parameters to differentiate w.r.t.
+    """
+    grads = autograd.grad(loss, params, create_graph=True)
+    flat_grads = parameters_to_vector(grads)
+    n = flat_grads.numel()
+    device = device or flat_grads.device
+
+    # Random unit vector
+    v = torch.randn(n, device=device)
+    v = v / (v.norm() + 1e-12)
+
+    lam_prev = None
+    for _ in range(n_iters):
+        hv = _hvp_from_grads(flat_grads, params, v)
+        # Rayleigh quotient
+        lam = (v * hv).sum()
+        # Normalize for next step
+        hv_norm = hv.norm() + 1e-12
+        v = hv / hv_norm
+        # convergence check
+        if lam_prev is not None and (lam - lam_prev).abs() <= tol * (lam_prev.abs() + 1e-12):
+            break
+        lam_prev = lam
+    return lam.item(), v  # eigenvalue estimate and associated eigenvector
+
+
+def dense_hessian(loss, params_subset):
+    """
+    Build a dense Hessian w.r.t. params_subset by repeated HVPs.
+    Suitable when params_subset has a few thousand parameters at most.
+    """
+    grads = autograd.grad(loss, params_subset, create_graph=True)
+    g = parameters_to_vector(grads)
+    n = g.numel()
+    H = torch.zeros(n, n, device=g.device, dtype=g.dtype)
+    # standard basis e_i
+    for i in range(n):
+        v = torch.zeros(n, device=g.device, dtype=g.dtype)
+        v[i] = 1.0
+        H[:, i] = _hvp_from_grads(g, params_subset, v)
+    # Symmetrize to remove tiny numerical asymmetry
+    H = 0.5 * (H + H.t())
+    return H
+
+
+def get_last_layer_hessian_eigenvalues(loss, model):
+    """
+    Compute the Hessian eigenvalues for the last layer of the model.
+
+    Args:
+        loss: Scalar loss tensor (do not call backward() on this loss; we need its graph)
+        model: Neural network model (assumed to be a torch.nn.Sequential or similar)
+
+    Returns:
+        Top eigenvalue of the Hessian w.r.t. the last layer's parameters
+    """
+    last_layer = model.layers['out']
+    params = list(last_layer.parameters())
+    if len(params) == 0:
+        return None  # No parameters in the last layer
+    H = dense_hessian(loss, params)
+    eigenvalues = torch.linalg.eigvalsh(H).cpu().numpy()
+    return eigenvalues
+
+
 def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
                       dead_threshold, 
                       corr_threshold, 
@@ -438,7 +525,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             # 'stable_rank': measure_stable_rank(act, seed=seed),
             # 'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
             # 'non_gaussianity': measure_gaussianity(act, seed=seed, method=gaussianity_method),
-            'mean_abs_off_diag_correlation': measure_mean_abs_off_diag_correlation(act)
+            'mean_abs_off_diag_correlation': measure_mean_abs_off_diag_correlation(act),
         }
         
         # Add metrics to the metrics_log for wandb if enabled
@@ -471,6 +558,24 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
     if not hooks_were_active:
         monitor.remove_hooks()
     
+
+    # Hessian eigenvalues
+    was_training = model.training
+    model.eval()
+    model.zero_grad(set_to_none=True)
+    outputs = model(fixed_batch)
+    loss = criterion(outputs, fixed_targets)
+    hess_top_eig, _ = get_top_hessian_eig(loss, [p for p in model.parameters() if p.requires_grad])
+    if was_training: model.train()
+    last_layer_eigs = get_last_layer_hessian_eigenvalues(loss, model)
+    if use_wandb:
+        metrics_log[f"{prefix}hessian/top_eigenvalue"] = hess_top_eig
+        try:
+            import wandb
+            metrics_log[f"{prefix}hessian/last_layer_eigenvalues_hist"] = wandb.Histogram(last_layer_eigs)
+        except (ImportError, Exception) as e:
+            print(f"Warning: Could not create wandb histograms for last layer eigenvalues: {e}")
+
     return metrics, activation_stats, metrics_log
 
 def create_module_filter(filters, model_name, cfg: DictConfig=None):
