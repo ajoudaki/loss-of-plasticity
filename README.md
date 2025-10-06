@@ -2,6 +2,8 @@
 
 This project investigates dynamic scaling properties of neural networks during training, with a particular focus on continual learning scenarios. It provides a framework for analyzing how neural networks adapt to new information and maintain previously learned knowledge.
 
+
+
 ## Project Structure
 
 ```
