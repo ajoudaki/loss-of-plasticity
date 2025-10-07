@@ -35,3 +35,6 @@ build/
 notebooks/results_plasticity
 # ignore claude generated files 
 **/CLAUDE.md 
+
+# cache
+src/utils/cache

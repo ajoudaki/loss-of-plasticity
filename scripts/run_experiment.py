@@ -59,6 +59,8 @@ def run_experiment(cfg: DictConfig) -> Optional[Dict[str, Any]]:
     # Create model and move it to the device
     model = create_model(cfg).to(device)
     print(f"Created {cfg.model.name.upper()} model")
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"{total_params} parameters")
     
     
     # Check for dryrun
