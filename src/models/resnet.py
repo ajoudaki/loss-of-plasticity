@@ -79,7 +79,8 @@ class ResNet(nn.Module):
                  dropout_p=0.0,
                  normalization='batch',
                  norm_after_activation=False,
-                 normalization_affine=True):
+                 normalization_affine=True,
+                 **kwargs):
         super(ResNet, self).__init__()
         
         if normalization in ['batch', 'layer']:

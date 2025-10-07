@@ -4,7 +4,9 @@ Dataset management utilities for neural network training and continual learning 
 import os
 import random
 import time
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Literal
+import pickle
+
 
 import torch
 import torchvision
@@ -320,7 +322,7 @@ def get_dataset(dataset_name, transform_train=None, transform_test=None, downloa
     return train_dataset, test_dataset, num_classes
 
 
-def create_class_partitions(dataset, partition_sizes):
+def create_class_partitions(dataset, partition_sizes, dataset_name, mode=Literal['train', 'val']):
     """
     Create partitions of the dataset based on class labels.
     Uses an optimized algorithm that processes the dataset only once,
@@ -335,21 +337,31 @@ def create_class_partitions(dataset, partition_sizes):
     Returns:
         List of dataset subsets, one for each partition
     """
-    # Initialize empty lists for each class
-    class_to_indices = {}
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f'class_to_indices_{dataset_name}_{mode}.pkl')
     
-    # Group indices by class with a single pass through the dataset
-    print("Creating partitions (this may take a moment for large datasets)...")
+    # Check if the cache file exists
+    if os.path.exists(cache_file):
+        print(f"Loading cached class_to_indices.")
+        with open(cache_file, 'rb') as f:
+            class_to_indices = pickle.load(f)
+    else:
+        class_to_indices = {}
+        print("Creating partitions (this may take a moment for large datasets)...")
+        start_time = time.time()
+        
+        for i, (_, label) in enumerate(dataset):
+            label_int = int(label)
+            if label_int not in class_to_indices:
+                class_to_indices[label_int] = []
+            class_to_indices[label_int].append(i)
+
+        with open(cache_file, 'wb') as f:
+            pickle.dump(class_to_indices, f)
+        print(f"Cached class_to_indices in {time.time() - start_time:.2f} seconds")
+    
     start_time = time.time()
-    
-    # Process dataset in batches for large datasets
-    for i, (_, label) in enumerate(dataset):
-        label_int = int(label)
-        if label_int not in class_to_indices:
-            class_to_indices[label_int] = []
-        class_to_indices[label_int].append(i)
-    
-    # Create partitions using the collected indices
     partitions = []
     for class_list in partition_sizes:
         partition_indices = []
@@ -361,8 +373,6 @@ def create_class_partitions(dataset, partition_sizes):
     print(f"Partitioning completed in {time.time() - start_time:.2f} seconds")
     return partitions
 
-
-# Dataset Manager Functions from dataset_manager.py
 
 def generate_class_sequence(cfg: DictConfig, num_classes: int) -> List[List[int]]:
     """
@@ -516,10 +526,10 @@ def prepare_continual_learning_dataloaders(cfg: DictConfig) -> Tuple[Dict[int, D
     
     # Create partition datasets
     partitioned_train_datasets = create_class_partitions(
-        train_dataset, [tuple(cls_list) for cls_list in class_sequence])
+        train_dataset, [tuple(cls_list) for cls_list in class_sequence], cfg.dataset.name, 'train')
     
     partitioned_val_datasets = create_class_partitions(
-        val_dataset, [tuple(cls_list) for cls_list in class_sequence])
+        val_dataset, [tuple(cls_list) for cls_list in class_sequence], cfg.dataset.name, 'val')
     
     # Create dataloader dict
     task_dataloaders = create_task_dataloaders(

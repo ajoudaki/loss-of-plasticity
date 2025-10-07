@@ -114,7 +114,6 @@ def train_continual_learning(model,
             model.load_state_dict(new_model.state_dict())
             del new_model
             print("Reinitialized all model weights for new task")
-            # When we reset the model, we should also reset the optimizer
             optimizer = create_optimizer(model, cfg)
 
         # Reinitialize optimizer state if configured (and we haven't already reset it)

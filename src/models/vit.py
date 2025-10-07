@@ -128,7 +128,8 @@ class VisionTransformer(nn.Module):
                  attn_drop_rate=0.0,
                  activation='gelu',
                  normalization='layer',
-                 normalization_affine=True):
+                 normalization_affine=True,
+                 **kwargs):
         super().__init__()
         self.layers = nn.ModuleDict()
         

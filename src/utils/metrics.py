@@ -15,25 +15,7 @@ def flatten_activations(layer_act):
         return layer_act.view(-1, shape[1])
 
 def compute_activation_statistics(layer_act):
-    """
-    Compute mean and standard deviation of activations for each unit.
-    
-    This function calculates the mean and standard deviation of activations for each
-    neuron in a layer. These statistics provide insights into the activation distribution
-    and can be used to detect neurons with unusual behavior.
-    
-    Args:
-        layer_act: Layer activations of shape [batch_size, n_units]
-        
-    Returns:
-        means: Mean activation of each unit
-        stds: Standard deviation of each unit's activation
-    
-    Example:
-        >>> means, stds = compute_activation_statistics(layer_activations)
-        >>> print(f"Mean range: {means.min().item():.4f} to {means.max().item():.4f}")
-        >>> print(f"Std range: {stds.min().item():.4f} to {stds.max().item():.4f}")
-    """
+    """Compute mean and standard deviation of activations for each unit."""
     flattened_act = flatten_activations(layer_act)
     means = flattened_act.mean(dim=0)
     stds = flattened_act.std(dim=0)
@@ -434,9 +416,9 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         metrics[layer_name] = {
             # 'dead_fraction': measure_dead_neurons(act, dead_threshold),
             # 'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
-            # 'eff_rank': measure_effective_rank(act, seed=seed),
-            # 'stable_rank': measure_stable_rank(act, seed=seed),
-            # 'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
+            'eff_rank': measure_effective_rank(act, seed=seed),
+            'stable_rank': measure_stable_rank(act, seed=seed),
+            'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
             # 'non_gaussianity': measure_gaussianity(act, seed=seed, method=gaussianity_method),
             'mean_abs_off_diag_correlation': measure_mean_abs_off_diag_correlation(act)
         }
@@ -460,11 +442,11 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                     metrics_log[f"{prefix}{layer_name}/act_means_hist"] = wandb.Histogram(means_np)
                     metrics_log[f"{prefix}{layer_name}/act_stds_hist"] = wandb.Histogram(stds_np)
                     
-                    # Also log summary statistics about the means and stds
-                    metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
-                    metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
-                    metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
-                    metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+                    # # Also log summary statistics about the means and stds
+                    # metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
+                    # metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
+                    # metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
+                    # metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
                 except (ImportError, Exception) as e:
                     print(f"Warning: Could not create wandb histograms: {e}")
     
@@ -511,8 +493,8 @@ def create_module_filter(filters, model_name, cfg: DictConfig=None):
                 return False
             return vit_filter
         
-        elif model_name.lower() == 'mlp':
-            # For MLP: monitor all layers
+        elif model_name.lower() == 'mlp' or model_name.lower() == 'gated_mlp':
+            # For MLP and Gated MLP: monitor all layers
             def mlp_filter(name):
                 return True
             return mlp_filter

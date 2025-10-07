@@ -22,7 +22,8 @@ class CNN(nn.Module):
                  pool_size=2,
                  normalization='batch',
                  norm_after_activation=False,
-                 normalization_affine=True):
+                 normalization_affine=True,
+                 **kwargs):
         """CNN with configurable layers, activations, and normalizations."""
         super(CNN, self).__init__()
         

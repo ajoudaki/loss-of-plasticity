@@ -1,0 +1,16 @@
+# @package _global_.model
+name: gated_mlp
+_target_: src.models.MLP
+
+# MLP parameters
+hidden_sizes: [128, 128]
+activation: none
+dropout_p: 0.2
+normalization: batch
+norm_after_activation: false
+bias: true
+normalization_affine: true
+use_gated_ffn: true
+gated_ffn_activation: swish
+
+# Default configuration uses empty filters (all layers monitored)
