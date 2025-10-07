@@ -340,11 +340,6 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
     return mean_non_gaussianity
 
 
-
-@torch.no_grad()
-def _flatten_params(params):
-    return torch.cat([p.detach().reshape(-1) for p in params if p.requires_grad])
-
 def _hvp_from_grads(flat_grads, params, v):
     """
     Compute (H @ v) where H = d/dθ [∇_θ L], using precomputed ∇_θ L.
@@ -417,7 +412,7 @@ def get_last_layer_hessian_eigenvalues(loss, model):
         Top eigenvalue of the Hessian w.r.t. the last layer's parameters
     """
     last_layer = model.layers['out']
-    params = list(last_layer.parameters())
+    params = torch.cat([p.flatten() for p in last_layer.parameters() if p.requires_grad])
     if len(params) == 0:
         return None  # No parameters in the last layer
     H = dense_hessian(loss, params)
@@ -565,7 +560,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
     model.zero_grad(set_to_none=True)
     outputs = model(fixed_batch)
     loss = criterion(outputs, fixed_targets)
-    hess_top_eig, _ = get_top_hessian_eig(loss, [p for p in model.parameters() if p.requires_grad])
+    params = torch.cat([p.flatten() for p in model.parameters() if p.requires_grad])
+    hess_top_eig, _ = get_top_hessian_eig(loss, params)
     if was_training: model.train()
     last_layer_eigs = get_last_layer_hessian_eigenvalues(loss, model)
     if use_wandb:
