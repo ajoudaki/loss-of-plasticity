@@ -30,39 +30,36 @@ class MLP(nn.Module):
         self.gated_ffn_activation = gated_ffn_activation
 
         self.layers = nn.ModuleDict()
-        in_features = input_size
-
-        for i, hidden_size in enumerate(hidden_sizes):
+        self.layers["linear_0"] = nn.Linear(input_size, hidden_sizes[0], bias=bias)
+        for i in range(1, len(hidden_sizes)):
             if use_gated_ffn:
                 self.layers[f"gated_ffn_block_{i}"] = GatedFFNBlock(
-                    in_features,
-                    hidden_size,
-                    hidden_size,
+                    hidden_sizes[i - 1],
+                    hidden_sizes[i],
+                    hidden_sizes[i],
                     activation=gated_ffn_activation,
                     bias=bias,
                 )
             else:
-                self.layers[f"linear_{i}"] = nn.Linear(in_features, hidden_size, bias=bias)
+                self.layers[f"linear_{i}"] = nn.Linear(hidden_sizes[i - 1], hidden_sizes[i], bias=bias)
 
             if norm_after_activation:
                 self.layers[f"act_{i}"] = get_activation(activation)
                 if normalization:
                     self.layers[f"norm_{i}"] = get_normalization(
-                        normalization, hidden_size, affine=normalization_affine
+                        normalization, hidden_sizes[i], affine=normalization_affine
                     )
             else:
                 if normalization:
                     self.layers[f"norm_{i}"] = get_normalization(
-                        normalization, hidden_size, affine=normalization_affine
+                        normalization, hidden_sizes[i], affine=normalization_affine
                     )
                 self.layers[f"act_{i}"] = get_activation(activation)
 
             if dropout_p > 0:
                 self.layers[f"drop_{i}"] = nn.Dropout(dropout_p)
 
-            in_features = hidden_size
-
-        self.layers["out"] = nn.Linear(in_features, output_size, bias=bias)
+        self.layers["out"] = nn.Linear(hidden_sizes[-1], output_size, bias=bias)
 
     def forward(self, x):
         if x.dim() > 2:

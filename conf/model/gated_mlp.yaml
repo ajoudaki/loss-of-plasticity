@@ -3,7 +3,7 @@ name: gated_mlp
 _target_: src.models.MLP
 
 # MLP parameters
-hidden_sizes: [128, 128]
+hidden_sizes: [128, 128, 128]
 activation: none
 dropout_p: 0.2
 normalization: batch
