@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 import re
 from omegaconf import DictConfig
+from typing import Optional, List
 
 def flatten_activations(layer_act):
     """Reshape layer activations to 2D matrix (samples × features)."""
@@ -331,6 +332,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                       prefix="",
                       metrics_log=None,
                       device='cpu',
+                      selected_metrics: Optional[List[str]] = None,
                       seed=None):
     """
     Analyze model behavior on a fixed batch to compute comprehensive metrics.
@@ -359,6 +361,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         prefix: Prefix for metrics (e.g., "train/" or "val/") for organizing in dashboards
         metrics_log: Dictionary to add metrics to (if None, a new one is created)
         device: Device to run computations on ('cpu', 'cuda', 'mps')
+        selected_metrics: If None → compute all allowed metrics. Else compute only
+            the metrics listed here.
         seed: Optional random seed for sampling operations (for reproducibility)
         
     Returns:
@@ -411,17 +415,27 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             'means': means.detach().cpu(),
             'stds': stds.detach().cpu()
         }
-        
-        # Compute all metrics for this layer
-        metrics[layer_name] = {
-            # 'dead_fraction': measure_dead_neurons(act, dead_threshold),
-            # 'dup_fraction': measure_duplicate_neurons(act, corr_threshold),
-            'eff_rank': measure_effective_rank(act, seed=seed),
-            'stable_rank': measure_stable_rank(act, seed=seed),
-            'saturated_frac': measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
-            # 'non_gaussianity': measure_gaussianity(act, seed=seed, method=gaussianity_method),
-            'mean_abs_off_diag_correlation': measure_mean_abs_off_diag_correlation(act)
+
+        # Build the per-layer metrics mapping (lazily evaluated)
+        all_metric_fns = {
+            "dead_fraction": lambda: measure_dead_neurons(act, dead_threshold),
+            "dup_fraction": lambda: measure_duplicate_neurons(act, corr_threshold),
+            "eff_rank": lambda: measure_effective_rank(act, seed=seed),
+            "stable_rank": lambda: measure_stable_rank(act, seed=seed),
+            "saturated_frac": lambda: measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
+            "non_gaussianity": lambda: measure_gaussianity(act, seed=seed, method=gaussianity_method),
+            "mean_abs_off_diag_correlation": lambda: measure_mean_abs_off_diag_correlation(act),
         }
+
+        # Decide which metrics to run
+        wanted = all_metric_fns.keys() if selected_metrics is None else selected_metrics
+        # Validate keys
+        unknown = sorted(set(wanted) - set(all_metric_fns.keys()))
+        if unknown:
+            raise ValueError(
+            f"Unknown metrics requested: {unknown}. Allowed: {list(all_metric_fns.keys())}"
+            )
+        metrics[layer_name] = {k: all_metric_fns[k]() for k in wanted}
         
         # Add metrics to the metrics_log for wandb if enabled
         if use_wandb:
@@ -442,11 +456,11 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                     metrics_log[f"{prefix}{layer_name}/act_means_hist"] = wandb.Histogram(means_np)
                     metrics_log[f"{prefix}{layer_name}/act_stds_hist"] = wandb.Histogram(stds_np)
                     
-                    # # Also log summary statistics about the means and stds
-                    # metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
-                    # metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
-                    # metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
-                    # metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+                    # Also log summary statistics about the means and stds
+                    metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
+                    metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
                 except (ImportError, Exception) as e:
                     print(f"Warning: Could not create wandb histograms: {e}")
     

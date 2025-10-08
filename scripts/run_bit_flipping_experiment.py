@@ -305,6 +305,7 @@ def run_slowly_changing_regression_experiment_with_tracking(cfg: DictConfig) -> 
             prefix="train/", 
             metrics_log=metrics_log_dict, # Pass the existing log dict to be updated
             device=device,
+            selected_metrics=cfg.metrics.selected_metrics,
             seed=cfg.training.seed
         )
         return detailed_metrics_output, activations_output, updated_metrics_log_dict

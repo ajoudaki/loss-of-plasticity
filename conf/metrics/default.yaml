@@ -1,11 +1,19 @@
 # @package _global_.metrics
 metrics_frequency: 1
-dead_threshold: 0.95
-corr_threshold: 0.95
-saturation_threshold: 1e-4
-saturation_percentage: 0.99
+
+# Which metrics to compute (in list). If null → compute all available.
+# Options: dead_fraction, dup_fraction, eff_rank, stable_rank, saturated_frac, non_gaussianity, mean_abs_off_diag_correlation
+selected_metrics: [mean_abs_off_diag_correlation]
+
+# Parameters for the metrics
+dead_threshold: 0.95  # dead_fraction
+corr_threshold: 0.95  # dup_fraction
+saturation_threshold: 1e-4  # saturated_frac
+saturation_percentage: 0.99   # saturated_frac
 gaussianity_method: "shapiro"  # Options: "shapiro", "ks", "anderson", "kurtosis"
-log_activation_histograms: true
+
+log_activation_histograms: True
+
 # List of string patterns to filter which layers to monitor
 # If empty, all layers will be monitored
 # For cloning experiments, we need to monitor hidden layers

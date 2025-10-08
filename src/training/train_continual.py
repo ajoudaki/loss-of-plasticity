@@ -77,6 +77,7 @@ def train_continual_learning(model,
                                   log_histograms=log_activation_histograms,
                                   prefix=prefix,
                                   metrics_log=metrics_log,
+                                  selected_metrics=cfg.metrics.selected_metrics,
                                   seed=cfg.training.seed)
                                 
     def analyze_train_callback(metrics_log=None):

@@ -179,6 +179,7 @@ def train_cloning_experiment(base_model,
             log_histograms=cfg.metrics.log_activation_histograms,
             prefix=prefix,
             metrics_log=metrics_log,
+            selected_metrics=cfg.metrics.selected_metrics,
             seed=cfg.training.seed
         )
     

@@ -171,7 +171,7 @@ class MetricsConfig:
     saturation_threshold: float = 1e-4
     saturation_percentage: float = 0.99
     gaussianity_method: str = "shapiro"  # Options: "shapiro", "ks", "anderson", "kurtosis"
-    log_activation_histograms: bool = True
+    selected_metrics: Optional[List[str]] = None
     monitor_filters: List[str] = field(default_factory=list)  # Layer name patterns to monitor
 
 

@@ -68,8 +68,8 @@ class MLP(nn.Module):
         if x.dim() > 2:
             x = x.view(x.size(0), -1)
 
-        for k, l in self.layers.items():
-            x = l(x)
+        for _, layer in self.layers.items():
+            x = layer(x)
 
         return x
 
