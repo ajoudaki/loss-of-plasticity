@@ -3,7 +3,7 @@ metrics_frequency: 1
 
 # Which metrics to compute (in list). If null → compute all available.
 # Options: dead_fraction, dup_fraction, eff_rank, stable_rank, saturated_frac, non_gaussianity, mean_abs_off_diag_correlation
-selected_metrics: [mean_abs_off_diag_correlation]
+selected_metrics: [eff_rank, stable_rank, mean_abs_off_diag_correlation]
 
 # Parameters for the metrics
 dead_threshold: 0.95  # dead_fraction

@@ -182,6 +182,7 @@ class TrainingConfig:
     epochs_per_task: int = 20
     batch_size: int = 128
     num_workers: int = 2  # Number of workers for data loading
+    fixed_batch_size: int = 1024  # Batch size for fixed eval batches
     no_augment: bool = False
     early_stopping_steps: int = 0
     reset: bool = False  # Reset model weights before training on each new task

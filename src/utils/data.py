@@ -429,7 +429,8 @@ def create_task_dataloaders(
     partitioned_val_datasets: List[Subset],
     class_sequence: List[List[int]],
     batch_size: int,
-    num_workers: int = 2
+    num_workers: int = 2,
+    fixed_batch_size: int = 1024,
 ) -> Dict[int, Dict[str, Any]]:
     """
     Create data loaders for each task.
@@ -452,7 +453,6 @@ def create_task_dataloaders(
         val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, multiprocessing_context=multiprocessing_context)
 
         # Fixed batches for metrics
-        fixed_batch_size = 500
         fixed_train = Subset(train_subset, range(min(fixed_batch_size, len(train_subset))))
         fixed_val = Subset(val_subset, range(min(fixed_batch_size, len(val_subset))))
         
@@ -537,7 +537,8 @@ def prepare_continual_learning_dataloaders(cfg: DictConfig) -> Tuple[Dict[int, D
         partitioned_val_datasets, 
         class_sequence, 
         cfg.training.batch_size,
-        cfg.training.num_workers
+        cfg.training.num_workers,
+        cfg.training.fixed_batch_size,
     )
     
     return task_dataloaders, num_classes, class_sequence
