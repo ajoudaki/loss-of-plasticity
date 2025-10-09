@@ -12,6 +12,8 @@ from typing import Optional
 import torch
 import logging
 
+from src.models.model_factory import create_model
+
 def get_device(device_str: Optional[str] = None, verbose: bool = False) -> torch.device:
     """
     Get the appropriate torch device, intelligently selecting the least utilized GPU 
@@ -147,6 +149,21 @@ def _select_best_gpu_pytorch(verbose: bool = False) -> torch.device:
     
     return torch.device(f'cuda:{best_gpu_idx}')
 
+
+def get_number_model_parameters(cfg: DictConfig) -> int:
+    """
+    Get the total number of parameters in the model specified by the configuration.
+    
+    Args:
+        cfg: Configuration object containing model settings
+    
+    Returns:
+        int: Total number of parameters in the model
+    """
+    model = create_model(cfg)
+    return sum(p.numel() for p in model.parameters())
+
+
 def setup_wandb(cfg: DictConfig) -> bool:
     """
     Setup weights & biases logging.
@@ -187,9 +204,11 @@ def setup_wandb(cfg: DictConfig) -> bool:
             init_args["entity"] = cfg.logging.wandb_entity
 
         
-        # Add entity parameter if it exists
+        # Add run name
         if hasattr(cfg.logging, "wandb_run_name"):
             init_args["name"] = cfg.logging.wandb_run_name
+        else:
+            init_args["name"] = f"{model_name}_{dataset_name}_params:{get_number_model_parameters(cfg)}_bs:{cfg.training.batch_size}"
             
         wandb.init(**init_args)
         return True

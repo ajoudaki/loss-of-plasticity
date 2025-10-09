@@ -30,7 +30,7 @@ class MLP(nn.Module):
         self.gated_ffn_activation = gated_ffn_activation
 
         self.layers = nn.ModuleDict()
-        self.layers["linear_0"] = nn.Linear(input_size, hidden_sizes[0], bias=bias)
+        self.layers["fc_0"] = nn.Linear(input_size, hidden_sizes[0], bias=bias)
         for i in range(1, len(hidden_sizes)):
             if use_gated_ffn:
                 self.layers[f"gated_ffn_block_{i}"] = GatedFFNBlock(
@@ -41,7 +41,7 @@ class MLP(nn.Module):
                     bias=bias,
                 )
             else:
-                self.layers[f"linear_{i}"] = nn.Linear(hidden_sizes[i - 1], hidden_sizes[i], bias=bias)
+                self.layers[f"fc_{i}"] = nn.Linear(hidden_sizes[i - 1], hidden_sizes[i], bias=bias)
 
             if norm_after_activation:
                 self.layers[f"act_{i}"] = get_activation(activation)
@@ -89,10 +89,10 @@ class GatedFFNBlock(nn.Module):
         self.activation = get_activation(activation)
 
         self.layers = nn.ModuleDict()
-        self.layers["linear_1"] = nn.Linear(input_size, hidden_size, bias=bias)
-        self.layers["linear_2"] = nn.Linear(input_size, hidden_size, bias=bias)
-        self.layers["linear_3"] = nn.Linear(hidden_size, output_size, bias=bias)
+        self.layers["fc_1"] = nn.Linear(input_size, hidden_size, bias=bias)
+        self.layers["fc_2"] = nn.Linear(input_size, hidden_size, bias=bias)
+        self.layers["fc_3"] = nn.Linear(hidden_size, output_size, bias=bias)
 
 
     def forward(self, x):
-        return self.layers["linear_3"](self.activation(self.layers["linear_2"](x)) * self.layers["linear_1"](x))
+        return self.layers["fc_3"](self.activation(self.layers["fc_2"](x)) * self.layers["fc_1"](x))

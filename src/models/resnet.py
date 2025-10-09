@@ -28,7 +28,7 @@ class BasicBlock(nn.Module):
         self.layers['norm1'] = get_normalization(normalization, planes, 
                                                 affine=normalization_affine,)
         
-        self.layers['activation'] = get_activation(activation)
+        self.layers['act'] = get_activation(activation)
         
         self.layers['conv2'] = nn.Conv2d(planes, planes, kernel_size=3, stride=1, 
                                         padding=1, bias=(normalization == 'none'))
@@ -48,21 +48,21 @@ class BasicBlock(nn.Module):
         # if norm is before activation:
         if not self.norm_after_activation:
             out = self.layers['norm1'](out)
-            out = self.layers['activation'](out)
+            out = self.layers['act'](out)
             out = self.layers['conv2'](out)
             out = self.layers['norm2'](out)
             if 'downsample' in self.layers:
                 identity = self.layers['downsample'](x)
             out = out + identity
-            out = self.layers['activation'](out)
+            out = self.layers['act'](out)
         else:
-            out = self.layers['activation'](out)
+            out = self.layers['act'](out)
             out = self.layers['norm1'](out)
             out = self.layers['conv2'](out)
             if 'downsample' in self.layers:
                 identity = self.layers['downsample'](x)
             out = out + identity
-            out = self.layers['activation'](out)
+            out = self.layers['act'](out)
             out = self.layers['norm2'](out)
             
         return out
@@ -96,7 +96,7 @@ class ResNet(nn.Module):
         
         self.layers['norm1'] = get_normalization(normalization, base_channels, affine=normalization_affine)
         
-        self.layers['activation'] = get_activation(activation)
+        self.layers['act'] = get_activation(activation)
         
         # Create ResNet blocks
         for li,num_blocks in enumerate(layers):
@@ -160,7 +160,7 @@ class ResNet(nn.Module):
         if not self.norm_after_activation:
             x = self.layers['norm1'](x)
                 
-        x = self.layers['activation'](x)
+        x = self.layers['act'](x)
         
         if self.norm_after_activation:
             x = self.layers['norm1'](x)

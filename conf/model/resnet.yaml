@@ -3,7 +3,7 @@ name: resnet
 _target_: src.models.ResNet
 
 # ResNet parameters
-layers: [2, 2, 2, 2]
+layers: [2, 2, 2]
 base_channels: 64
 activation: relu
 dropout_p: 0.1

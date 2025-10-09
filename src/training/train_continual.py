@@ -232,6 +232,36 @@ def train_continual_learning(model,
                 batch_count += 1
                 local_step += 1
                 global_step += 1
+
+                if global_step % cfg.metrics.metrics_frequency == 0:
+                    try:
+                        train_monitor.clear_data()
+                        val_monitor.clear_data()
+                        
+                        fixed_metrics_log = {
+                            "task_id": task_id, 
+                            "local_epoch": local_epoch, 
+                            "global_epoch": global_epoch,
+                            "local_step": local_step,
+                            "global_step": global_step
+                        }
+                        
+                        train_metrics, train_act_stats, fixed_metrics_log = analyze_train_callback(fixed_metrics_log)
+                        val_metrics, val_act_stats, fixed_metrics_log = analyze_val_callback(fixed_metrics_log)
+                        
+                        if cfg.use_wandb:
+                            wandb.log(fixed_metrics_log)
+                        
+                        # Store metrics in history for later analysis
+                        for layer_name, metrics in train_metrics.items():
+                            for metric_name, value in metrics.items():
+                                task_history['training_metrics_history'][layer_name][metric_name].append(value)
+                        
+                        for layer_name, metrics in val_metrics.items():
+                            for metric_name, value in metrics.items():
+                                task_history['validation_metrics_history'][layer_name][metric_name].append(value)
+                    except Exception as e:
+                        print(f"Error collecting metrics: {e}")
             
             epoch_train_loss = running_loss / batch_count
             epoch_train_acc = 100. * correct / total
@@ -255,39 +285,6 @@ def train_continual_learning(model,
             history['global_metrics']['val_loss'].append(val_loss)
             history['global_metrics']['val_acc'].append(val_acc)
             
-            # Periodically collect network metrics
-            if local_epoch % cfg.metrics.metrics_frequency == 0 or local_epoch == cfg.training.epochs_per_task:
-                try:
-                    train_monitor.clear_data()
-                    val_monitor.clear_data()
-                    
-                    # Create metrics log dictionary for wandb
-                    fixed_metrics_log = {
-                        "task_id": task_id, 
-                        "local_epoch": local_epoch, 
-                        "global_epoch": global_epoch,
-                        "local_step": local_step,
-                        "global_step": global_step
-                    }
-                    
-                    # Get metrics - analyze_fixed_batch will populate the metrics_log
-                    train_metrics, train_act_stats, fixed_metrics_log = analyze_train_callback(fixed_metrics_log)
-                    val_metrics, val_act_stats, fixed_metrics_log = analyze_val_callback(fixed_metrics_log)
-                    
-                    # Log all metrics to wandb if enabled
-                    if cfg.use_wandb:
-                        wandb.log(fixed_metrics_log)
-                    
-                    # Store metrics in history for later analysis
-                    for layer_name, metrics in train_metrics.items():
-                        for metric_name, value in metrics.items():
-                            task_history['training_metrics_history'][layer_name][metric_name].append(value)
-                    
-                    for layer_name, metrics in val_metrics.items():
-                        for metric_name, value in metrics.items():
-                            task_history['validation_metrics_history'][layer_name][metric_name].append(value)
-                except Exception as e:
-                    print(f"Error collecting metrics: {e}")
             
             # Log to wandb if enabled
             log_data = {

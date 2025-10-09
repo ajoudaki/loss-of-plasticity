@@ -15,7 +15,7 @@ logging:
 
 # Execution mode
 use_wandb: true
-wandb_project: "decorrelation-experiments"
+wandb_project: "correlation-experiments"
 wandb_tags: []
 dryrun: false
 

@@ -4,9 +4,9 @@ _target_: src.models.VisionTransformer
 
 # ViT parameters
 patch_size: 8
-embed_dim: 384
-depth: 6
-n_heads: 6
+embed_dim: 192
+depth: 4
+n_heads: 4
 mlp_ratio: 4.0
 qkv_bias: true
 dropout_p: 0.1

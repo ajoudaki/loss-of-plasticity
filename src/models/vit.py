@@ -44,19 +44,19 @@ class TransformerMLP(nn.Module):
         super().__init__()
         
         self.layers = nn.ModuleDict({
-            'fc1': nn.Linear(in_features, hidden_features),
+            'fc_1': nn.Linear(in_features, hidden_features),
             'act': get_activation(activation),
-            'drop1': nn.Dropout(drop) if drop > 0 else nn.Identity(),
-            'fc2': nn.Linear(hidden_features, out_features),
-            'drop2': nn.Dropout(drop) if drop > 0 else nn.Identity()
+            'drop_1': nn.Dropout(drop) if drop > 0 else nn.Identity(),
+            'fc_2': nn.Linear(hidden_features, out_features),
+            'drop_2': nn.Dropout(drop) if drop > 0 else nn.Identity()
         })
 
     def forward(self, x):
-        x = self.layers['fc1'](x)
+        x = self.layers['fc_1'](x)
         x = self.layers['act'](x)
-        x = self.layers['drop1'](x)
-        x = self.layers['fc2'](x)
-        x = self.layers['drop2'](x)
+        x = self.layers['drop_1'](x)
+        x = self.layers['fc_2'](x)
+        x = self.layers['drop_2'](x)
         return x
 
 
@@ -92,20 +92,20 @@ class TransformerBlock(nn.Module):
         super().__init__()
         
         self.layers = nn.ModuleDict({
-            'norm1': get_normalization(normalization, dim, affine=normalization_affine),
+            'norm_1': get_normalization(normalization, dim, affine=normalization_affine),
             'attn': Attention(dim, n_heads=n_heads, qkv_bias=qkv_bias, 
                              attn_drop=attn_drop, proj_drop=drop),
-            'norm2': get_normalization(normalization, dim, affine=normalization_affine),
+            'norm_2': get_normalization(normalization, dim, affine=normalization_affine),
             'mlp': TransformerMLP(dim, int(dim * mlp_ratio), dim, 
                        activation=activation, drop=drop)
         })
 
     def forward(self, x):
-        norm_x = self.layers['norm1'](x)
+        norm_x = self.layers['norm_1'](x)
         attn_out = self.layers['attn'](norm_x)
         x = x + attn_out
         
-        norm_x = self.layers['norm2'](x)
+        norm_x = self.layers['norm_2'](x)
         mlp_out = self.layers['mlp'](norm_x)
         x = x + mlp_out
             
