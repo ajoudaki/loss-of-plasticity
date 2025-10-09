@@ -5,6 +5,7 @@ import re
 from omegaconf import DictConfig
 from typing import Optional, List
 
+
 def flatten_activations(layer_act):
     """Reshape layer activations to 2D matrix (samples × features)."""
     shape = layer_act.shape
@@ -15,12 +16,14 @@ def flatten_activations(layer_act):
     else:  # Linear layer
         return layer_act.view(-1, shape[1])
 
+
 def compute_activation_statistics(layer_act):
     """Compute mean and standard deviation of activations for each unit."""
     flattened_act = flatten_activations(layer_act)
     means = flattened_act.mean(dim=0)
     stds = flattened_act.std(dim=0)
     return means, stds
+
 
 def measure_dead_neurons(layer_act, dead_threshold=0.95):
     """Measure fraction of neurons that are inactive (dead)."""
@@ -31,17 +34,6 @@ def measure_dead_neurons(layer_act, dead_threshold=0.95):
     dead_fraction = dead_mask.float().mean().item()
     return dead_fraction
 
-def measure_mean_abs_off_diag_correlation(layer_act, epsilon=1e-12):
-    """Measure mean absolute off-diagonal correlation coefficient."""
-    flattened_act = flatten_activations(layer_act)  # (B, D)
-    D = flattened_act.shape[1]
-    flattened_act = flattened_act - flattened_act.mean(dim=0, keepdim=True)
-    corr_matrix = torch.matmul(flattened_act.t(), flattened_act)  # (D, D)
-    corr_diag = torch.diag(corr_matrix).sqrt() + epsilon
-    corr_matrix = corr_matrix / corr_diag / corr_diag.unsqueeze(1)
-    mean_abs_off_diag_correlation = corr_matrix.abs().sum().item() - D
-    mean_abs_off_diag_correlation /= (D * (D - 1))
-    return mean_abs_off_diag_correlation
 
 def measure_duplicate_neurons(layer_act, corr_threshold):
     """Measure fraction of neurons that are duplicates of others."""
@@ -84,6 +76,7 @@ def measure_effective_rank(layer_act, svd_sample_size=1024, seed=None):
     eff_rank = torch.exp(-p_log_p.sum()).item()
     return eff_rank
 
+
 def measure_stable_rank(layer_act, sample_size=1024, use_gram=True, seed=None):
     """
     Compute stable rank (squared Frobenius norm / spectral norm squared).
@@ -123,6 +116,7 @@ def measure_stable_rank(layer_act, sample_size=1024, use_gram=True, seed=None):
         stable_rank = (trace_cov**2) / trace_cov_squared
     return stable_rank
 
+
 def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, saturation_percentage=0.99):
     """
     Measures the fraction of saturated neurons in a layer.
@@ -156,6 +150,7 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
     saturated_fraction = saturated_mask.float().mean().item()
     
     return saturated_fraction
+
 
 def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"):
     """
@@ -191,10 +186,6 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
         - ks: [0, 1] where 0 = perfectly Gaussian
         - anderson: [0, 10] (capped) where 0 = perfectly Gaussian
         - kurtosis: [0, 10] (capped) where 0 = perfectly Gaussian
-    
-    Example:
-        >>> non_gaussian_score = measure_gaussianity(layer_act, method="kurtosis")
-        >>> print(f"Non-Gaussianity score: {non_gaussian_score:.4f}")
     """
     flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
@@ -321,6 +312,51 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
     return mean_non_gaussianity
 
 
+def compute_covariance_matrix(layer_act):
+    """Compute covariance matrix of neuron activations."""
+    flattened_act = flatten_activations(layer_act)
+    covariance_matrix = torch.cov(flattened_act.t())
+    return (covariance_matrix + covariance_matrix.t()) / 2.0  # Ensure symmetry
+
+
+def compute_eigenvalues(hermitian_matrix):
+    """Compute eigenvalues of a hermitian matrix."""
+    eigenvalues = torch.linalg.eigvalsh(hermitian_matrix)
+    return eigenvalues
+
+
+def compute_correlation_matrix(covariance_matrix):
+    """Compute correlation matrix from covariance matrix."""
+    diag = torch.sqrt(torch.diag(covariance_matrix) + 1e-12)
+    correlation_matrix = covariance_matrix / diag[:, None] / diag[None, :]
+    return correlation_matrix
+
+
+def get_covariance_eigenvals(covariance_matrix):
+    """Compute eigenvalues of the covariance matrix."""
+    return compute_eigenvalues(covariance_matrix)
+
+
+def get_correlation_eigenvals(corr_matrix):
+    """Compute eigenvalues of the correlation matrix."""
+    return compute_eigenvalues(corr_matrix)
+
+
+def get_off_diagonal_corr_coeffs(corr_matrix):
+    """Returned flattened off-diagonal correlation coefficients."""
+    D = corr_matrix.shape[0]
+    off_diag_mask = ~(torch.eye(D, device=corr_matrix.device).bool())
+    return corr_matrix[off_diag_mask]
+
+
+def measure_mean_abs_off_diag_correlation(corr_matrix, epsilon=1e-12):
+    """Measure mean absolute off-diagonal correlation coefficient."""
+    D = corr_matrix.shape[0]
+    mean_abs_off_diag_correlation = corr_matrix.abs().sum().item() - D
+    mean_abs_off_diag_correlation /= (D * (D - 1))
+    return mean_abs_off_diag_correlation
+
+
 def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
                       dead_threshold, 
                       corr_threshold, 
@@ -370,16 +406,6 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         - Dictionary of metrics for each layer (metric_name -> value)
         - Dictionary of activation statistics for each layer (means, stds)
         - Dictionary of metrics formatted for wandb logging (if use_wandb is True)
-    
-    Example:
-        >>> metrics, act_stats, metrics_log = analyze_fixed_batch(
-        >>>     model, monitor, batch, targets, loss_fn,
-        >>>     dead_threshold=0.95, corr_threshold=0.95,
-        >>>     use_wandb=True, log_histograms=True, prefix="train/"
-        >>> )
-        >>> # metrics contains numerical values for each computed metric
-        >>> # act_stats contains activation means and standard deviations
-        >>> # metrics_log is ready for wandb.log()
     """
     if fixed_batch.device != device:
         fixed_batch = fixed_batch.to(device)
@@ -398,23 +424,27 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
     latest_acts = monitor.get_latest_activations()
     latest_grads = monitor.get_latest_gradients()
     
-    # Create or use provided metrics log dict
     if metrics_log is None:
         metrics_log = {}
 
     for layer_name, act in latest_acts.items():
-        # Skip layers without gradients when computing metrics
         if layer_name not in latest_grads:
             continue
             
         grad = latest_grads[layer_name]
         
-        # Compute neuron activation statistics (mean and std)
         means, stds = compute_activation_statistics(act)
         activation_stats[layer_name] = {
             'means': means.detach().cpu(),
             'stds': stds.detach().cpu()
         }
+
+        if log_histograms or "mean_abs_off_diag_correlation" in (selected_metrics or []):
+            covariance_matrix = compute_covariance_matrix(act)
+            correlation_matrix = compute_correlation_matrix(covariance_matrix)
+        else:
+            covariance_matrix = None
+            correlation_matrix = None
 
         # Build the per-layer metrics mapping (lazily evaluated)
         all_metric_fns = {
@@ -424,7 +454,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             "stable_rank": lambda: measure_stable_rank(act, seed=seed),
             "saturated_frac": lambda: measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
             "non_gaussianity": lambda: measure_gaussianity(act, seed=seed, method=gaussianity_method),
-            "mean_abs_off_diag_correlation": lambda: measure_mean_abs_off_diag_correlation(act),
+            "mean_abs_off_diag_correlation": lambda: measure_mean_abs_off_diag_correlation(correlation_matrix),
         }
 
         # Decide which metrics to run
@@ -449,18 +479,20 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                 stds_np = stds.numpy()
                 
                 try:
-                    # Only import wandb if we need it (makes the function still usable without wandb)
                     import wandb
                     
-                    # Add histograms
                     metrics_log[f"{prefix}{layer_name}/act_means_hist"] = wandb.Histogram(means_np)
                     metrics_log[f"{prefix}{layer_name}/act_stds_hist"] = wandb.Histogram(stds_np)
-                    
-                    # Also log summary statistics about the means and stds
-                    metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
-                    metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
-                    metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
-                    metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+
+                    metrics_log[f"{prefix}{layer_name}/covariance_eigenvals"] = get_covariance_eigenvals(covariance_matrix)
+                    metrics_log[f"{prefix}{layer_name}/correlation_eigenvals"] = get_correlation_eigenvals(correlation_matrix)
+                    metrics_log[f"{prefix}{layer_name}/off_diagonal_corr_coeffs"] = get_off_diagonal_corr_coeffs(correlation_matrix)
+
+                    # # Also log summary statistics about the means and stds
+                    # metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
+                    # metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
+                    # metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
+                    # metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
                 except (ImportError, Exception) as e:
                     print(f"Warning: Could not create wandb histograms: {e}")
     
