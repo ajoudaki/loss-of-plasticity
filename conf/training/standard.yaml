@@ -3,7 +3,7 @@ training_type: "standard"
 epochs_per_task: 10
 batch_size: 128
 fixed_batch_size: 1024
-num_workers: 8
+num_workers: 4
 no_augment: false
 early_stopping_steps: 0
 reset: false
