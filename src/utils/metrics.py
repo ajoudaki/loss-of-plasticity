@@ -22,7 +22,8 @@ def compute_activation_statistics(layer_act):
     flattened_act = flatten_activations(layer_act)
     means = flattened_act.mean(dim=0)
     stds = flattened_act.std(dim=0)
-    return means, stds
+    normalized_means = means / (stds + 1e-12)
+    return means, stds, normalized_means
 
 
 def measure_dead_neurons(layer_act, dead_threshold=0.95):
@@ -433,10 +434,11 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             
         grad = latest_grads[layer_name]
         
-        means, stds = compute_activation_statistics(act)
+        means, stds, normalized_means = compute_activation_statistics(act)
         activation_stats[layer_name] = {
             'means': means.detach().cpu(),
-            'stds': stds.detach().cpu()
+            'stds': stds.detach().cpu(),
+            'normalized_means': normalized_means.detach().cpu()
         }
 
         if log_histograms or "mean_abs_off_diag_correlation" in (selected_metrics or []):
@@ -475,7 +477,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                 # Convert to numpy for histogram creation
                 means_np = means.numpy()
                 stds_np = stds.numpy()
-                normalized_means_np = means_np / (stds_np + 1e-12)
+                normalized_means_np = normalized_means.numpy()
                 
                 try:
                     import wandb
