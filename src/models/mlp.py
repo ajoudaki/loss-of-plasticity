@@ -57,7 +57,7 @@ class MLP(nn.Module):
 
             in_features = hidden_size
 
-        self.layers["out"] = nn.Linear(hidden_sizes[-1], output_size, bias=bias)
+        self.layers["out"] = nn.Linear(in_features, output_size, bias=bias)
 
     def forward(self, x):
         if x.dim() > 2:
