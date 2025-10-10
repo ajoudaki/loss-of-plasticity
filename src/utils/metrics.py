@@ -467,32 +467,34 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             )
         metrics[layer_name] = {k: all_metric_fns[k]() for k in wanted}
         
-        # Add metrics to the metrics_log for wandb if enabled
         if use_wandb:
             for metric_name, value in metrics[layer_name].items():
                 metrics_log[f"{prefix}{layer_name}/{metric_name}"] = value
             
-            # Add histograms and statistics if requested
             if log_histograms:
                 # Convert to numpy for histogram creation
                 means_np = means.numpy()
                 stds_np = stds.numpy()
+                normalized_means_np = means_np / (stds_np + 1e-12)
                 
                 try:
                     import wandb
                     
                     metrics_log[f"{prefix}{layer_name}/act_means_hist"] = wandb.Histogram(means_np)
                     metrics_log[f"{prefix}{layer_name}/act_stds_hist"] = wandb.Histogram(stds_np)
+                    metrics_log[f"{prefix}{layer_name}/act_normalized_means_hist"] = wandb.Histogram(normalized_means_np)
 
+                    # Also log summary statistics about the means and stds
+                    metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
+                    metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+
+                    # Covariance / correlation
                     metrics_log[f"{prefix}{layer_name}/covariance_eigenvals"] = wandb.Histogram(get_covariance_eigenvals(covariance_matrix))
                     metrics_log[f"{prefix}{layer_name}/correlation_eigenvals"] = wandb.Histogram(get_correlation_eigenvals(correlation_matrix))
                     metrics_log[f"{prefix}{layer_name}/off_diagonal_corr_coeffs"] = wandb.Histogram(get_off_diagonal_corr_coeffs(correlation_matrix))
-
-                    # # Also log summary statistics about the means and stds
-                    # metrics_log[f"{prefix}{layer_name}/mean_of_means"] = means_np.mean()
-                    # metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
-                    # metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
-                    # metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+                    
                 except (ImportError, Exception) as e:
                     print(f"Warning: Could not create wandb histograms: {e}")
     
