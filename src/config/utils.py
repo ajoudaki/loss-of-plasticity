@@ -208,7 +208,8 @@ def setup_wandb(cfg: DictConfig) -> bool:
         if hasattr(cfg.logging, "wandb_run_name"):
             init_args["name"] = cfg.logging.wandb_run_name
         else:
-            init_args["name"] = f"{model_name}_{dataset_name}_params:{get_number_model_parameters(cfg)}_bs:{cfg.training.batch_size}"
+            params = get_number_model_parameters(cfg)
+            init_args["name"] = f"{model_name}_{dataset_name}_act:{cfg.model.activation}_params:{params}_bs:{cfg.training.batch_size}"
             
         wandb.init(**init_args)
         return True
