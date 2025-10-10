@@ -30,33 +30,32 @@ class MLP(nn.Module):
         self.gated_ffn_activation = gated_ffn_activation
 
         self.layers = nn.ModuleDict()
-        for i in range(len(hidden_sizes)):
+        in_features = input_size
+        for i, hidden_size in enumerate(hidden_sizes):
             if use_gated_ffn and i > 0:
                 self.layers[f"gated_ffn_block_{i}"] = GatedFFNBlock(
-                    hidden_sizes[i - 1],
-                    hidden_sizes[i],
-                    hidden_sizes[i],
+                    in_features,
+                    hidden_size,
+                    hidden_size,
                     activation=gated_ffn_activation,
                     bias=bias,
                 )
             else:
-                self.layers[f"fc_{i}"] = nn.Linear(hidden_sizes[i - 1], hidden_sizes[i], bias=bias)
+                self.layers[f"fc_{i}"] = nn.Linear(in_features, hidden_size, bias=bias)
 
             if norm_after_activation:
                 self.layers[f"act_{i}"] = get_activation(activation)
                 if normalization:
-                    self.layers[f"norm_{i}"] = get_normalization(
-                        normalization, hidden_sizes[i], affine=normalization_affine
-                    )
+                    self.layers[f"norm_{i}"] = get_normalization(normalization, hidden_size, affine=normalization_affine)
             else:
                 if normalization:
-                    self.layers[f"norm_{i}"] = get_normalization(
-                        normalization, hidden_sizes[i], affine=normalization_affine
-                    )
+                    self.layers[f"norm_{i}"] = get_normalization(normalization, hidden_size, affine=normalization_affine)
                 self.layers[f"act_{i}"] = get_activation(activation)
 
             if dropout_p > 0:
                 self.layers[f"drop_{i}"] = nn.Dropout(dropout_p)
+
+            in_features = hidden_size
 
         self.layers["out"] = nn.Linear(hidden_sizes[-1], output_size, bias=bias)
 
