@@ -30,9 +30,8 @@ class MLP(nn.Module):
         self.gated_ffn_activation = gated_ffn_activation
 
         self.layers = nn.ModuleDict()
-        self.layers["fc_0"] = nn.Linear(input_size, hidden_sizes[0], bias=bias)
-        for i in range(1, len(hidden_sizes)):
-            if use_gated_ffn:
+        for i in range(len(hidden_sizes)):
+            if use_gated_ffn and i > 0:
                 self.layers[f"gated_ffn_block_{i}"] = GatedFFNBlock(
                     hidden_sizes[i - 1],
                     hidden_sizes[i],
