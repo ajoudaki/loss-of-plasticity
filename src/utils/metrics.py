@@ -491,6 +491,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                     metrics_log[f"{prefix}{layer_name}/std_of_means"] = means_np.std()
                     metrics_log[f"{prefix}{layer_name}/mean_of_stds"] = stds_np.mean()
                     metrics_log[f"{prefix}{layer_name}/std_of_stds"] = stds_np.std()
+                    metrics_log[f"{prefix}{layer_name}/mean_of_normalized_means"] = normalized_means_np.mean()
+                    metrics_log[f"{prefix}{layer_name}/std_of_normalized_means"] = normalized_means_np.std()
 
                     # Covariance / correlation
                     metrics_log[f"{prefix}{layer_name}/covariance_eigenvals"] = wandb.Histogram(get_covariance_eigenvals(covariance_matrix))
