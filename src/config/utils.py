@@ -150,18 +150,18 @@ def _select_best_gpu_pytorch(verbose: bool = False) -> torch.device:
     return torch.device(f'cuda:{best_gpu_idx}')
 
 
-def get_number_model_parameters(cfg: DictConfig) -> int:
+def get_formatted_model_parameters(cfg: DictConfig) -> str:
     """
-    Get the total number of parameters in the model specified by the configuration.
-    
-    Args:
-        cfg: Configuration object containing model settings
-    
-    Returns:
-        int: Total number of parameters in the model
+    Get the formatted number of parameters in the model specified by the configuration.
     """
     model = create_model(cfg)
-    return sum(p.numel() for p in model.parameters())
+    params = sum(p.numel() for p in model.parameters())
+    if params >= 1e6:
+        return f"{params/1e6:.1f}M"
+    elif params >= 1e3:
+        return f"{params/1e3:.1f}K"
+    else:
+        return str(params)
 
 
 def setup_wandb(cfg: DictConfig) -> bool:
@@ -208,8 +208,8 @@ def setup_wandb(cfg: DictConfig) -> bool:
         if hasattr(cfg.logging, "wandb_run_name"):
             init_args["name"] = cfg.logging.wandb_run_name
         else:
-            params = get_number_model_parameters(cfg)
-            init_args["name"] = f"{model_name}_{dataset_name}_act:{cfg.model.activation}_params:{params}_bs:{cfg.training.batch_size}"
+            params = get_formatted_model_parameters(cfg)
+            init_args["name"] = f"{model_name}_{dataset_name}_{cfg.model.activation}_{params}_bs:{cfg.training.batch_size}"
             
         wandb.init(**init_args)
         return True

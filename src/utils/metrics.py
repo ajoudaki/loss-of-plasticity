@@ -4,9 +4,26 @@ from scipy import stats
 import re
 from omegaconf import DictConfig
 from typing import Optional, List
+from collections import defaultdict
 
 
-def flatten_activations(layer_act):
+def _subsample_rows(X: torch.Tensor, max_rows: int = 8192, seed: int = None):
+    """Uniformly subsample rows to cap O(N^2) ops; keeps device and dtype."""
+    N = X.shape[0]
+    if N <= max_rows:
+        return X
+    g = torch.Generator(device=X.device)
+    if seed is not None:
+        g.manual_seed(int(seed))
+    idx = torch.randperm(N, generator=g, device=X.device)[:max_rows]
+    return X.index_select(0, idx)
+
+
+def _standardize_columns(X: torch.Tensor, means: torch.Tensor, stds: torch.Tensor, eps: float = 1e-12):
+    return (X - means) / (stds + eps)
+
+
+def _flatten_activations(layer_act: torch.Tensor):
     """Reshape layer activations to 2D matrix (samples × features)."""
     shape = layer_act.shape
     if len(shape) == 4:  # Convolutional layer
@@ -17,28 +34,27 @@ def flatten_activations(layer_act):
         return layer_act.view(-1, shape[1])
 
 
-def compute_activation_statistics(layer_act):
+def compute_activation_statistics(flattened_act: torch.Tensor):
     """Compute mean and standard deviation of activations for each unit."""
-    flattened_act = flatten_activations(layer_act)
     means = flattened_act.mean(dim=0)
     stds = flattened_act.std(dim=0)
     normalized_means = means / (stds + 1e-12)
     return means, stds, normalized_means
 
 
-def measure_dead_neurons(layer_act, dead_threshold=0.95):
+@torch.no_grad()
+def measure_dead_neurons(flattened_act: torch.Tensor, dead_threshold: float = 0.95):
     """Measure fraction of neurons that are inactive (dead)."""
-    flattened_act = flatten_activations(layer_act)
     is_zero = (flattened_act.abs() < 1e-7)
     frac_zero_per_neuron = is_zero.float().mean(dim=0)
     dead_mask = (frac_zero_per_neuron > dead_threshold)
     dead_fraction = dead_mask.float().mean().item()
-    return dead_fraction
+    return {"dead_fraction": dead_fraction}, {}
 
 
-def measure_duplicate_neurons(layer_act, corr_threshold):
+@torch.no_grad()
+def measure_duplicate_neurons(flattened_act: torch.Tensor, corr_threshold: float) -> float:
     """Measure fraction of neurons that are duplicates of others."""
-    flattened_act = flatten_activations(layer_act)
     flattened_act = flattened_act.t()  
     flattened_act = torch.nn.functional.normalize(flattened_act, p=2, dim=1)
     similarity_matrix = torch.matmul(flattened_act, flattened_act.t())
@@ -46,9 +62,11 @@ def measure_duplicate_neurons(layer_act, corr_threshold):
     dup_pairs = (similarity_matrix > corr_threshold) & upper_tri_mask
     neuron_is_dup = dup_pairs.any(dim=1)
     fraction_dup = neuron_is_dup.float().mean().item()
-    return fraction_dup
+    return {"dup_fraction": fraction_dup}, {}
 
-def measure_effective_rank(layer_act, svd_sample_size=1024, seed=None):
+
+@torch.no_grad()
+def measure_effective_rank(flattened_act: torch.Tensor, svd_sample_size: int = 1024, seed: Optional[int] = None):
     """
     Compute effective rank (entropy of normalized singular values).
     
@@ -57,7 +75,6 @@ def measure_effective_rank(layer_act, svd_sample_size=1024, seed=None):
         svd_sample_size: Maximum number of samples to use for SVD
         seed: Optional random seed for sampling
     """
-    flattened_act = flatten_activations(layer_act)
     N = flattened_act.shape[0]
     if N > svd_sample_size:
         # Use seed if provided, otherwise use the current random state
@@ -71,24 +88,25 @@ def measure_effective_rank(layer_act, svd_sample_size=1024, seed=None):
     S = torch.linalg.svdvals(flattened_act)
     S_sum = S.sum()
     if S_sum < 1e-9:
-        return 0.0
+        return {"eff_rank": 0.0}, {}
     p = S / S_sum
     p_log_p = p * torch.log(p + 1e-12)
     eff_rank = torch.exp(-p_log_p.sum()).item()
-    return eff_rank
+    return {"eff_rank": eff_rank}, {}
 
 
-def measure_stable_rank(layer_act, sample_size=1024, use_gram=True, seed=None):
+@torch.no_grad()
+def measure_stable_rank(flattened_act, means=None, sample_size=8192, use_gram=True, seed=None):
     """
     Compute stable rank (squared Frobenius norm / spectral norm squared).
     
     Args:
         layer_act: Layer activations
+        means: Optional means for normalization
         sample_size: Maximum number of samples to use
         use_gram: Whether to use the Gram matrix approach
         seed: Optional random seed for sampling
     """
-    flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
     if N > sample_size:
         # Use seed if provided, otherwise use the current random state
@@ -100,25 +118,32 @@ def measure_stable_rank(layer_act, sample_size=1024, use_gram=True, seed=None):
             idx = torch.randperm(N)[:sample_size]
         flattened_act = flattened_act[idx]
         N = sample_size
-    flattened_act = flattened_act - flattened_act.mean(dim=0, keepdim=True)
+        if means is not None:
+            means = means[idx]
+
+    if means is None:
+        means = flattened_act.mean(dim=0, keepdim=True)
+    flattened_act = flattened_act - means
+
     if use_gram or D < N:
         frob_norm_sq = torch.sum(flattened_act**2).item()
         gram = torch.matmul(flattened_act.t(), flattened_act)
         trace_gram_squared = torch.sum(gram**2).item()
         if trace_gram_squared < 1e-9:
-            return 0.0
+            return {"stable_rank": 0.0}, {}
         stable_rank = (frob_norm_sq**2) / trace_gram_squared
     else:
         cov = torch.matmul(flattened_act, flattened_act.t())
         trace_cov = torch.trace(cov).item()
         trace_cov_squared = torch.sum(cov**2).item()
         if trace_cov_squared < 1e-9:
-            return 0.0
+            return {"stable_rank": 0.0}, {}
         stable_rank = (trace_cov**2) / trace_cov_squared
-    return stable_rank
+    return {"stable_rank": stable_rank}, {}
 
 
-def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, saturation_percentage=0.99):
+@torch.no_grad()
+def measure_saturated_neurons(flattened_act, layer_grad, saturation_threshold=1e-4, saturation_percentage=0.99):
     """
     Measures the fraction of saturated neurons in a layer.
     
@@ -126,8 +151,7 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
     to mean activation magnitude is very small, indicating the neuron is in a flat
     region of the loss landscape.
     """
-    flattened_act = flatten_activations(layer_act)
-    flattened_grad = flatten_activations(layer_grad)
+    flattened_grad = _flatten_activations(layer_grad)
     
     # Calculate the mean activation magnitude for each neuron
     mean_act_magnitude = flattened_act.abs().mean(dim=0, keepdim=True)
@@ -150,10 +174,16 @@ def measure_saturated_neurons(layer_act, layer_grad, saturation_threshold=1e-4, 
     # Calculate the overall fraction of saturated neurons
     saturated_fraction = saturated_mask.float().mean().item()
     
-    return saturated_fraction
+    return {"saturated_fraction": saturated_fraction}, {"neuron_saturation": saturation_per_neuron.detach().cpu().numpy()}
 
 
-def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"):
+# --------------------------------------------------------
+# Gaussianity measures
+# --------------------------------------------------------
+
+
+@torch.no_grad()
+def measure_non_gaussianity(flattened_act, sample_size=1024, seed=None, method="shapiro"):
     """
     Measure the distance to Gaussianity for each neuron's activations.
     
@@ -188,7 +218,6 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
         - anderson: [0, 10] (capped) where 0 = perfectly Gaussian
         - kurtosis: [0, 10] (capped) where 0 = perfectly Gaussian
     """
-    flattened_act = flatten_activations(layer_act)
     N, D = flattened_act.shape
     
     # If we have more than sample_size samples, subsample to save computation
@@ -307,55 +336,105 @@ def measure_gaussianity(layer_act, sample_size=1000, seed=None, method="shapiro"
     else:
         raise ValueError(f"Unknown method: {method}")
     
-    # Average non-Gaussianity across all neurons
     mean_non_gaussianity = float(np.mean(non_gaussianity))
     
-    return mean_non_gaussianity
+    return {"mean_non_gaussianity": mean_non_gaussianity}, {"non_gaussianity": non_gaussianity}
 
 
-def compute_covariance_matrix(layer_act):
+@torch.no_grad()
+def measure_univariate_diagnostics(
+    flattened_act: torch.Tensor,
+    means: torch.Tensor = None,
+    stds: torch.Tensor = None,
+    sample_rows: int = 8192,
+    seed: int = None,
+):
+    """
+    Per-neuron (feature) diagnostics across samples in this layer:
+      - skewness, excess kurtosis
+      - IQR-to-sigma ratio (Gaussian ≈ 1)
+    Returns aggregates and per-neuron arrays (for optional hist logging).
+    """
+    X = flattened_act
+    if means is None or stds is None:
+        means = X.mean(dim=0)
+        stds  = X.std(dim=0)
+
+    Xs = _subsample_rows(X, sample_rows, seed=seed)
+    Z  = _standardize_columns(Xs, means, stds)
+
+    skewness =  Z.pow(3).mean(dim=0)
+    excess_kurtosis =  Z.pow(4).mean(dim=0) - 3.0
+
+    q75 = torch.quantile(Z, 0.75, dim=0)
+    q25 = torch.quantile(Z, 0.25, dim=0)
+    IQR = q75 - q25
+    iqr_over_sigma = IQR / 1.349  # IQR / (1.349 * sigma) ~ 1 for Gaussian
+
+    metrics = {
+        "uv_med_abs_skewness":           skewness.abs().median().item(),
+        # "uv_p10_abs_skewness":           skewness.abs().quantile(0.10).item(),
+        # "uv_p90_abs_skewness":           skewness.abs().quantile(0.90).item(),
+        "uv_med_excess_kurtosis":        excess_kurtosis.median().item(),
+        # "uv_p10_excess_kurtosis":        excess_kurtosis.quantile(0.10).item(),
+        # "uv_p90_excess_kurtosis":        excess_kurtosis.quantile(0.90).item(),
+        "uv_med_iqr_over_sigma":         iqr_over_sigma.median().item(),
+        # "uv_frac_abs_skewness_gt_0p5":   (skewness.abs() > 0.5).float().mean().item(),
+        # "uv_frac_excess_kurtosis_gt_1":  (excess_kurtosis.abs() > 1.0).float().mean().item(),
+    }
+    hists = {
+        "skewness": skewness.detach().cpu().numpy(),
+        "excess_kurtosis": excess_kurtosis.detach().cpu().numpy(),
+        "iqr_over_sigma": iqr_over_sigma.detach().cpu().numpy(),
+    }
+    return metrics, hists
+
+
+# --------------------------------------------------------
+# Covariance and correlation matrix metrics
+# --------------------------------------------------------
+
+
+def compute_cov_matrix(flattened_act: torch.Tensor, means=None):
     """Compute covariance matrix of neuron activations."""
-    flattened_act = flatten_activations(layer_act)
-    covariance_matrix = torch.cov(flattened_act.t())
-    return (covariance_matrix + covariance_matrix.t()) / 2.0  # Ensure symmetry
+    if means is None:
+        means = flattened_act.mean(dim=0, keepdim=True)
+    flattened_act = flattened_act - means
+    B, _ = flattened_act.shape
+    cov_matrix = torch.matmul(flattened_act.t(), flattened_act) / B
+    return (cov_matrix + cov_matrix.t()) / 2.0  # Ensure symmetry
 
 
-def compute_eigenvalues(hermitian_matrix):
+def compute_eigenvalues(hermitian_matrix: torch.Tensor):
     """Compute eigenvalues of a hermitian matrix."""
     eigenvalues = torch.linalg.eigvalsh(hermitian_matrix)
     return eigenvalues
 
 
-def compute_correlation_matrix(covariance_matrix):
+def compute_corr_matrix(cov_matrix: torch.Tensor, eps: float = 1e-12):
     """Compute correlation matrix from covariance matrix."""
-    diag = torch.sqrt(torch.diag(covariance_matrix) + 1e-12)
-    correlation_matrix = covariance_matrix / diag[:, None] / diag[None, :]
-    return correlation_matrix
+    diag = torch.sqrt(torch.diag(cov_matrix) + eps)
+    corr_matrix = cov_matrix / diag[:, None] / diag[None, :]
+    return corr_matrix
 
 
-def get_covariance_eigenvals(covariance_matrix):
-    """Compute eigenvalues of the covariance matrix."""
-    return compute_eigenvalues(covariance_matrix)
+@torch.no_grad()
+def measure_cov_corr_metrics(flattened_act: torch.Tensor, means: torch.Tensor):
+    """Compute metrics based on covariance and correlation matrices."""
 
+    cov_matrix = compute_cov_matrix(flattened_act, means)
+    corr_matrix = compute_corr_matrix(cov_matrix)
 
-def get_correlation_eigenvals(corr_matrix):
-    """Compute eigenvalues of the correlation matrix."""
-    return compute_eigenvalues(corr_matrix)
+    metrics, hists = {}, {}
+    hists["covariance_eigenvals"] = compute_eigenvalues(cov_matrix).detach().cpu().numpy()
+    hists["correlation_eigenvals"] = compute_eigenvalues(corr_matrix).detach().cpu().numpy()
 
-
-def get_off_diagonal_corr_coeffs(corr_matrix):
-    """Returned flattened off-diagonal correlation coefficients."""
     D = corr_matrix.shape[0]
     off_diag_mask = ~(torch.eye(D, device=corr_matrix.device).bool())
-    return corr_matrix[off_diag_mask]
+    hists["off_diagonal_corr_coeffs"] = corr_matrix[off_diag_mask].detach().cpu().numpy()
+    metrics["mean_abs_off_diag_correlation"] = np.abs(hists["off_diagonal_corr_coeffs"]).mean().item()
 
-
-def measure_mean_abs_off_diag_correlation(corr_matrix, epsilon=1e-12):
-    """Measure mean absolute off-diagonal correlation coefficient."""
-    D = corr_matrix.shape[0]
-    mean_abs_off_diag_correlation = corr_matrix.abs().sum().item() - D
-    mean_abs_off_diag_correlation /= (D * (D - 1))
-    return mean_abs_off_diag_correlation
+    return metrics, hists
 
 
 def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion, 
@@ -420,7 +499,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
         loss = criterion(outputs, fixed_targets)
         loss.backward()
     
-    metrics = {}
+    metrics = defaultdict(dict)
+    hists = defaultdict(dict)  # Change hists to defaultdict(dict)
     activation_stats = {}
     latest_acts = monitor.get_latest_activations()
     latest_grads = monitor.get_latest_gradients()
@@ -433,30 +513,27 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             continue
             
         grad = latest_grads[layer_name]
+
+        flattened_act = _flatten_activations(act)
+        flattened_grad = _flatten_activations(grad)
         
-        means, stds, normalized_means = compute_activation_statistics(act)
+        means, stds, normalized_means = compute_activation_statistics(flattened_act)
         activation_stats[layer_name] = {
             'means': means.detach().cpu(),
             'stds': stds.detach().cpu(),
             'normalized_means': normalized_means.detach().cpu()
         }
 
-        if log_histograms or "mean_abs_off_diag_correlation" in (selected_metrics or []):
-            covariance_matrix = compute_covariance_matrix(act)
-            correlation_matrix = compute_correlation_matrix(covariance_matrix)
-        else:
-            covariance_matrix = None
-            correlation_matrix = None
-
         # Build the per-layer metrics mapping (lazily evaluated)
         all_metric_fns = {
-            "dead_fraction": lambda: measure_dead_neurons(act, dead_threshold),
-            "dup_fraction": lambda: measure_duplicate_neurons(act, corr_threshold),
-            "eff_rank": lambda: measure_effective_rank(act, seed=seed),
-            "stable_rank": lambda: measure_stable_rank(act, seed=seed),
-            "saturated_frac": lambda: measure_saturated_neurons(act, grad, saturation_threshold, saturation_percentage),
-            "non_gaussianity": lambda: measure_gaussianity(act, seed=seed, method=gaussianity_method),
-            "mean_abs_off_diag_correlation": lambda: measure_mean_abs_off_diag_correlation(correlation_matrix),
+            "dead_fraction": lambda: measure_dead_neurons(flattened_act, dead_threshold),
+            "dup_fraction": lambda: measure_duplicate_neurons(flattened_act, corr_threshold),
+            "eff_rank": lambda: measure_effective_rank(flattened_act, seed=seed),
+            "stable_rank": lambda: measure_stable_rank(flattened_act, seed=seed),
+            "saturated_frac": lambda: measure_saturated_neurons(flattened_act, flattened_grad, saturation_threshold, saturation_percentage),
+            "non_gaussianity": lambda: measure_non_gaussianity(flattened_act, seed=seed, method=gaussianity_method),
+            "cov_corr_metrics": lambda: measure_cov_corr_metrics(flattened_act, means),
+            "univariate_diagnostics": lambda: measure_univariate_diagnostics(flattened_act, means, stds, seed=seed),
         }
 
         # Decide which metrics to run
@@ -467,11 +544,15 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             raise ValueError(
             f"Unknown metrics requested: {unknown}. Allowed: {list(all_metric_fns.keys())}"
             )
-        metrics[layer_name] = {k: all_metric_fns[k]() for k in wanted}
         
+        for metric_fn_name in wanted:
+            metric_dict, hist_dict = all_metric_fns[metric_fn_name]()
+            metrics[layer_name] |= metric_dict
+            hists[layer_name] |= hist_dict
+
         if use_wandb:
-            for metric_name, value in metrics[layer_name].items():
-                metrics_log[f"{prefix}{layer_name}/{metric_name}"] = value
+            for metric_name, metric_value in metrics[layer_name].items():
+                metrics_log[f"{prefix}{layer_name}/{metric_name}"] = metric_value
             
             if log_histograms:
                 # Convert to numpy for histogram creation
@@ -494,11 +575,10 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
                     metrics_log[f"{prefix}{layer_name}/mean_of_normalized_means"] = normalized_means_np.mean()
                     metrics_log[f"{prefix}{layer_name}/std_of_normalized_means"] = normalized_means_np.std()
 
-                    # Covariance / correlation
-                    metrics_log[f"{prefix}{layer_name}/covariance_eigenvals"] = wandb.Histogram(get_covariance_eigenvals(covariance_matrix))
-                    metrics_log[f"{prefix}{layer_name}/correlation_eigenvals"] = wandb.Histogram(get_correlation_eigenvals(correlation_matrix))
-                    metrics_log[f"{prefix}{layer_name}/off_diagonal_corr_coeffs"] = wandb.Histogram(get_off_diagonal_corr_coeffs(correlation_matrix))
-                    
+                    # Log any additional histograms from the metrics
+                    for hist_name, hist_value in hists[layer_name].items():
+                        metrics_log[f"{prefix}{layer_name}/{hist_name}"] = wandb.Histogram(hist_value)
+
                 except (ImportError, Exception) as e:
                     print(f"Warning: Could not create wandb histograms: {e}")
     
