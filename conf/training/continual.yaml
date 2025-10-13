@@ -1,7 +1,8 @@
 # @package _global_.training
 training_type: "continual"
-epochs_per_task: 20
+epochs_per_task: 10
 batch_size: 128
+fixed_batch_size: 2048
 num_workers: 2
 no_augment: false
 early_stopping_steps: 0
