@@ -407,7 +407,10 @@ def compute_cov_matrix(flattened_act: torch.Tensor, means=None):
 
 def compute_eigenvalues(hermitian_matrix: torch.Tensor):
     """Compute eigenvalues of a hermitian matrix."""
-    eigenvalues = torch.linalg.eigvalsh(hermitian_matrix)
+    try:
+        eigenvalues = torch.linalg.eigvalsh(hermitian_matrix)
+    except:
+        eigenvalues = torch.zeros(hermitian_matrix.shape[0], device=hermitian_matrix.device)
     return eigenvalues
 
 
