@@ -390,6 +390,26 @@ def measure_univariate_diagnostics(
     return metrics, hists
 
 
+@torch.no_grad()
+def get_random_neuron_hist(flattened_act: torch.Tensor):
+    """Compute histogram of random neuron activations."""
+    hists = {}
+    hists["random_neuron_hist"] = flattened_act[:, 0].detach().cpu().numpy()
+    return {}, hists
+
+
+@torch.no_grad()
+def add_norm_coeffs_hists(metrics_log, model, prefix):
+    """Extract normalization layers' coefficients from model and add to metrics log."""
+    import wandb
+    for layer_name, layer in model.named_modules():
+        if isinstance(layer, (torch.nn.LayerNorm, torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.BatchNorm3d)):
+            if hasattr(layer, 'weight') and layer.weight is not None:
+                metrics_log[f"{prefix}{layer_name}/weight"] = wandb.Histogram(layer.weight.detach().cpu().numpy())
+            if hasattr(layer, 'bias') and layer.bias is not None:
+                metrics_log[f"{prefix}{layer_name}/bias"] = wandb.Histogram(layer.bias.detach().cpu().numpy())
+    return metrics_log
+
 # --------------------------------------------------------
 # Covariance and correlation matrix metrics
 # --------------------------------------------------------
@@ -537,6 +557,7 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
             "non_gaussianity": lambda: measure_non_gaussianity(flattened_act, seed=seed, method=gaussianity_method),
             "cov_corr_metrics": lambda: measure_cov_corr_metrics(flattened_act, means),
             "univariate_diagnostics": lambda: measure_univariate_diagnostics(flattened_act, means, stds, seed=seed),
+            "random_neuron_hist": lambda: get_random_neuron_hist(flattened_act),
         }
 
         # Decide which metrics to run
@@ -584,7 +605,8 @@ def analyze_fixed_batch(model, monitor, fixed_batch, fixed_targets, criterion,
 
                 except (ImportError, Exception) as e:
                     print(f"Warning: Could not create wandb histograms: {e}")
-    
+    add_norm_coeffs_hists(metrics_log, model, prefix)
+
     if not hooks_were_active:
         monitor.remove_hooks()
     

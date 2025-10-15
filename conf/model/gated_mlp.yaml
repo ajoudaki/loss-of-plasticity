@@ -5,7 +5,7 @@ _target_: src.models.MLP
 # MLP parameters
 hidden_sizes: [512, 512, 256]
 activation: none
-dropout_p: 0.2
+dropout_p: 0.0
 normalization: batch
 norm_after_activation: false
 bias: true

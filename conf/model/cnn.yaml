@@ -9,7 +9,7 @@ strides: [1, 1, 1]
 paddings: [1, 1, 1]
 fc_hidden_units: [512]
 activation: relu
-dropout_p: 0.1
+dropout_p: 0.0
 pool_type: max
 pool_size: 2
 normalization: batch
