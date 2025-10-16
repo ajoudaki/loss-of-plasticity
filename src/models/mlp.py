@@ -117,7 +117,7 @@ def compute_cov_eigenval_regularization(model):
             
             # Regularization matrix difference: (||C_l||_2 * I - C_curr_est)
             diff = lambda_max * torch.eye(C_curr_est.size(0), device=C_curr_est.device) - C_curr_est
-            reg_loss += (diff**2).mean()
+            reg_loss += (diff**2).sum() / C_curr_est.size(0)
     return reg_loss
 
 
