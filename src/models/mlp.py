@@ -87,7 +87,7 @@ class MLP(nn.Module):
 
             for name, layer in self.layers.items():
                 x = layer(x)
-                if name.startswith("fc_"):
+                if self.training and self.eigenval_reg and name.startswith("fc_"):
                     centered_h = x - x.mean(dim=0)
                     batch_cov = (centered_h.T @ centered_h) / (x.size(0) - 1)
                     setattr(self, f"running_cov_{name}", 
