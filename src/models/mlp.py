@@ -85,13 +85,13 @@ class MLP(nn.Module):
             batch_cov_input = (centered_x.T @ centered_x) / (x.size(0) - 1)
             self.running_cov_input = self.eigenval_reg_momentum * self.running_cov_input + (1 - self.eigenval_reg_momentum) * batch_cov_input.detach()
 
-            for name, layer in self.layers.items():
-                x = layer(x)
-                if self.training and self.eigenval_reg and name.startswith("fc_"):
-                    centered_h = x - x.mean(dim=0)
-                    batch_cov = (centered_h.T @ centered_h) / (x.size(0) - 1)
-                    setattr(self, f"running_cov_{name}", 
-                            self.eigenval_reg_momentum * getattr(self, f"running_cov_{name}") + (1 - self.eigenval_reg_momentum) * batch_cov.detach())
+        for name, layer in self.layers.items():
+            x = layer(x)
+            if self.training and self.eigenval_reg and name.startswith("fc_"):
+                centered_h = x - x.mean(dim=0)
+                batch_cov = (centered_h.T @ centered_h) / (x.size(0) - 1)
+                setattr(self, f"running_cov_{name}", 
+                        self.eigenval_reg_momentum * getattr(self, f"running_cov_{name}") + (1 - self.eigenval_reg_momentum) * batch_cov.detach())
 
         return x
 
@@ -117,7 +117,7 @@ def compute_cov_eigenval_regularization(model):
             
             # Regularization matrix difference: (||C_l||_2 * I - C_curr_est)
             diff = lambda_max * torch.eye(C_curr_est.size(0), device=C_curr_est.device) - C_curr_est
-            reg_loss += torch.norm(diff, p='fro')**2  # equivalently (diff**2).sum()
+            reg_loss += (diff**2).mean()
     return reg_loss
 
 
