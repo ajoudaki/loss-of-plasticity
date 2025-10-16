@@ -10,6 +10,7 @@ from .eval import evaluate_model
 from ..utils.metrics import analyze_fixed_batch, create_module_filter
 from ..config.utils import create_optimizer
 from ..utils.masked_loss import MaskedCrossEntropy
+from ..models.mlp import compute_cov_eigenval_regularization
 
 def train_continual_learning(model, 
                              task_dataloaders, 
@@ -221,6 +222,11 @@ def train_continual_learning(model,
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
+
+                if model.eigenval_reg:
+                    reg_loss = compute_cov_eigenval_regularization(model)
+                    loss += model.eigenval_reg_lambda * reg_loss
+
                 loss.backward()
                 optimizer.step()
                 

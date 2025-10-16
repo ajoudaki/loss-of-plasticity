@@ -1,6 +1,11 @@
+from sympy import false
 import torch
 import torch.nn as nn
 from .layers import get_activation, get_normalization
+
+import torch
+import torch.nn as nn
+from torch.nn.utils import spectral_norm
 
 
 class MLP(nn.Module):
@@ -17,6 +22,9 @@ class MLP(nn.Module):
         normalization_affine=True,
         use_gated_ffn=False,
         gated_ffn_activation="relu",
+        eigenval_reg: bool = False,
+        eigenval_reg_momentum: float = 0.9,
+        eigenval_reg_lambda: float = 0.1,
         **kwargs
     ):
         """Fully connected MLP with customizable architecture."""
@@ -28,6 +36,12 @@ class MLP(nn.Module):
         self.norm_after_activation = norm_after_activation
         self.use_gated_ffn = use_gated_ffn
         self.gated_ffn_activation = gated_ffn_activation
+        self.eigenval_reg: bool = eigenval_reg
+        self.eigenval_reg_momentum: float = eigenval_reg_momentum
+        self.eigenval_reg_lambda: float = eigenval_reg_lambda
+
+        if self.eigenval_reg:
+            self.register_buffer("running_cov_input", torch.eye(input_size))
 
         self.layers = nn.ModuleDict()
         in_features = input_size
@@ -42,6 +56,9 @@ class MLP(nn.Module):
                 )
             else:
                 self.layers[f"fc_{i}"] = nn.Linear(in_features, hidden_size, bias=bias)
+            
+            if self.eigenval_reg:
+                self.register_buffer(f"running_cov_fc_{i}", torch.eye(hidden_size))
 
             if norm_after_activation:
                 self.layers[f"act_{i}"] = get_activation(activation)
@@ -62,11 +79,46 @@ class MLP(nn.Module):
     def forward(self, x):
         if x.dim() > 2:
             x = x.view(x.size(0), -1)
+        
+        if self.training and self.eigenval_reg:
+            centered_x = x - x.mean(dim=0)
+            batch_cov_input = (centered_x.T @ centered_x) / (x.size(0) - 1)
+            self.running_cov_input = self.eigenval_reg_momentum * self.running_cov_input + (1 - self.eigenval_reg_momentum) * batch_cov_input.detach()
 
-        for _, layer in self.layers.items():
-            x = layer(x)
+            for name, layer in self.layers.items():
+                x = layer(x)
+                if name.startswith("fc_"):
+                    centered_h = x - x.mean(dim=0)
+                    batch_cov = (centered_h.T @ centered_h) / (x.size(0) - 1)
+                    setattr(self, f"running_cov_{name}", 
+                            self.eigenval_reg_momentum * getattr(self, f"running_cov_{name}") + (1 - self.eigenval_reg_momentum) * batch_cov.detach())
 
         return x
+
+
+def compute_cov_eigenval_regularization(model):
+    reg_loss = 0.0
+    for name, module in model.layers.items():
+        if name.startswith("fc_"):
+            layer_index = int(name.split("_")[1])  # e.g., "fc_0" -> 0
+            W = module.weight
+
+            if layer_index == 0:
+                C_prev = model.running_cov_input
+            else:
+                C_prev = getattr(model, f"running_cov_fc_{layer_index-1}")
+            
+            C_curr_est = W @ C_prev @ W.t()
+            
+            # Spectral norm of C_curr_est (largest eigenvalue)
+            # eigenvalues = torch.linalg.eigvalsh(C_curr_est)
+            # lambda_max = eigenvalues.max()
+            lambda_max = torch.linalg.norm(C_curr_est, ord=2)
+            
+            # Regularization matrix difference: (||C_l||_2 * I - C_curr_est)
+            diff = lambda_max * torch.eye(C_curr_est.size(0), device=C_curr_est.device) - C_curr_est
+            reg_loss += torch.norm(diff, p='fro')**2  # equivalently (diff**2).sum()
+    return reg_loss
 
 
 class GatedFFNBlock(nn.Module):
