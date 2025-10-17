@@ -223,7 +223,7 @@ def train_continual_learning(model,
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
 
-                if model.eigenval_reg:
+                if model.eigenval_reg_lambda > 0:
                     reg_loss = compute_cov_eigenval_regularization(model)
                     loss += model.eigenval_reg_lambda * reg_loss
 

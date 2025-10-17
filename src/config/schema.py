@@ -193,9 +193,8 @@ class TrainingConfig:
     tasks: int = 10  # Number of tasks
     classes_per_task: int = 2  # Classes per task
     partitions: Optional[List[List[int]]] = None  # Custom class partitions
-    eigenval_reg: bool = False
-    eigenval_reg_momentum: float = 0.9
-    eigenval_reg_lambda: float = 0.001
+    eigenval_reg_lambda: float = 0.000001
+    eigenval_reg_momentum: float = 0.99
 
 
 @dataclass

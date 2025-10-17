@@ -3,7 +3,7 @@ name: mlp
 _target_: src.models.MLP
 
 # MLP parameters
-hidden_sizes: [512, 256, 128, 64, 32]
+hidden_sizes: [256, 256, 256, 256, 256]
 activation: relu
 dropout_p: 0.0
 normalization: batch

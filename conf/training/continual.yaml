@@ -9,9 +9,8 @@ early_stopping_steps: 0
 reset: false
 seed: 42
 device: null
-eigenval_reg: false
-eigenval_reg_momentum: 0.9
-eigenval_reg_lambda: 0.001
+eigenval_reg_lambda: 0.0
+eigenval_reg_momentum: 0.99
 
 # Task configurations (merged from task section)
 tasks: 5

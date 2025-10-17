@@ -22,9 +22,8 @@ class MLP(nn.Module):
         normalization_affine=True,
         use_gated_ffn=False,
         gated_ffn_activation="relu",
-        eigenval_reg: bool = False,
-        eigenval_reg_momentum: float = 0.9,
-        eigenval_reg_lambda: float = 0.1,
+        eigenval_reg_lambda: float = 0.000001,
+        eigenval_reg_momentum: float = 0.99,
         **kwargs
     ):
         """Fully connected MLP with customizable architecture."""
@@ -36,11 +35,10 @@ class MLP(nn.Module):
         self.norm_after_activation = norm_after_activation
         self.use_gated_ffn = use_gated_ffn
         self.gated_ffn_activation = gated_ffn_activation
-        self.eigenval_reg: bool = eigenval_reg
-        self.eigenval_reg_momentum: float = eigenval_reg_momentum
         self.eigenval_reg_lambda: float = eigenval_reg_lambda
+        self.eigenval_reg_momentum: float = eigenval_reg_momentum
 
-        if self.eigenval_reg:
+        if self.eigenval_reg_lambda > 0:
             self.register_buffer("running_cov_input", torch.eye(input_size))
 
         self.layers = nn.ModuleDict()
@@ -57,7 +55,7 @@ class MLP(nn.Module):
             else:
                 self.layers[f"fc_{i}"] = nn.Linear(in_features, hidden_size, bias=bias)
             
-            if self.eigenval_reg:
+            if self.eigenval_reg_lambda > 0:
                 self.register_buffer(f"running_cov_fc_{i}", torch.eye(hidden_size))
 
             if norm_after_activation:
@@ -80,14 +78,14 @@ class MLP(nn.Module):
         if x.dim() > 2:
             x = x.view(x.size(0), -1)
         
-        if self.training and self.eigenval_reg:
+        if self.training and self.eigenval_reg_lambda > 0:
             centered_x = x - x.mean(dim=0)
             batch_cov_input = (centered_x.T @ centered_x) / (x.size(0) - 1)
             self.running_cov_input = self.eigenval_reg_momentum * self.running_cov_input + (1 - self.eigenval_reg_momentum) * batch_cov_input.detach()
 
         for name, layer in self.layers.items():
             x = layer(x)
-            if self.training and self.eigenval_reg and name.startswith("fc_"):
+            if self.training and self.eigenval_reg_lambda > 0 and name.startswith("fc_"):
                 centered_h = x - x.mean(dim=0)
                 batch_cov = (centered_h.T @ centered_h) / (x.size(0) - 1)
                 setattr(self, f"running_cov_{name}", 
