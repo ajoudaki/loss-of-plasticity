@@ -26,6 +26,8 @@ def create_model(cfg: DictConfig) -> nn.Module:
     if model_name == 'mlp' or model_name == 'gated_mlp':
         model_params['input_size'] = cfg.dataset.input_size
         model_params['output_size'] = cfg.dataset.num_classes
+
+        model_params['eigenval_reg_type'] = cfg.training.get('eigenval_reg_type', 'trace')
         model_params['eigenval_reg_momentum'] = cfg.training.get('eigenval_reg_momentum', 0.9)
         model_params['eigenval_reg_lambda'] = cfg.training.get('eigenval_reg_lambda', 0.1)
         return MLP(**model_params)

@@ -9,6 +9,7 @@ early_stopping_steps: 0
 reset: false
 seed: 42
 device: null
+eigenval_reg_type: "trace"
 eigenval_reg_lambda: 0.0
 eigenval_reg_momentum: 0.99
 

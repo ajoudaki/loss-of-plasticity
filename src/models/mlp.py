@@ -6,6 +6,7 @@ from .layers import get_activation, get_normalization
 import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
+from typing import Literal
 
 
 class MLP(nn.Module):
@@ -22,6 +23,7 @@ class MLP(nn.Module):
         normalization_affine=True,
         use_gated_ffn=False,
         gated_ffn_activation="relu",
+        eigenval_reg_type: Literal['trace', 'max'] = 'trace',
         eigenval_reg_lambda: float = 0.000001,
         eigenval_reg_momentum: float = 0.99,
         **kwargs
@@ -37,6 +39,7 @@ class MLP(nn.Module):
         self.gated_ffn_activation = gated_ffn_activation
         self.eigenval_reg_lambda: float = eigenval_reg_lambda
         self.eigenval_reg_momentum: float = eigenval_reg_momentum
+        self.eigenval_reg_type: bool = eigenval_reg_type
 
         if self.eigenval_reg_lambda > 0:
             self.register_buffer("running_cov_input", torch.eye(input_size))
@@ -107,16 +110,17 @@ def compute_cov_eigenval_regularization(model):
                 C_prev = getattr(model, f"running_cov_fc_{layer_index-1}")
             
             C_curr_est = W @ C_prev @ W.t()
-            
-            # Spectral norm of C_curr_est (largest eigenvalue)
-            # eigenvalues = torch.linalg.eigvalsh(C_curr_est)
-            # lambda_max = eigenvalues.max()
-            # lambda_max = torch.linalg.norm(C_curr_est, ord=2)
-            lambda_trace = torch.trace(C_curr_est) / C_curr_est.size(0)
-            lambda_max = lambda_trace  # Using mean trace as an approximation for efficiency
+
+            if model.eigenval_reg_type == 'trace':
+                lambda_trace = torch.trace(C_curr_est) / C_curr_est.size(0)
+                eigenval_center = lambda_trace  # Using mean trace as an approximation for efficiency
+            elif model.eigenval_reg_type == 'max':
+                eigenval_center = torch.linalg.norm(C_curr_est, ord=2)
+            else:
+                raise ValueError(f"Unknown eigenval_reg_type: {model.eigenval_reg_type}")
             
             # Regularization matrix difference: (||C_l||_2 * I - C_curr_est)
-            diff = lambda_max * torch.eye(C_curr_est.size(0), device=C_curr_est.device) - C_curr_est
+            diff = eigenval_center * torch.eye(C_curr_est.size(0), device=C_curr_est.device) - C_curr_est
             reg_loss += (diff**2).sum() / C_curr_est.size(0)
     return reg_loss
 
