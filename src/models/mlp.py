@@ -111,7 +111,9 @@ def compute_cov_eigenval_regularization(model):
             # Spectral norm of C_curr_est (largest eigenvalue)
             # eigenvalues = torch.linalg.eigvalsh(C_curr_est)
             # lambda_max = eigenvalues.max()
-            lambda_max = torch.linalg.norm(C_curr_est, ord=2)
+            # lambda_max = torch.linalg.norm(C_curr_est, ord=2)
+            lambda_trace = torch.trace(C_curr_est) / C_curr_est.size(0)
+            lambda_max = lambda_trace  # Using mean trace as an approximation for efficiency
             
             # Regularization matrix difference: (||C_l||_2 * I - C_curr_est)
             diff = lambda_max * torch.eye(C_curr_est.size(0), device=C_curr_est.device) - C_curr_est
