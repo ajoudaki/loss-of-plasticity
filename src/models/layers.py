@@ -4,11 +4,11 @@ import random
 import numpy as np
 
 
-
 def get_activation(activation_name):
     """Returns the activation function based on name."""
     activations = {
         'relu': nn.ReLU(inplace=False),
+        'srelu': SymmetricReLU(),
         'leaky_relu': nn.LeakyReLU(0.1, inplace=False),
         'tanh': nn.Tanh(),
         'sigmoid': nn.Sigmoid(),
@@ -24,6 +24,15 @@ def get_activation(activation_name):
                      f"Choose from: {list(activations.keys())}")
     
     return activations[activation_name.lower()]
+
+
+class SymmetricReLU(nn.Module):
+    def __init__(self):
+        super(SymmetricReLU, self).__init__()
+        
+    def forward(self, x):
+        return -nn.functional.relu(-x)
+
 
 class TransformerBatchNorm(nn.Module):
     """
