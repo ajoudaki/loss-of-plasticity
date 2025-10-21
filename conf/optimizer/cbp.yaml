@@ -1,0 +1,13 @@
+# @package _global_.optimizer
+name: cbp
+lr: 0.001
+weight_decay: 0.0
+momentum: 0.0
+dampening: 0.0
+nesterov: false
+reinit_optimizer: false  # Flag for reinitializing optimizer
+
+# CBP-specific parameters
+replacement_rate: 0.001
+decay_rate: 0.9
+maturity_threshold: 100

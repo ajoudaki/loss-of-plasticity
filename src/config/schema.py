@@ -157,6 +157,11 @@ class OptimizerConfig:
     # RMSprop parameters
     alpha: float = 0.99
     centered: bool = False
+
+    # CBP-specific parameters
+    replacement_rate: float = 0.001
+    decay_rate: float = 0.9
+    maturity_threshold: int = 100
     
     # Special flags
     reinit_optimizer: bool = False  # Reinitialize optimizer state for each new task

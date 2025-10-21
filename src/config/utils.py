@@ -13,6 +13,7 @@ import torch
 import logging
 
 from src.models.model_factory import create_model
+from src.utils.cbp_optimizer import ContinualBackprop
 
 def get_device(device_str: Optional[str] = None, verbose: bool = False) -> torch.device:
     """
@@ -282,6 +283,22 @@ def create_optimizer(model: nn.Module, cfg: DictConfig) -> torch.optim.Optimizer
             dampening=cfg.optimizer.dampening,
             weight_decay=cfg.optimizer.weight_decay,
             nesterov=cfg.optimizer.nesterov
+        )
+    elif optimizer_name == 'cbp':
+        return ContinualBackprop(
+            model.parameters(),
+            lr=cfg.optimizer.lr,
+            weight_decay=cfg.optimizer.weight_decay,
+            momentum=cfg.optimizer.momentum,
+            nesterov=cfg.optimizer.nesterov,
+            dampening=cfg.optimizer.dampening,
+            replacement_rate=cfg.optimizer.replacement_rate,
+            decay_rate=cfg.optimizer.decay_rate,
+            maturity_threshold=cfg.optimizer.maturity_threshold,
+            loss='nll',
+            init='kaiming',
+            accumulate=False,
+            outgoing_random=False,
         )
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
