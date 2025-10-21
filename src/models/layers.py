@@ -16,6 +16,7 @@ def get_activation(activation_name):
         'elu': nn.ELU(inplace=False),
         'selu': nn.SELU(inplace=False),
         'swish': nn.SiLU(inplace=False),
+        'softplus': nn.Softplus(),
         'none': nn.Identity()
     }
     
