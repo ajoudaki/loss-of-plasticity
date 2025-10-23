@@ -206,11 +206,19 @@ def setup_wandb(cfg: DictConfig) -> bool:
         
         # Add run name
         if hasattr(cfg.logging, "wandb_run_name"):
-            init_args["name"] = cfg.logging.wandb_run_name
+            name = cfg.logging.wandb_run_name
         else:
+            name = dataset_name
+            # model
             params = get_formatted_model_parameters(cfg)
-            init_args["name"] = f"{model_name}_{dataset_name}_{cfg.model.activation}_{params}_bs:{cfg.training.batch_size}"
-            
+            name += f"_{model_name}_{cfg.model.activation}_{params}_{cfg.model.normalization}_dp:{cfg.model.dropout_p}"
+            # optimizer
+            name += f"_{cfg.optimizer.name}_{cfg.optimizer.lr}"
+            # training
+            name += f"_bs:{cfg.training.batch_size}"
+
+        init_args["name"] = name
+
         wandb.init(**init_args)
         return True
     return False
