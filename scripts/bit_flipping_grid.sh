@@ -5,13 +5,16 @@
 
 set -e # Exit on first error
 
-BASE_PYTHON_CMD="python scripts/run_bit_flipping_experiment.py"
+BASE_PYTHON_CMD="python3 scripts/run_bit_flipping_experiment_split.py"
 N_EXAMPLES_OVERRIDE="training.n_examples=5000000" # 5e6
 
-START_SEED=30
+START_SEED=0
 END_SEED=99 # Seeds 0 to 99
 
-NUM_GPUS=4
+# Define the available GPU indices explicitly
+GPU_IDS=(3 4 5)  # Customize this list as needed
+NUM_GPUS=${#GPU_IDS[@]}
+
 
 declare -a TRAINING_CONFIG_SETS
 # Config 1: Default
@@ -45,8 +48,8 @@ for seed_val in $(seq $START_SEED $END_SEED); do
         config_name_suffix=${TRAINING_CONFIG_SETS[0]}
         specific_training_overrides=${TRAINING_CONFIG_SETS[1]}
 
-        # Assign GPU: cuda:0, cuda:1, cuda:2, cuda:3 in a round-robin fashion
-        gpu_id=$(($job_count % $NUM_GPUS))
+        # Assign GPU in a round-robin fashion
+        gpu_id=${GPU_IDS[$((job_count % NUM_GPUS))]}
         DEVICE_OVERRIDE="training.device=cuda:$gpu_id"
 
         WANDB_RUN_NAME_OVERRIDE="logging.wandb_run_name=bf_seed${seed_val}_${config_name_suffix}_h${hidden_size}_n5e6_gpu${gpu_id}"

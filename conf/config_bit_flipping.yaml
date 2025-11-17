@@ -52,6 +52,7 @@ training:
   noise_variance: 0.0       # Variance of the noise for Shrink-and-Perturb
   save_model: false         # Whether to save the final learner model
   training_type: continual
+  switching_point: 0.5 # Fraction of training duration after which the learning network is changed
 
 # Optimizer specific parameters
 optimizer:
