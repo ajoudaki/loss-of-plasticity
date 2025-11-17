@@ -35,7 +35,7 @@ class SubsetDataset(Dataset):
         return image, label
 
 
-def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, val_split=0.2):
+def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, num_workers=2, val_split=0.2):
     """
     Prepare dataloaders for continual learning on a sequence of class subsets.
     
@@ -70,15 +70,15 @@ def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, val
         train_subset = Subset(current_dataset, train_indices)
         val_subset = Subset(current_dataset, val_indices)
         
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
         # Fixed batches for metrics
         fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
         fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
         
-        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False)
-        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False)
+        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
         # For previous tasks (old classes)
         old_loaders = {}
@@ -97,8 +97,8 @@ def prepare_continual_learning_data(dataset, class_sequence, batch_size=128, val
                 old_train_subset = Subset(old_dataset, old_train_indices)
                 old_val_subset = Subset(old_dataset, old_val_indices)
                 
-                old_train_loader = DataLoader(old_train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
-                old_val_loader = DataLoader(old_val_subset, batch_size=batch_size, shuffle=False, num_workers=2)
+                old_train_loader = DataLoader(old_train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+                old_val_loader = DataLoader(old_val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
                 
                 # Fixed old batches for metrics
                 fixed_old_train = Subset(old_train_subset, range(min(500, len(old_train_subset))))
@@ -420,7 +420,8 @@ def create_task_dataloaders(
     partitioned_train_datasets: List[Subset],
     partitioned_val_datasets: List[Subset],
     class_sequence: List[List[int]],
-    batch_size: int
+    batch_size: int,
+    num_workers: int = 2
 ) -> Dict[int, Dict[str, Any]]:
     """
     Create data loaders for each task.
@@ -437,15 +438,16 @@ def create_task_dataloaders(
     task_dataloaders = {}
     
     for task_id, (train_subset, val_subset) in enumerate(zip(partitioned_train_datasets, partitioned_val_datasets)):
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2, multiprocessing_context='fork')
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=2, multiprocessing_context='fork')
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers, multiprocessing_context='fork')
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers, multiprocessing_context='fork')
         
         # Fixed batches for metrics
-        fixed_train = Subset(train_subset, range(min(500, len(train_subset))))
-        fixed_val = Subset(val_subset, range(min(500, len(val_subset))))
+        fixed_batch_size = 500
+        fixed_train = Subset(train_subset, range(min(fixed_batch_size, len(train_subset))))
+        fixed_val = Subset(val_subset, range(min(fixed_batch_size, len(val_subset))))
         
-        fixed_train_loader = DataLoader(fixed_train, batch_size=batch_size, shuffle=False)
-        fixed_val_loader = DataLoader(fixed_val, batch_size=batch_size, shuffle=False)
+        fixed_train_loader = DataLoader(fixed_train, batch_size=fixed_batch_size,  num_workers=num_workers, shuffle=False)
+        fixed_val_loader = DataLoader(fixed_val, batch_size=fixed_batch_size,  num_workers=num_workers, shuffle=False)
         
         task_dataloaders[task_id] = {
             'train': train_loader,
@@ -524,7 +526,8 @@ def prepare_continual_learning_dataloaders(cfg: DictConfig) -> Tuple[Dict[int, D
         partitioned_train_datasets, 
         partitioned_val_datasets, 
         class_sequence, 
-        cfg.training.batch_size
+        cfg.training.batch_size,
+        cfg.training.num_workers
     )
     
     return task_dataloaders, num_classes, class_sequence

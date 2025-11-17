@@ -2,6 +2,8 @@
 
 This project investigates dynamic scaling properties of neural networks during training, with a particular focus on continual learning scenarios. It provides a framework for analyzing how neural networks adapt to new information and maintain previously learned knowledge.
 
+
+
 ## Project Structure
 
 ```
@@ -299,4 +301,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.

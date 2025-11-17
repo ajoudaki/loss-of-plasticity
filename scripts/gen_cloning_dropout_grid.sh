@@ -1,18 +1,19 @@
 #!/bin/bash
 
 # Define arrays for each parameter that varies
-models=("vit" "cnn" "resnet" "mlp")
+models=("mlp" "cnn" "vit" "resnet")
 normalizations=("batch" "layer" "none")
-dropout_values=("0" "0.1")
+dropout_values=("0" "0.1" "0.2")
 seeds=("40" "41" "42" "43" "44")
-learning_rates=("0.0001" "0.001" "0.01")  # Added learning rate grid
+optimizers=("sgd" "adam")
+learning_rates=("0.01" "0.001" "0.0001")  # Added learning rate grid
 
 # Fixed parameters
-dataset="tiny_imagenet"
-tasks="40"
-classes_per_task="5"
-epochs_per_task="500"
-wandb_tags="[main]"
+num_workers="2"
+dataset="cifar10"
+initial_epochs="20"
+epochs_per_expansion="500"
+wandb_tags="[main,cloning]"
 
 # Counter for experiments
 count=1
@@ -25,25 +26,31 @@ for model in "${models[@]}"; do
   for norm in "${normalizations[@]}"; do
     for dropout in "${dropout_values[@]}"; do
       for seed in "${seeds[@]}"; do
+	for optimizer in "${optimizers[@]}"; do
         for lr in "${learning_rates[@]}"; do  # Added learning rate loop
           # echo "Running experiment $count/$total: model=$model, normalization=$norm, dropout_p=$dropout, seed=$seed, lr=$lr"
 
-          CMD="python scripts/run_experiment.py \
+	  CMD="$(which python) $(pwd)/scripts/run_experiment.py \
             model=$model \
             model.normalization=$norm \
             model.dropout_p=$dropout \
             dataset=$dataset \
-            training.tasks=$tasks \
-            training.classes_per_task=$classes_per_task \
-            training.epochs_per_task=$epochs_per_task \
+	    training=cloning \
+	    training.initial_epochs=$initial_epochs \
+            training.epochs_per_expansion=$epochs_per_expansion \
+	    training.num_workers=$num_workers \ 
             training.seed=$seed \
+	    optimizer=$optimizer \
             optimizer.lr=$lr \
             wandb_tags=$wandb_tags "
           
-          echo $CMD
+          echo gpujob submit \"$CMD\"
+	  gpujob submit "$CMD"
+
           echo ""
 
           count=$((count + 1))
+        done
         done
       done
     done
