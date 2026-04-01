@@ -247,6 +247,8 @@ def get_dataset(dataset_name, transform_train=None, transform_test=None, downloa
     data_dir = os.path.join(script_dir, 'data')
     
     if dataset_name.lower() == 'cifar10':
+
+        data_dir = "/media/hofmann-scratch/glanzillo/gvcl_fork/dat"
         train_dataset = torchvision.datasets.CIFAR10(
             root=data_dir, train=True, download=download, transform=transform_train)
             
