@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Loss of Plasticity - Continual Learning Simulator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack-all.js"></script>
+  <style>
+    :root {
+      --frozen: #e74c3c; /* Red */
+      --cloned: #3498db; /* Blue */
+      --escape: #8e44ad; /* Purple */
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f7;
+      color: #1d1d1f;
+    }
+    .container {
+      max-width: 1900px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      position: relative;
+      overflow: hidden;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .header h1 { margin: 0; font-size: 24px; }
+    .controls {
+      display: flex; gap: 15px; margin-bottom: 15px; align-items: center; flex-wrap: wrap;
+      padding: 15px; background: #fbfbfd; border-radius: 8px; border: 1px solid #d2d2d7;
+    }
+    .control-group { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; }
+    .highlight-group { padding: 8px 12px; background: #fff3e0; border-radius: 6px; border: 1px solid #ffcc80; }
+    button {
+      padding: 8px 16px; cursor: pointer; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; transition: all 0.2s;
+    }
+    button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    #train { background: #34c759; color: white; }
+    #pause { background: #ff3b30; color: white; }
+    #reset { background: #007aff; color: white; }
+    #injectNoise { background: var(--escape); color: white; box-shadow: 0 0 10px rgba(142, 68, 173, 0.4); border: 1px solid #732d91;}
+    
+    select, input[type="number"] { padding: 6px 8px; border: 1px solid #d2d2d7; border-radius: 6px; width: 80px; font-size: 13px; }
+    input[type="checkbox"] { margin-right: 5px; }
+    
+    /* D3 Styles */
+    .link { fill: none; stroke-opacity: 0.4; transition: all 0.3s; }
+    .act-label { font-size: 11px; fill: #86868b; text-anchor: middle; font-weight: 600; }
+    
+    /* GridStack Styles */
+    .grid-stack { background: transparent; margin-top: 10px; }
+    .grid-stack-item-content { background: white; border: 1px solid #d2d2d7; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .plot-header { padding: 10px 15px; background: #f5f5f7; border-bottom: 1px solid #d2d2d7; font-weight: 600; cursor: move; font-size: 14px; }
+    .plot-content { flex: 1; overflow: hidden; position: relative; }
+    
+    /* Task notification banner */
+    #taskOverlay {
+      position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      background: #1d1d1f; color: white; padding: 8px 24px;
+      border-radius: 0 0 10px 10px; font-size: 14px; font-weight: 600;
+      pointer-events: none; opacity: 0; z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex; align-items: center; gap: 8px;
+      transition: opacity 0.2s ease-in-out;
+    }
+    .task-flash { animation: flashAnim 2.5s ease-in-out forwards; }
+    @keyframes flashAnim {
+      0% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      10% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+    }
+    .overlay-sub { font-size: 12px; color: #aaa; font-weight: 400; }
+
+    /* Legend */
+    .legend-box { display: inline-flex; align-items: center; margin-left: 15px; gap: 15px; font-size: 13px; font-weight: normal; float: right;}
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .color-swatch { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; }
+
+    /* Frozen / Cloned glow effects on network nodes */
+    .frozen-glow rect { fill: rgba(231, 76, 60, 0.15) !important; stroke: var(--frozen) !important; stroke-width: 2.5px !important; }
+    .cloned-glow rect { fill: rgba(52, 152, 219, 0.15) !important; stroke: var(--cloned) !important; stroke-width: 2.5px !important; }
+
+    /* Detail Viz (Hidden by default) */
+    .detail-viz { display: none; margin-top: 20px; border: 1px solid #ddd; border-radius: 8px; padding: 15px; background: white; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="taskOverlay">
+      <span id="taskOverlayTitle" style="font-weight:700;">TASK 1</span>
+      <span class="overlay-sub">— Data distribution shifted</span>
+    </div>
+
+    <div class="header">
+      <h1>Loss of Plasticity - Trap Simulator</h1>
+    </div>
+
+    <div class="controls">
+      <div class="control-group">
+        <button id="train">Train</button>
+        <button id="pause" disabled>Pause</button>
+        <button id="reset">Reset</button>
+      </div>
+
+      <div class="control-group highlight-group" title="Automates an evolving environment by shifting the data distribution without resetting the model.">
+        <label style="color: #d35400; cursor: pointer;">
+          <input type="checkbox" id="continualLearning" checked>
+          <strong>Continual</strong>
+        </label>
+        <label>every:</label>
+        <input type="number" id="shiftInterval" min="100" step="100" value="500" style="width: 55px;">
+        <label>Shift:</label>
+        <select id="shiftType" style="width: 110px;">
+          <option value="rotate45">Rotate 45°</option>
+          <option value="rotate15">Rotate 15°</option>
+          <option value="rotateRandom" selected>Rotate random</option>
+          <option value="translate">Translate</option>
+          <option value="brownian">Brownian</option>
+          <option value="reinit">Re-initialize</option>
+        </select>
+        <label>Step:</label>
+        <select id="shiftSpeed" title="Step size for cluster movement per shift (Brownian/Translate).">
+          <option value="0.1">0.1</option>
+          <option value="0.25">0.25</option>
+          <option value="0.5">0.5</option>
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <button id="injectNoise" title="Inject targeted noise to break symmetries and recover effective rank.">⚡ Inject Noise (CBP)</button>
+      </div>
+      
+      <div class="control-group">
+        <label>Dist:</label>
+        <select id="distribution">
+          <option value="gmm" selected>GMM</option>
+          <option value="circle">Circle</option>
+          <option value="xor">XOR</option>
+        </select>
+      </div>
+
+      <div class="control-group" title="Number of Gaussian clusters (half per class).">
+        <label>K:</label>
+        <input type="number" id="gmmClusters" min="2" max="12" value="4" style="width:45px;">
+      </div>
+
+      <div class="control-group" title="Min distance between opposite-class clusters = c × radius. Higher = more separated. 0 = no constraint.">
+        <label>Sep:</label>
+        <select id="gmmSeparation">
+          <option value="0">0</option>
+          <option value="0.25">0.25</option>
+          <option value="0.5">0.5</option>
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </div>
+
+      <div class="control-group" title="Random seed for full reproducibility.">
+        <label>Seed:</label>
+        <input type="number" id="seed" min="0" value="42" style="width:55px;">
+      </div>
+
+      <div class="control-group">
+        <label>Act:</label>
+        <select id="activation">
+          <option value="relu">ReLU</option>
+          <option value="tanh" selected>Tanh</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Norm:</label>
+        <select id="normalization">
+          <option value="none" selected>None</option>
+          <option value="layer">Layer Norm</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>LR:</label>
+        <select id="learningRate">
+          <option value="0.001">0.001</option>
+          <option value="0.003">0.003</option>
+          <option value="0.01" selected>0.01</option>
+          <option value="0.03">0.03</option>
+          <option value="0.1">0.1</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Width:</label>
+        <input type="number" id="width" min="2" max="16" value="8" style="width:50px;">
+      </div>
+
+      <div class="control-group">
+        <label>Depth:</label>
+        <input type="number" id="depth" min="1" max="8" value="5" style="width:50px;">
+      </div>
+
+      <div class="control-group" title="Frozen detection mode: f'(z) = local activation derivative, δ = full backward error.">
+        <label>Frozen:</label>
+        <select id="frozenMode" style="width:55px;">
+          <option value="fprime" selected>f'(z)</option>
+          <option value="backward">δ</option>
+        </select>
+        <label>ε:</label>
+        <select id="frozenEps">
+          <option value="1e-6">1e-6</option>
+          <option value="1e-5">1e-5</option>
+          <option value="1e-4" selected>1e-4</option>
+          <option value="1e-3">1e-3</option>
+          <option value="1e-2">1e-2</option>
+        </select>
+        <label>p:</label>
+        <select id="frozenProbThreshold">
+          <option value="0.999">0.999</option>
+          <option value="0.99" selected>0.99</option>
+          <option value="0.95">0.95</option>
+          <option value="0.90">0.90</option>
+          <option value="0.80">0.80</option>
+        </select>
+      </div>
+
+      <div class="control-group" title="Absolute correlation above this threshold marks a pair as cloned.">
+        <label>Clone&thinsp;τ:</label>
+        <select id="cloneThreshold">
+          <option value="0.999">0.999</option>
+          <option value="0.995">0.995</option>
+          <option value="0.99" selected>0.99</option>
+          <option value="0.95">0.95</option>
+          <option value="0.90">0.90</option>
+          <option value="0.85">0.85</option>
+          <option value="0.80">0.80</option>
+        </select>
+      </div>
+
+      <div class="control-group" title="EMA smoothing factor: α=1 means current batch only, α→0 means long memory.">
+        <label>EMA&thinsp;α:</label>
+        <select id="emaAlpha">
+          <option value="1.0">1.0</option>
+          <option value="0.5">0.5</option>
+          <option value="0.3">0.3</option>
+          <option value="0.1" selected>0.1</option>
+          <option value="0.05">0.05</option>
+          <option value="0.01">0.01</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>WD:</label>
+        <select id="weightDecay">
+          <option value="0" selected>0</option>
+          <option value="0.0001">1e-4</option>
+          <option value="0.001">1e-3</option>
+          <option value="0.01">1e-2</option>
+          <option value="0.1">0.1</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label><input type="checkbox" id="useBias" checked> Bias</label>
+      </div>
+
+      <div style="display:none;">
+        <input type="checkbox" id="showPreAct" checked>
+        <input type="number" id="batchSize" value="64">
+        <input type="number" id="momentum" value="0.9">
+        <select id="dropout"><option value="0" selected>0</option></select>
+      </div>
+
+      <div class="control-group" style="margin-left: auto; font-size: 15px;">
+        <span style="color: #007aff; font-weight: bold;">Task: <span id="taskIndicator">1</span></span> | 
+        <span>Step: <span id="step">0</span></span> | 
+        <span style="color: var(--frozen); font-weight: bold;">Loss: <span id="trainLoss">-</span></span>
+      </div>
+    </div>
+
+    <div class="grid-stack"></div>
+    
+    <div class="detail-viz" id="detailView">
+      <div id="detailTitle" style="text-align: center; font-weight:bold; margin-bottom:10px;"></div>
+      <div style="display: flex; justify-content: center; gap: 20px;">
+        <div id="detailCanvas"></div>
+        <div>
+          <div id="colorBarMax" style="font-size:12px;text-align:center;">1.0</div>
+          <svg id="colorGradient" width="30" height="300"></svg>
+          <div id="colorBarMin" style="font-size:12px;text-align:center;">-1.0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // Core Math (Jacobi Eigenvalues & Covariance)
+    // =========================================================================
+    function computeEigenvaluesJacobi(matrix, maxIter = 100) {
+      const n = matrix.length;
+      if (n === 0) return [];
+      if (n === 1) return [Math.abs(matrix[0][0])];
+      const A = matrix.map(row => [...row]);
+      for (let iter = 0; iter < maxIter; iter++) {
+        let maxVal = 0, p = 0, q = 1;
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            if (Math.abs(A[i][j]) > maxVal) { maxVal = Math.abs(A[i][j]); p = i; q = j; }
+          }
+        }
+        if (maxVal < 1e-10) break;
+        const app = A[p][p], aqq = A[q][q], apq = A[p][q];
+        let theta = (Math.abs(app - aqq) < 1e-15) ? Math.PI / 4 : 0.5 * Math.atan2(2 * apq, app - aqq);
+        const c = Math.cos(theta), s = Math.sin(theta);
+        const newAp = new Array(n), newAq = new Array(n);
+        for (let i = 0; i < n; i++) {
+          newAp[i] = c * A[p][i] + s * A[q][i];
+          newAq[i] = -s * A[p][i] + c * A[q][i];
+        }
+        for (let i = 0; i < n; i++) { A[p][i] = newAp[i]; A[q][i] = newAq[i]; }
+        for (let i = 0; i < n; i++) {
+          const tip = A[i][p], tiq = A[i][q];
+          A[i][p] = c * tip + s * tiq; A[i][q] = -s * tip + c * tiq;
+        }
+      }
+      return A.map((row, i) => Math.abs(row[i]));
+    }
+
+    function computeCovarianceMatrix(activations) {
+      if (!activations || activations.length === 0 || activations[0].length === 0) return [];
+      const nSamples = activations.length, nNeurons = activations[0].length;
+      const means = new Array(nNeurons).fill(0);
+      for (let i = 0; i < nSamples; i++) for (let j = 0; j < nNeurons; j++) means[j] += activations[i][j];
+      for (let j = 0; j < nNeurons; j++) means[j] /= nSamples;
+      
+      const cov = Array(nNeurons).fill(0).map(() => Array(nNeurons).fill(0));
+      for (let i = 0; i < nNeurons; i++) {
+        for (let j = 0; j < nNeurons; j++) {
+          let sum = 0;
+          for (let k = 0; k < nSamples; k++) sum += (activations[k][i] - means[i]) * (activations[k][j] - means[j]);
+          cov[i][j] = sum / nSamples;
+        }
+      }
+      return cov;
+    }
+
+    function computeEffectiveRank(covarianceMatrix) {
+      if (!covarianceMatrix || covarianceMatrix.length === 0) return 0;
+      const eigenvalues = computeEigenvaluesJacobi(covarianceMatrix);
+      if (eigenvalues.length === 0) return 0;
+      const sum = eigenvalues.reduce((a, b) => a + Math.abs(b), 0);
+      if (sum < 1e-10) return 1;
+      const normalized = eigenvalues.map(v => Math.abs(v) / sum);
+      let entropy = 0;
+      for (let i = 0; i < normalized.length; i++) {
+        if (normalized[i] > 1e-10) entropy -= normalized[i] * Math.log(normalized[i]);
+      }
+      return Math.exp(entropy);
+    }
+
+    // =========================================================================
+    // Seeded PRNG (mulberry32) for reproducibility
+    // =========================================================================
+    function mulberry32(seed) {
+      let s = seed | 0;
+      return function() {
+        s = (s + 0x6D2B79F5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    let rng = mulberry32(42); // default seed
+
+    function initRng() {
+      const seed = parseInt(document.getElementById('seed').value) || 42;
+      rng = mulberry32(seed);
+    }
+
+    // =========================================================================
+    // Data Generation & Evolving World Logic
+    // =========================================================================
+    const BOUNDARY = 5; // cluster centers must stay within [-BOUNDARY, BOUNDARY]
+
+    // Validate a set of centers: separation + boundary
+    function validateCenters(centers) {
+      const sep = parseFloat(document.getElementById('gmmSeparation').value);
+      const radius = Math.sqrt(0.5);
+      const minDist = sep * radius;
+
+      for (let i = 0; i < centers.length; i++) {
+        // Boundary check
+        if (Math.abs(centers[i].x) > BOUNDARY || Math.abs(centers[i].y) > BOUNDARY) return false;
+        // Separation check (opposite-class pairs)
+        for (let j = i + 1; j < centers.length; j++) {
+          if (centers[i].label !== centers[j].label) {
+            const dx = centers[i].x - centers[j].x;
+            const dy = centers[i].y - centers[j].y;
+            if (Math.sqrt(dx * dx + dy * dy) < minDist) return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function initGmmCenters() {
+      const k = parseInt(document.getElementById('gmmClusters').value) || 4;
+      const maxAttempts = 500;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const centers = [];
+        for (let i = 0; i < k; i++) {
+          centers.push({
+            x: (rng() - 0.5) * BOUNDARY * 2,
+            y: (rng() - 0.5) * BOUNDARY * 2,
+            label: i < Math.ceil(k / 2) ? 0 : 1
+          });
+        }
+        if (validateCenters(centers)) return centers;
+      }
+
+      // Fallback
+      const centers = [];
+      for (let i = 0; i < k; i++) {
+        centers.push({
+          x: (rng() - 0.5) * BOUNDARY * 2,
+          y: (rng() - 0.5) * BOUNDARY * 2,
+          label: i < Math.ceil(k / 2) ? 0 : 1
+        });
+      }
+      return centers;
+    }
+
+    function generateData(n, type) {
+      const data = [], labels = [];
+      for (let i = 0; i < n; i++) {
+        let x, y, label;
+        switch(type) {
+          case 'circle':
+            x = (rng() * 12) - 6; y = (rng() * 12) - 6;
+            label = (Math.sqrt(x*x + y*y) >= 2.5 && Math.sqrt(x*x + y*y) <= 4.5) ? 1 : 0;
+            break;
+          case 'xor':
+            x = (rng() * 10) - 5; y = (rng() * 10) - 5;
+            label = ((x > 0) ^ (y > 0)) ? 1 : 0;
+            break;
+          case 'gmm':
+            if (!window.gmmCenters) {
+              window.gmmCenters = initGmmCenters();
+            }
+            const numMixtures = window.gmmCenters.length;
+            const center = window.gmmCenters[Math.floor(rng() * numMixtures)];
+            const stdDev = Math.sqrt(0.5);
+            const u1 = rng(), u2 = rng();
+            const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            const z1 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2);
+            x = center.x + z0 * stdDev; y = center.y + z1 * stdDev;
+            label = center.label;
+            break;
+        }
+        data.push([x, y]); labels.push(label);
+      }
+      return { data, labels };
+    }
+
+    function triggerTaskFlash(taskNum, isNoise = false) {
+      const overlay = document.getElementById('taskOverlay');
+      if (isNoise) {
+        document.getElementById('taskOverlayTitle').textContent = `⚡ NOISE INJECTED`;
+        document.querySelector('.overlay-sub').textContent = `— Symmetries broken, plasticity restored`;
+        overlay.style.background = '#2d1b69';
+      } else {
+        document.getElementById('taskOverlayTitle').textContent = `TASK ${taskNum}`;
+        document.querySelector('.overlay-sub').textContent = `— Data distribution shifted`;
+        overlay.style.background = '#1d1d1f';
+      }
+
+      overlay.classList.remove('task-flash');
+      void overlay.offsetWidth; // trigger reflow
+      overlay.classList.add('task-flash');
+    }
+
+    // =========================================================================
+    // Neural Network Class
+    // =========================================================================
+    class Network {
+      constructor(width = 8, depth = 3) {
+        this.lr = parseFloat(document.getElementById('learningRate').value);
+        this.weightDecay = parseFloat(document.getElementById('weightDecay').value);
+        this.momentum = 0.9;
+        this.batchSize = 64;
+        this.activation = document.getElementById('activation').value;
+        this.normalization = document.getElementById('normalization').value;
+        this.useBias = document.getElementById('useBias').checked;
+        this.layers = [2, ...Array(depth).fill(width), 1];
+        
+        this.step = 0;
+        
+        // Track the Topological Traps
+        this.frozenUnits = {};
+        this.clonedPairs = [];
+        this.clonedSet = new Set();
+
+        // EMA state for frozen/clone detection
+        this.emaFrozenProb = {};    // emaFrozenProb[layer][unit] = EMA of P(|f'(pre_act)| < eps)
+        this.emaCovMatrix = {};     // emaCovMatrix[layer] = EMA of covariance matrix
+
+        this.effRankHistory = { steps: [], activations: {}, preActivations: {} };
+        this.lossHistory = { steps: [], trainLoss: [], testLoss: [] };
+        this.symptomsHistory = { steps: [], deadFraction: [], clonedFraction: [] };
+
+        this.initWeights();
+      }
+
+      initWeights() {
+        this.weights = []; this.biases = [];
+        this.velocityWeights = []; this.velocityBiases = [];
+        this.normParams = [];
+        
+        for (let i = 0; i < this.layers.length - 1; i++) {
+          const w = [], vw = [];
+          for (let j = 0; j < this.layers[i]; j++) {
+            const row = [], vRow = [];
+            for (let k = 0; k < this.layers[i+1]; k++) {
+              row.push((rng() - 0.5) * 2 * Math.sqrt(2 / this.layers[i]));
+              vRow.push(0);
+            }
+            w.push(row); vw.push(vRow);
+          }
+          this.weights.push(w); this.velocityWeights.push(vw);
+          this.biases.push(Array(this.layers[i+1]).fill(0).map(() => this.useBias ? (rng() - 0.5) * 0.1 : 0));
+          this.velocityBiases.push(Array(this.layers[i+1]).fill(0));
+          
+          if (i < this.layers.length - 2) {
+            this.normParams.push({ gamma: Array(this.layers[i+1]).fill(1), beta: Array(this.layers[i+1]).fill(0) });
+          }
+        }
+        for (let i = 1; i < this.layers.length; i++) this.effRankHistory.activations[i] = [];
+      }
+
+      activate(x) { return this.activation === 'relu' ? Math.max(0, x) : Math.tanh(x); }
+      activateDeriv(x) { return this.activation === 'relu' ? (x > 0 ? 1 : 0) : (1 - Math.tanh(x) * Math.tanh(x)); }
+
+      normalize(z, layerIdx) {
+        if (this.normalization === 'none' || layerIdx >= this.layers.length - 2) return z;
+        const normalized = [...z];
+        const mean = z.reduce((a, b) => a + b, 0) / z.length;
+        const std = Math.sqrt(z.reduce((a, b) => a + (b - mean) ** 2, 0) / z.length + 1e-5);
+        for (let i = 0; i < z.length; i++) {
+          normalized[i] = this.normParams[layerIdx].gamma[i] * ((z[i] - mean) / std) + this.normParams[layerIdx].beta[i];
+        }
+        return normalized;
+      }
+
+      forward(input) {
+        const activations = [input], zs = [], zNormalized = [];
+        for (let i = 0; i < this.weights.length; i++) {
+          const w = this.weights[i], z = [];
+          for (let j = 0; j < w[0].length; j++) {
+            let sum = this.biases[i][j];
+            for (let k = 0; k < activations[i].length; k++) sum += activations[i][k] * w[k][j];
+            z.push(sum);
+          }
+          zs.push(z);
+          const isOutput = (i === this.weights.length - 1);
+          const zNorm = isOutput ? z : this.normalize(z, i);
+          zNormalized.push(zNorm);
+          
+          const a = [];
+          for (let j = 0; j < zNorm.length; j++) a.push(isOutput ? 1/(1+Math.exp(-zNorm[j])) : this.activate(zNorm[j]));
+          activations.push(a);
+        }
+        return { activations, zs, zNormalized };
+      }
+
+      backward(input, target, activations, zs, zNormalized) {
+        const output = activations[activations.length - 1][0];
+        let delta = [(output - target) * output * (1 - output)];
+        
+        for (let i = this.weights.length - 1; i >= 0; i--) {
+          const w = this.weights[i];
+          for (let j = 0; j < w.length; j++) {
+            for (let k = 0; k < w[j].length; k++) {
+              let gradient = delta[k] * activations[i][j] + this.weightDecay * this.weights[i][j][k];
+              this.velocityWeights[i][j][k] = this.momentum * this.velocityWeights[i][j][k] - this.lr * gradient;
+              this.weights[i][j][k] += this.velocityWeights[i][j][k];
+            }
+          }
+          if (this.useBias) {
+            for (let k = 0; k < this.biases[i].length; k++) {
+              this.velocityBiases[i][k] = this.momentum * this.velocityBiases[i][k] - this.lr * delta[k];
+              this.biases[i][k] += this.velocityBiases[i][k];
+            }
+          }
+          if (i > 0) {
+            const newDelta = [];
+            for (let j = 0; j < activations[i].length; j++) {
+              let sum = 0;
+              for (let k = 0; k < delta.length; k++) sum += delta[k] * w[j][k];
+              newDelta.push(sum * this.activateDeriv(zNormalized[i-1][j]));
+            }
+            delta = newDelta;
+          }
+        }
+      }
+
+      // Compute backward deltas (errors) per hidden unit without updating weights
+      computeBackwardDeltas(input, target) {
+        const { activations, zs, zNormalized } = this.forward(input);
+        const output = activations[activations.length - 1][0];
+        let delta = [(output - target) * output * (1 - output)];
+
+        // deltas[i] = backward error at hidden layer i (0-indexed from first hidden)
+        const deltas = {};
+
+        for (let i = this.weights.length - 1; i >= 0; i--) {
+          if (i > 0) {
+            const w = this.weights[i];
+            const newDelta = [];
+            for (let j = 0; j < activations[i].length; j++) {
+              let sum = 0;
+              for (let k = 0; k < delta.length; k++) sum += delta[k] * w[j][k];
+              newDelta.push(sum * this.activateDeriv(zNormalized[i-1][j]));
+            }
+            delta = newDelta;
+            deltas[i] = [...delta]; // layer index i corresponds to hidden layer i
+          }
+        }
+        return deltas;
+      }
+
+      forwardBatch(inputs) {
+        const allResults = [];
+        for(let i=0; i<inputs.length; i++) allResults.push(this.forward(inputs[i]));
+        const layerActs = [];
+        for(let l=0; l<this.layers.length; l++) {
+            const batchForLayer = [];
+            for(let b=0; b<inputs.length; b++) batchForLayer.push(allResults[b].activations[l]);
+            layerActs.push(batchForLayer);
+        }
+        // zNormalized per weight-layer (0 = first hidden layer pre-acts)
+        const layerPreActs = [];
+        const numWeightLayers = this.weights.length;
+        for(let l=0; l<numWeightLayers; l++) {
+            const batchForLayer = [];
+            for(let b=0; b<inputs.length; b++) batchForLayer.push(allResults[b].zNormalized[l]);
+            layerPreActs.push(batchForLayer);
+        }
+        return { activations: layerActs, zNormalized: layerPreActs };
+      }
+
+      trainBatch(data, labels) {
+        const indices = Array.from({length: data.length}, (_, i) => i);
+        for (let i = indices.length - 1; i > 0; i--) {
+          const j = Math.floor(rng() * (i + 1));
+          [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+        for (let start = 0; start < data.length; start += this.batchSize) {
+          const end = Math.min(start + this.batchSize, data.length);
+          for (let i = start; i < end; i++) {
+            const idx = indices[i];
+            const { activations, zs, zNormalized } = this.forward(data[idx]);
+            this.backward(data[idx], labels[idx], activations, zs, zNormalized);
+          }
+          this.step++;
+        }
+      }
+
+      updateMetrics(data, labels) {
+        const sampleSize = Math.min(100, data.length);
+        const sampleIndices = Array.from({length: sampleSize}, () => Math.floor(rng() * data.length));
+        const samples = sampleIndices.map(i => data[i]);
+        const sampleLabels = sampleIndices.map(i => labels[i]);
+        const { activations, zNormalized } = this.forwardBatch(samples);
+
+        // Compute backward deltas lazily (only if needed for frozen mode)
+        const frozenMode = document.getElementById('frozenMode').value;
+        let allDeltas = null;
+        if (frozenMode === 'backward') {
+          allDeltas = [];
+          for (let s = 0; s < sampleSize; s++) {
+            allDeltas.push(this.computeBackwardDeltas(samples[s], sampleLabels[s]));
+          }
+        }
+
+        const alpha = parseFloat(document.getElementById('emaAlpha').value);
+
+        this.effRankHistory.steps.push(this.step);
+        this.symptomsHistory.steps.push(this.step);
+
+        let totalHidden = 0;
+        let deadCount = 0;
+        let clonedCount = 0;
+
+        this.frozenUnits = {};
+        this.clonedPairs = [];
+        this.clonedSet = new Set();
+
+        for (let layerIdx = 1; layerIdx < activations.length - 1; layerIdx++) {
+          const layerWidth = this.layers[layerIdx];
+          totalHidden += layerWidth;
+          this.frozenUnits[layerIdx] = new Array(layerWidth).fill(false);
+
+          // --- Compute current-batch frozen probability ---
+
+          const frozenEps = parseFloat(document.getElementById('frozenEps').value);
+          const preActLayerIdx = layerIdx - 1;
+          const batchFrozenProb = new Array(layerWidth).fill(0);
+
+          for (let i = 0; i < layerWidth; i++) {
+            let belowCount = 0, total = 0;
+            for (let s = 0; s < sampleSize; s++) {
+              if (frozenMode === 'fprime') {
+                // P(|f'(pre_act)| < eps): local activation derivative
+                if (zNormalized[preActLayerIdx] && zNormalized[preActLayerIdx][s] &&
+                    zNormalized[preActLayerIdx][s][i] !== undefined) {
+                  const val = Math.abs(this.activateDeriv(zNormalized[preActLayerIdx][s][i]));
+                  if (val < frozenEps) belowCount++;
+                  total++;
+                }
+              } else {
+                // P(|backward_delta| < eps): full backward error
+                if (allDeltas[s][layerIdx] && allDeltas[s][layerIdx][i] !== undefined) {
+                  if (Math.abs(allDeltas[s][layerIdx][i]) < frozenEps) belowCount++;
+                  total++;
+                }
+              }
+            }
+            batchFrozenProb[i] = total > 0 ? belowCount / total : 1;
+          }
+
+          // Current batch: covariance matrix
+          const batchCov = computeCovarianceMatrix(activations[layerIdx]);
+
+          // --- EMA update ---
+
+          // EMA of frozen probability
+          if (!this.emaFrozenProb[layerIdx]) {
+            this.emaFrozenProb[layerIdx] = [...batchFrozenProb];
+          } else {
+            for (let i = 0; i < layerWidth; i++) {
+              this.emaFrozenProb[layerIdx][i] = alpha * batchFrozenProb[i] + (1 - alpha) * this.emaFrozenProb[layerIdx][i];
+            }
+          }
+
+          // EMA of covariance
+          if (!this.emaCovMatrix[layerIdx]) {
+            this.emaCovMatrix[layerIdx] = batchCov.map(row => [...row]);
+          } else {
+            for (let i = 0; i < layerWidth; i++) {
+              for (let j = 0; j < layerWidth; j++) {
+                this.emaCovMatrix[layerIdx][i][j] = alpha * batchCov[i][j] + (1 - alpha) * this.emaCovMatrix[layerIdx][i][j];
+              }
+            }
+          }
+
+          // Use EMA covariance for effective rank
+          const actEffRank = computeEffectiveRank(this.emaCovMatrix[layerIdx]);
+          this.effRankHistory.activations[layerIdx].push(actEffRank);
+
+          // 1. Detect Frozen Trap (M_F): P(|backward| < eps) > probThreshold
+          const frozenProbThresh = parseFloat(document.getElementById('frozenProbThreshold').value);
+          for (let i = 0; i < layerWidth; i++) {
+            if (this.emaFrozenProb[layerIdx][i] > frozenProbThresh) {
+              this.frozenUnits[layerIdx][i] = true;
+              deadCount++;
+            }
+          }
+
+          // 2. Detect Cloned Trap (M_C) via EMA covariance
+          const cloneTau = parseFloat(document.getElementById('cloneThreshold').value);
+          const emaCov = this.emaCovMatrix[layerIdx];
+          for (let i = 0; i < layerWidth; i++) {
+            if (this.frozenUnits[layerIdx][i]) continue;
+            for (let j = i + 1; j < layerWidth; j++) {
+              if (this.frozenUnits[layerIdx][j]) continue;
+              if (emaCov[i] && emaCov[j]) {
+                  const varI = emaCov[i][i], varJ = emaCov[j][j];
+                  if (varI > 1e-6 && varJ > 1e-6) {
+                     const corr = Math.abs(emaCov[i][j] / Math.sqrt(varI * varJ));
+                     if (corr > cloneTau) {
+                        this.clonedPairs.push({layer: layerIdx, u1: i, u2: j});
+                        this.clonedSet.add(`${layerIdx}-${i}`);
+                        this.clonedSet.add(`${layerIdx}-${j}`);
+                     }
+                  }
+              }
+            }
+          }
+        }
+        
+        this.symptomsHistory.deadFraction.push(totalHidden > 0 ? (deadCount / totalHidden) : 0);
+        this.symptomsHistory.clonedFraction.push(totalHidden > 0 ? (this.clonedSet.size / totalHidden) : 0);
+      }
+
+      computeLoss(data, labels) {
+        let loss = 0;
+        for (let i = 0; i < data.length; i++) {
+          const { activations } = this.forward(data[i]);
+          const pred = activations[activations.length - 1][0];
+          loss += -(labels[i] * Math.log(pred + 1e-7) + (1-labels[i]) * Math.log(1-pred + 1e-7));
+        }
+        return loss / data.length;
+      }
+
+      computeGridPredictions(gridSize = 40) {
+        const batch = [], coords = [];
+        for (let i = 0; i < gridSize; i++) {
+          for (let j = 0; j < gridSize; j++) {
+            const x = -6 + (i / (gridSize - 1)) * 12, y = -6 + (j / (gridSize - 1)) * 12;
+            batch.push([x, y]); coords.push({ x, y });
+          }
+        }
+        const { activations } = this.forwardBatch(batch);
+        const outputs = activations[activations.length - 1];
+        return outputs.map((out, idx) => ({ x: coords[idx].x, y: coords[idx].y, value: out[0] }));
+      }
+    }
+
+    // =========================================================================
+    // Chart Builders (D3)
+    // =========================================================================
+    function createLineChart(containerId, title, yLabel) {
+      const container = d3.select(`#${containerId}`);
+      container.selectAll('*').remove();
+      const node = container.node();
+      const margin = { top: 30, right: 60, bottom: 40, left: 50 };
+      const width = node.clientWidth - 20, height = node.clientHeight - 20;
+      
+      const svg = container.append('svg').attr('width', width).attr('height', height);
+      const chartGroup = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      const chartW = width - margin.left - margin.right, chartH = height - margin.top - margin.bottom;
+      
+      svg.append('text').attr('x', width/2).attr('y', 15).attr('text-anchor', 'middle').attr('font-weight', '600').text(title);
+      svg.append('text').attr('transform', `translate(15, ${height/2}) rotate(-90)`).attr('text-anchor', 'middle').attr('font-size', '12px').text(yLabel);
+      
+      chartGroup.append('g').attr('class', 'x-axis').attr('transform', `translate(0,${chartH})`);
+      chartGroup.append('g').attr('class', 'y-axis');
+      chartGroup.append('g').attr('class', 'lines');
+      
+      return { svg, chartGroup, chartWidth: chartW, chartHeight: chartH };
+    }
+
+    function updateMultiLineChart(chartData, steps, linesData, forceMaxY = null, isPercent = false) {
+      const { chartGroup, chartWidth, chartHeight } = chartData;
+      if (steps.length === 0) return;
+      
+      const maxStep = Math.max(...steps);
+      let maxY = 0;
+      if (forceMaxY !== null) { maxY = forceMaxY; } 
+      else {
+        linesData.forEach(line => { if(line.data.length > 0) maxY = Math.max(maxY, ...line.data); });
+        maxY = maxY * 1.1 || 1;
+      }
+      
+      const xScale = d3.scaleLinear().domain([0, Math.max(maxStep, 1)]).range([0, chartWidth]);
+      const yScale = d3.scaleLinear().domain([0, Math.max(maxY, 0.1)]).range([chartHeight, 0]);
+      
+      chartGroup.select('.x-axis').call(d3.axisBottom(xScale).ticks(5).tickFormat(d3.format("~s")));
+      if (isPercent) {
+        chartGroup.select('.y-axis').call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(".0%")));
+      } else {
+        chartGroup.select('.y-axis').call(d3.axisLeft(yScale).ticks(5));
+      }
+      
+      const lineGen = d3.line().x((d, i) => xScale(steps[i])).y(d => yScale(d));
+      const linesGroup = chartGroup.select('.lines');
+      linesGroup.selectAll('*').remove();
+      
+      linesData.forEach(line => {
+        if (line.data.length > 0) {
+          linesGroup.append('path')
+            .datum(line.data)
+            .attr('fill', 'none').attr('stroke', line.color).attr('stroke-width', 2.5)
+            .attr('d', lineGen);
+        }
+      });
+      
+      chartData.chartGroup.selectAll('.legend').remove();
+      if(linesData[0] && linesData[0].label) {
+        const legend = chartData.chartGroup.append('g').attr('class', 'legend')
+          .attr('transform', `translate(${chartWidth + 5}, 0)`);
+        linesData.forEach((line, i) => {
+          legend.append('line').attr('x1', 0).attr('x2', 12).attr('y1', i*14).attr('y2', i*14).attr('stroke', line.color).attr('stroke-width', 2.5);
+          legend.append('text').attr('x', 16).attr('y', i*14 + 4).attr('font-size', '10px').attr('fill', '#333').text(line.label);
+        });
+      }
+    }
+
+    // =========================================================================
+    // Network SVG Visualization (Topological Traps)
+    // =========================================================================
+    function createNetworkViz(containerElement) {
+      const svg = d3.select(containerElement).append('svg')
+        .style('width', '100%').style('height', '100%')
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+      svg.append('g').attr('class', 'links');
+      svg.append('g').attr('class', 'cloned-links'); // Legacy (unused, kept for compat)
+      svg.append('g').attr('class', 'clone-boxes'); // Blue cluster boxes
+      svg.append('g').attr('class', 'unit-groups');
+      return svg;
+    }
+
+    function updateNetworkViz(svg, network) {
+      const layers = network.layers;
+      const nodeSize = 30, gapX = 90, padding = 40;
+      const totalWidth = layers.length * gapX + padding;
+      const maxNodes = Math.max(...layers);
+      const logicalHeight = maxNodes * 45 + padding;
+      
+      svg.attr('viewBox', `-20 -20 ${totalWidth} ${logicalHeight}`);
+      
+      // Build clone clusters per layer using union-find
+      const cloneClusters = {}; // layer -> array of clusters (each cluster = array of unit indices)
+      if (network.clonedPairs && network.clonedPairs.length > 0) {
+        const parents = {};
+        function find(key) { return parents[key] === key ? key : (parents[key] = find(parents[key])); }
+        function union(a, b) { parents[find(a)] = find(b); }
+
+        network.clonedPairs.forEach(pair => {
+          const ka = `${pair.layer}-${pair.u1}`, kb = `${pair.layer}-${pair.u2}`;
+          if (!(ka in parents)) parents[ka] = ka;
+          if (!(kb in parents)) parents[kb] = kb;
+          union(ka, kb);
+        });
+
+        // Group by root
+        const groups = {};
+        Object.keys(parents).forEach(k => {
+          const root = find(k);
+          if (!groups[root]) groups[root] = [];
+          groups[root].push(k);
+        });
+
+        Object.values(groups).forEach(members => {
+          const layer = parseInt(members[0].split('-')[0]);
+          const indices = members.map(m => parseInt(m.split('-')[1])).sort((a,b) => a - b);
+          if (!cloneClusters[layer]) cloneClusters[layer] = [];
+          cloneClusters[layer].push(indices);
+        });
+      }
+
+      // Build unit order per layer: clustered units adjacent, then the rest
+      const units = [];
+      for (let l = 0; l < layers.length; l++) {
+        const spacingY = logicalHeight / (layers[l] + 1);
+        const clusters = cloneClusters[l] || [];
+        const clustered = new Set(clusters.flat());
+        // Order: unclustered first, then each cluster's units grouped together
+        const order = [];
+        for (let n = 0; n < layers[l]; n++) {
+          if (!clustered.has(n)) order.push(n);
+        }
+        clusters.forEach(cl => cl.forEach(n => order.push(n)));
+
+        for (let pos = 0; pos < order.length; pos++) {
+          const n = order[pos];
+          units.push({ x: l * gapX, y: (pos + 1) * spacingY, layer: l, index: n });
+        }
+      }
+      
+      // Build a lookup: (layer, index) -> unit object
+      const unitLookup = {};
+      units.forEach(u => { unitLookup[`${u.layer}-${u.index}`] = u; });
+
+      // Standard Links (use lookup so edges follow reordered nodes)
+      const links = [];
+      for (let l = 0; l < layers.length - 1; l++) {
+        for (let i = 0; i < layers[l]; i++) {
+          for (let j = 0; j < layers[l+1]; j++) {
+            const src = unitLookup[`${l}-${i}`];
+            const tgt = unitLookup[`${l+1}-${j}`];
+            if (src && tgt) {
+              links.push({ source: src, target: tgt, weight: network.weights[l][i][j] });
+            }
+          }
+        }
+      }
+
+      const linkSel = svg.select('.links').selectAll('path').data(links);
+      linkSel.exit().remove();
+      linkSel.enter().append('path').merge(linkSel)
+        .attr('class', 'link')
+        .transition().duration(100)
+        .attr('d', d => `M${d.source.x+nodeSize/2},${d.source.y} C${d.source.x+gapX/2},${d.source.y} ${d.target.x-gapX/2},${d.target.y} ${d.target.x-nodeSize/2},${d.target.y}`)
+        .attr('stroke', d => d.weight > 0 ? '#b8d4f1' : '#f1b8b8')
+        .attr('stroke-width', d => Math.min(Math.abs(d.weight), 2));
+        
+      // Clone cluster boxes (blue rounded rects around grouped units)
+      const cloneBoxData = [];
+      Object.keys(cloneClusters).forEach(layerStr => {
+        const layer = parseInt(layerStr);
+        cloneClusters[layer].forEach(cluster => {
+          const clusterUnits = cluster.map(idx => units.find(u => u.layer === layer && u.index === idx)).filter(Boolean);
+          if (clusterUnits.length < 2) return;
+          const ys = clusterUnits.map(u => u.y);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          const x = clusterUnits[0].x;
+          cloneBoxData.push({
+            x: x - nodeSize/2 - 5,
+            y: minY - nodeSize/2 - 5,
+            width: nodeSize + 10,
+            height: (maxY - minY) + nodeSize + 10,
+            count: cluster.length
+          });
+        });
+      });
+
+      const boxSel = svg.select('.clone-boxes').selectAll('rect').data(cloneBoxData);
+      boxSel.exit().transition().duration(80).attr('opacity', 0).remove();
+      boxSel.enter().append('rect')
+        .attr('opacity', 0)
+        .attr('rx', 8).attr('ry', 8)
+        .attr('fill', 'rgba(52, 152, 219, 0.08)')
+        .attr('stroke', '#3498db').attr('stroke-width', 2)
+        .attr('stroke-dasharray', '6,3')
+        .merge(boxSel)
+        .transition().duration(150)
+        .attr('x', d => d.x).attr('y', d => d.y)
+        .attr('width', d => d.width).attr('height', d => d.height)
+        .attr('opacity', 1);
+
+      // Nodes (keyed by layer-index for stable reordering)
+      const unitGroups = svg.select('.unit-groups').selectAll('g')
+        .data(units, d => `${d.layer}-${d.index}`);
+
+      const enterGroups = unitGroups.enter().append('g')
+        .attr('transform', d => `translate(${d.x}, ${d.y})`);
+      enterGroups.append('rect');
+      enterGroups.append('text').attr('class', 'act-label').attr('y', -3);
+
+      const mergeGroups = enterGroups.merge(unitGroups)
+        .attr('class', d => {
+          let c = 'unit-group';
+          if (d.layer > 0 && d.layer < layers.length - 1) {
+              if (network.frozenUnits[d.layer] && network.frozenUnits[d.layer][d.index]) c += ' frozen-glow';
+              else if (network.clonedSet.has(`${d.layer}-${d.index}`)) c += ' cloned-glow';
+          }
+          return c;
+        });
+
+      // Animate units sliding to new positions
+      mergeGroups.transition().duration(100)
+        .attr('transform', d => `translate(${d.x}, ${d.y})`);
+
+      mergeGroups.select('rect')
+        .attr('x', -nodeSize/2).attr('y', -nodeSize/2)
+        .attr('width', nodeSize).attr('height', nodeSize).attr('rx', 4)
+        .attr('fill', '#fff').attr('stroke', '#666').attr('stroke-width', 1.5)
+        .attr('class', function() { return this.parentNode.className.baseVal.replace('unit-group', ''); });
+
+      mergeGroups.select('text').text(d => d.layer === 0 ? 'in' : (d.layer === layers.length-1 ? 'out' : `L${d.layer}`));
+      unitGroups.exit().remove();
+    }
+
+    function createOutputViz(containerElement) {
+      const svg = d3.select(containerElement).append('svg')
+        .style('width', '100%').style('height', '100%')
+        .attr('viewBox', `0 0 400 400`).attr('preserveAspectRatio', 'xMidYMid meet');
+      svg.append('g').attr('class', 'heatmap');
+      svg.append('g').attr('class', 'data-points');
+      return svg;
+    }
+
+    function updateOutputViz(svg, network, trainData) {
+      const predictions = network.computeGridPredictions(30);
+      const toPx = x => 20 + ((x + 6) / 12) * 360;
+      const color = d3.scaleLinear().domain([0, 0.5, 1]).range(['#e74c3c', '#ffffff', '#3498db']);
+      
+      const heatmap = svg.select('.heatmap').selectAll('rect').data(predictions);
+      heatmap.enter().append('rect').merge(heatmap)
+        .attr('x', d => toPx(d.x)).attr('y', d => toPx(d.y))
+        .attr('width', 360/29 + 1).attr('height', 360/29 + 1)
+        .attr('fill', d => color(d.value)).attr('opacity', 0.6);
+        
+      const points = svg.select('.data-points').selectAll('circle').data(trainData.data);
+      points.exit().remove();
+      points.enter().append('circle').merge(points)
+        .attr('cx', d => toPx(d[0])).attr('cy', d => toPx(d[1])).attr('r', 3)
+        .attr('fill', (d, i) => trainData.labels[i] === 1 ? '#3498db' : '#e74c3c')
+        .attr('stroke', 'white');
+    }
+
+    // =========================================================================
+    // Global Setup & Loop
+    // =========================================================================
+    initRng();
+    let network = new Network(
+      parseInt(document.getElementById('width').value),
+      parseInt(document.getElementById('depth').value)
+    );
+    let trainData = generateData(1000, document.getElementById('distribution').value);
+    let testData = generateData(300, document.getElementById('distribution').value);
+    let isTraining = false;
+    let animationId = null;
+    let currentTask = 1;
+    
+    const grid = GridStack.init({ cellHeight: 70, margin: 10, float: true });
+
+    grid.addWidget({ x: 0, y: 0, w: 7, h: 5, content: '<div class="plot-header">Topological Traps Visualization <div class="legend-box"><div class="legend-item"><div class="color-swatch" style="border-color: var(--frozen); background: rgba(168,50,42,0.2);"></div>Frozen</div><div class="legend-item"><div class="color-swatch" style="border-color: var(--cloned); background: rgba(35,82,160,0.2);"></div>Cloned</div></div></div><div class="plot-content" id="network"></div>' });
+    grid.addWidget({ x: 7, y: 0, w: 5, h: 5, content: '<div class="plot-header">Decision Boundary</div><div class="plot-content" id="output"></div>' });
+    grid.addWidget({ x: 0, y: 5, w: 4, h: 4, content: '<div class="plot-header">Loss Over Time</div><div class="plot-content" id="loss-chart"></div>' });
+    grid.addWidget({ x: 4, y: 5, w: 4, h: 4, content: '<div class="plot-header">LoP Symptoms (% Trapped)</div><div class="plot-content" id="symptoms-chart"></div>' });
+    grid.addWidget({ x: 8, y: 5, w: 4, h: 4, content: '<div class="plot-header">Activation Effective Rank</div><div class="plot-content" id="effrank-chart"></div>' });
+
+    let networkSvg, outputSvg, effRankChart, lossChart, symptomsChart;
+    
+    function initializeCharts() {
+      if(document.getElementById('network').clientHeight > 0) {
+        d3.select('#network').selectAll('*').remove(); networkSvg = createNetworkViz(document.getElementById('network'));
+      }
+      if(document.getElementById('output').clientHeight > 0) {
+        d3.select('#output').selectAll('*').remove(); outputSvg = createOutputViz(document.getElementById('output'));
+      }
+      lossChart = createLineChart('loss-chart', 'Train / Test Loss', 'Loss');
+      symptomsChart = createLineChart('symptoms-chart', 'Manifold Entrapment', 'Fraction');
+      effRankChart = createLineChart('effrank-chart', 'Representational Diversity', 'Rank');
+    }
+    
+    function updateDashboard() {
+      updateNetworkViz(networkSvg, network);
+      updateOutputViz(outputSvg, network, trainData);
+      
+      const trainLoss = network.computeLoss(trainData.data, trainData.labels);
+      network.lossHistory.steps.push(network.step);
+      network.lossHistory.trainLoss.push(trainLoss);
+      network.lossHistory.testLoss.push(network.computeLoss(testData.data, testData.labels));
+      
+      document.getElementById('step').textContent = network.step;
+      document.getElementById('trainLoss').textContent = trainLoss.toFixed(3);
+      
+      updateMultiLineChart(lossChart, network.lossHistory.steps, [
+        { data: network.lossHistory.trainLoss, color: '#34c759', label: 'Train' },
+        { data: network.lossHistory.testLoss, color: '#ff3b30', label: 'Test' }
+      ]);
+      
+      updateMultiLineChart(symptomsChart, network.symptomsHistory.steps, [
+        { data: network.symptomsHistory.deadFraction, color: '#e74c3c', label: 'Dead (M_F)' },
+        { data: network.symptomsHistory.clonedFraction, color: '#3498db', label: 'Cloned (M_C)' }
+      ], 1.0, true);
+      
+      const rankLines = [];
+      // Tableau 10 — 10 perceptually distinct colors, no repeats up to depth 8
+      const tableau10 = [
+        '#4e79a7', '#f28e2b', '#e15759', '#76b7b2',
+        '#59a14f', '#edc948', '#b07aa1', '#ff9da7',
+        '#9c755f', '#bab0ac'
+      ];
+      Object.keys(network.effRankHistory.activations).forEach((layer, i) => {
+        rankLines.push({ data: network.effRankHistory.activations[layer], color: tableau10[i % tableau10.length], label: `L${layer}` });
+      });
+      updateMultiLineChart(effRankChart, network.effRankHistory.steps, rankLines);
+    }
+    
+    function shiftDataDistribution() {
+      currentTask++;
+      document.getElementById('taskIndicator').textContent = currentTask;
+
+      const dist = document.getElementById('distribution').value;
+      const shiftType = document.getElementById('shiftType').value;
+
+      if (dist === 'gmm' && window.gmmCenters) {
+        const maxAttempts = 200;
+        const speed = parseFloat(document.getElementById('shiftSpeed').value);
+        const prev = window.gmmCenters;
+
+        switch (shiftType) {
+          case 'rotate45':
+          case 'rotate15':
+          case 'rotateRandom': {
+            const a = shiftType === 'rotate45' ? Math.PI / 4
+                    : shiftType === 'rotate15' ? Math.PI / 12
+                    : (rng() * 0.5 + 0.3) * Math.PI;
+            const cos = Math.cos(a), sin = Math.sin(a);
+            const candidate = prev.map(c => ({
+              x: c.x * cos - c.y * sin, y: c.x * sin + c.y * cos, label: c.label
+            }));
+            // Accept if valid, otherwise keep previous (rotation may push out of bounds)
+            if (validateCenters(candidate)) window.gmmCenters = candidate;
+            break;
+          }
+          case 'translate': {
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              const dx = (rng() - 0.5) * 4 * speed;
+              const dy = (rng() - 0.5) * 4 * speed;
+              const candidate = prev.map(c => ({
+                x: c.x + dx, y: c.y + dy, label: c.label
+              }));
+              if (validateCenters(candidate)) { window.gmmCenters = candidate; break; }
+            }
+            break;
+          }
+          case 'brownian': {
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              const candidate = prev.map(c => {
+                const angle = rng() * 2 * Math.PI;
+                return { x: c.x + Math.cos(angle) * speed, y: c.y + Math.sin(angle) * speed, label: c.label };
+              });
+              if (validateCenters(candidate)) { window.gmmCenters = candidate; break; }
+            }
+            break;
+          }
+          case 'reinit': {
+            window.gmmCenters = initGmmCenters();
+            break;
+          }
+        }
+      }
+
+      // Regenerate data with the shifted distribution
+      trainData = generateData(1000, dist);
+      testData = generateData(300, dist);
+    }
+
+    function trainingLoop() {
+      if (!isTraining) return;
+      
+      // Continual Learning: Rotate Data
+      const shiftInterval = parseInt(document.getElementById('shiftInterval').value);
+      if (document.getElementById('continualLearning').checked && network.step > 0 && network.step % shiftInterval === 0) {
+        shiftDataDistribution();
+        triggerTaskFlash(currentTask);
+      }
+
+      network.trainBatch(trainData.data, trainData.labels);
+      
+      if (network.step % 10 === 0) {
+        network.updateMetrics(trainData.data, trainData.labels);
+        updateDashboard();
+      }
+      animationId = requestAnimationFrame(trainingLoop);
+    }
+    
+    // Event Listeners
+    document.getElementById('train').addEventListener('click', () => { isTraining = true; document.getElementById('train').disabled = true; document.getElementById('pause').disabled = false; trainingLoop(); });
+    document.getElementById('pause').addEventListener('click', () => { isTraining = !isTraining; document.getElementById('pause').textContent = isTraining ? 'Pause' : 'Resume'; if (isTraining) trainingLoop(); else cancelAnimationFrame(animationId); });
+    
+    document.getElementById('reset').addEventListener('click', () => {
+      isTraining = false; cancelAnimationFrame(animationId);
+      document.getElementById('train').disabled = false; document.getElementById('pause').disabled = true; document.getElementById('pause').textContent = 'Pause';
+
+      initRng(); // reset PRNG to seed
+      currentTask = 1; document.getElementById('taskIndicator').textContent = currentTask;
+
+      network = new Network(parseInt(document.getElementById('width').value), parseInt(document.getElementById('depth').value));
+      network.lr = parseFloat(document.getElementById('learningRate').value);
+      network.weightDecay = parseFloat(document.getElementById('weightDecay').value);
+      network.normalization = document.getElementById('normalization').value;
+      network.activation = document.getElementById('activation').value;
+      network.useBias = document.getElementById('useBias').checked;
+      
+      window.gmmCenters = null;
+      trainData = generateData(1000, document.getElementById('distribution').value);
+      testData = generateData(300, document.getElementById('distribution').value);
+      
+      document.getElementById('taskOverlay').style.opacity = 0;
+      initializeCharts(); updateDashboard();
+    });
+
+    document.getElementById('injectNoise').addEventListener('click', () => {
+      const noiseScale = 0.8; // High variance to shatter traps
+      for (let i = 0; i < network.weights.length; i++) {
+        for (let j = 0; j < network.weights[i].length; j++) {
+          for (let k = 0; k < network.weights[i][j].length; k++) {
+            const u1 = rng(), u2 = rng();
+            const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+            network.weights[i][j][k] += z0 * noiseScale;
+            network.velocityWeights[i][j][k] = 0;
+          }
+        }
+        for (let k = 0; k < network.biases[i].length; k++) {
+            const u1 = rng(), u2 = rng();
+            const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+            network.biases[i][k] += z0 * noiseScale;
+            network.velocityBiases[i][k] = 0;
+        }
+      }
+      triggerTaskFlash(currentTask, true);
+      network.updateMetrics(trainData.data, trainData.labels);
+      updateDashboard();
+    });
+    
+    ['distribution', 'activation', 'normalization', 'width', 'depth', 'seed', 'gmmClusters', 'gmmSeparation', 'useBias'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => document.getElementById('reset').click());
+    });
+
+    document.getElementById('learningRate').addEventListener('change', (e) => {
+      network.lr = parseFloat(e.target.value);
+    });
+
+    document.getElementById('weightDecay').addEventListener('change', (e) => {
+      network.weightDecay = parseFloat(e.target.value);
+    });
+    
+    grid.on('resizestop', () => { initializeCharts(); updateDashboard(); });
+
+    setTimeout(() => { initializeCharts(); updateDashboard(); }, 200);
+  </script>
+</body>
+</html>

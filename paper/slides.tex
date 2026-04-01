@@ -1,209 +1,301 @@
-\documentclass{beamer}
-\usetheme{Madrid}
-\usecolortheme{whale}
-\usepackage{amsmath,amssymb,amsfonts}
-\usepackage{graphicx}
+% Compile with pdflatex (or lualatex/xelatex)
+\documentclass[11pt,aspectratio=169]{beamer}
+
+% Assuming you have the custom 'eth' theme locally.
+\usetheme{eth}
+
+\colorlet{titlefgcolor}{ETHBlue}
+\colorlet{accentcolor}{ETHPetrol}
+
+\usepackage{amsmath,amssymb}
 \usepackage{tikz}
-\usetikzlibrary{arrows,shapes,positioning,fit}
+\usepackage{graphicx}
+\usetikzlibrary{arrows.meta, positioning, calc}
+
+% Custom Semantic Colors (matched to the poster)
+\definecolor{frozen}{RGB}{172, 58, 50}
+\definecolor{cloned}{RGB}{0, 102, 204}
+\definecolor{escape}{RGB}{40, 120, 56}
+\definecolor{myyellow}{RGB}{175, 138, 38}
+\definecolor{myplane}{RGB}{240,240,240}
+\definecolor{mygrid}{RGB}{220,220,220}
+\definecolor{mygray}{RGB}{142,142,147}
+\definecolor{spaceblack}{RGB}{29, 29, 31}
 
 \newcommand{\Loss}{\mathcal{L}}
-\newcommand{\R}{\mathbb{R}}
-\newcommand{\E}{\mathbb{E}}
-\newcommand{\He}{\mathrm{He}}
+\newcommand{\er}{\mathrm{er}_2}
+\newcommand{\T}{T_\theta}
 
-\title{On a Mathematical Understanding of Loss of Plasticity}
-\author{Presentation based on research paper}
-\date{\today}
+% Metadata
+\title{Barriers for Learning in an Evolving World}
+\subtitle{Mathematical Understanding of Loss of Plasticity}
+\date[ICLR 2026]{ICLR 2026}
+\author{A. Joudaki, G. Lanzillotta, M. Samragh Razlighi, I. Mirzadeh,\\K. Alizadeh, T. Hofmann, M. Farajtabar, F. Faghri}
+\institute{ETH Z\"urich \& Apple}
+
+\setlength{\titleboxwidth}{0.65\textwidth}
 
 \begin{document}
 
-\begin{frame}
-    \titlepage
+% =========================================================================
+% SLIDE 1: Title
+% =========================================================================
+\def\titlefigure{elements/title-page-image}
+\titleframe
+
+% =========================================================================
+% SLIDE 2: The Hook (Visual Evidence First)
+% =========================================================================
+\begin{frame}{The Phenomenon: Loss of Plasticity (LoP)}
+\vspace{-2mm}
+
+\begin{columns}[onlytextwidth,T]
+\begin{column}{0.46\textwidth}
+\textbf{The Continual Learning Problem}
+
+\smallskip
+In continual streams, networks retain old knowledge but \textbf{lose the ability to fit future data}.
+
+\vspace{2mm}
+\textbf{The Empirical Symptoms}
+
+\smallskip
+Across architectures, as accuracy drops:
+\begin{itemize}
+    \item \textcolor{frozen}{\textbf{Dead units}} rise (e.g., ResNet)
+    \item \textcolor{cloned}{\textbf{Duplicate features}} emerge (e.g., ViT)
+    \item \textbf{Effective rank collapses}
+\end{itemize}
+
+\vspace{2mm}
+\begin{block}{}
+\centering
+\emph{Why does GD fail to recover once this state appears?}
+\end{block}
+\end{column}
+
+\begin{column}{0.50\textwidth}
+\centering
+\vspace{-2mm}
+\includegraphics[width=0.75\linewidth, height=3.2cm, keepaspectratio]{images/resnet_block_rankdead_plot.pdf}
+
+\vspace{1mm}
+\includegraphics[width=0.75\linewidth, height=3.2cm, keepaspectratio]{images/vit_block_dup_fraction_plot.pdf}
+\end{column}
+\end{columns}
+
 \end{frame}
 
-\begin{frame}{Outline}
-    \tableofcontents
-\end{frame}
+% =========================================================================
+% SLIDE 3: The Concept (TikZ Diagram)
+% =========================================================================
+\begin{frame}{The Hypothesis: LoP as a Topological Trap}
 
-\section{Introduction}
+\begin{columns}[onlytextwidth,c]
+\begin{column}{0.45\textwidth}
+Prior work catalogs \emph{symptoms}. We mathematically prove the \textbf{mechanism of persistence}.
 
-\begin{frame}{}
-    \includegraphics[width=\textwidth]{images/fun.png}
-\end{frame}
+\vspace{4mm}
+A manifold $\mathcal{M}\subset\Theta$ induces LoP if the gradient is permanently tangent to it:
+\[
+\nabla_\theta \ell(\theta;x,y)\in \T \mathcal{M} \quad \forall(x,y)
+\]
 
-\begin{frame}{The Problem of Loss of Plasticity}
-    \begin{itemize}
-        \item \textbf{Definition:} Neural networks may not adapt to new tasks after extended training, despite overparameterization
-        \item \textbf{Richard Sutton's observations:}
-        \begin{itemize}
-            \item Large networks eventually learn no better than shallow models
-            \item Weights grow in magnitude
-            \item Neurons become ``dead'' or ``saturated''
-            \item Internal representations lose diversity (drop in effective rank)
-        \end{itemize}
-        \item \textbf{Our goal:} Provide a mathematical foundation to understand how loss of plasticity:
-        \begin{itemize}
-            \item Formally define it
-            \item Prove that it can theoretically happen
-            \item Explore mitigation and recovery strategies
-        \end{itemize}
-    \end{itemize}
-\end{frame}
+\vspace{2mm}
+\textbf{Key Insight:}
+The lock is enforced by the \emph{network equations}, not the data. Once inside, discrete GD/SGD updates remain trapped in $\mathcal{M}$ forever, completely independent of the data distribution.
+\end{column}
 
-\begin{frame}{}
-    \includegraphics[width=\textwidth]{images/bp.png}
-\end{frame}
-
-\section{Mathematical Formalization}
-
-\begin{frame}{Formal Definition of Loss of Plasticity}
-    \begin{block}{Loss of Plasticity}
-        Given a model with parameters $\theta$ and parameter space $\Theta$ with a manifold $\mathcal{M} \subseteq \Theta$ where:
-        \begin{align}
-            \forall \theta \in \mathcal{M} \implies \nabla_\theta\mathcal{L}(\theta) \in T_\theta\mathcal{M}
-        \end{align}
-    \end{block}
-        \begin{block}{Manifold Stability}
-        Based on Hessian properties in normal directions:
-        \begin{align}
-            &\text{Stable manifold:}\ \forall v \in N_\theta\mathcal{M} \setminus \{0\} \implies v^T\nabla_\theta^2 \mathcal{L}(\theta)v > 0 \\
-            &\text{Unstable manifold:}\ \forall v \in N_\theta\mathcal{M} \setminus \{0\} \implies v^T\nabla_\theta^2 \mathcal{L}(\theta)v < 0
-        \end{align}
-    \end{block}
-    
-    \begin{itemize}
-        \item Once model reaches manifold $\mathcal{M}$, it never escapes under gradient flow
-        \item Parameter updates remain on lower-dimensional manifold
-    \end{itemize}
-\end{frame}
-
-\section{Mechanisms of Loss of Plasticity}
-
-\begin{frame}{Frozen Units:}
-    \begin{block}{Proposition 3.1: Saturated Unit $\implies$ Frozen Upstream Parameters}
-        If an activation $h_i(\cdot)$ that is always saturated on the training set $\frac{\partial h_i(x;\Theta)}{\partial z} = 0,$
-        its upstream parameters $\theta \in \Theta_{\text{upstream}}$ remain frozen. 
-        % \begin{align*}
-        %     \frac{\partial \Loss}{\partial \theta} = 
-        %     \frac{\partial \Loss}{\partial h_i} \cdot
-        %     \underbrace{\frac{\partial h_i}{\partial z}}_{0} \cdot
-        %     \frac{\partial z}{\partial \theta} = 0
-        % \end{align*}
-    \end{block}
-    
-    \begin{alertblock}{Common Sources of Saturation}
-        \begin{itemize}
-            \item Corresponds to a manifold $\mathcal{M}$ parallel to frozen axes. 
-            \item Sigmoid/Tanh: Derivative $\approx 0$ for large inputs
-            \item ReLU: "Dead ReLUs" with consistently negative inputs
-            \item Softmax: Dominant logit suppresses gradients for others.
-            % \item Attention: dominant attention weights freeze certain heads
-        \end{itemize}
-    \end{alertblock}
-\end{frame}
-
-\begin{frame}{Cloned Units Mechanism}
-    \begin{columns}
-        \begin{column}{0.5\textwidth}
-            \begin{block}{Proposition 3.2: Weight Cloning Causes Loss of Plasticity}
-                If a large network $\mathcal{G}$ has its nodes partitioned such that each partition behaves as a single node in a smaller network, such that incoming and outgoing weights are constant across partitions, it will always remain restricted to the smaller network, despite having more parameters.  
-            \end{block}
-            
-            \begin{alertblock}{Key Insight}
-                This is \textbf{structural loss of plasticity} - occurs regardless of data distribution. 
-            \end{alertblock}
-        \end{column}
-
-        \begin{column}{0.5\textwidth}
-            \includegraphics[width=\textwidth]{images/covering.png}
-        \end{column}
-    \end{columns}
-\end{frame}
-
-\begin{frame}{}
-    \centering{
-    \huge{Does this really happen?}\\
-    \large{\href{https://ajoudaki.github.io/personal-notes/CL-demo.html}{demo: https://ajoudaki.github.io/personal-notes/CL-demo.html}
-    }}
-\end{frame}
-
-\section{Prevention and Recovery}
-\begin{frame}{}
-    \centering{
-    \huge{Can we mitigate or prevent this?}}
-\end{frame}
-
-\begin{frame}{Mitigating Loss of Plasticity}
-    \begin{block}{Proposition 4.1: Rank Preservation}
-        If activation function $f$ is: square-integrable with respect to Gaussian kernel, and not a bounded degree polynomial. And pre-activations are:
-        \begin{itemize}
-            \item Gaussian distributed: $x_i \sim \mathcal{N}(0,1)$
-            \item Not duplicates: $\E[x_i x_j] = \rho_{ij}, |\rho_{ij}| < 1$
-        \end{itemize}
+\begin{column}{0.55\textwidth}
+\centering
+\scalebox{0.55}{%
+\begin{tikzpicture}[
+    >={Stealth[round, length=5mm, width=3.5mm]},
+    line width=1.4pt, font=\Large
+]
+    \begin{scope}[rotate around={15:(4.5, 1.25)}]
+        \node[anchor=south, font=\Large\bfseries\color{frozen}] at (4.5, 6.8) {SEQUENTIAL TASKS (TRAPPED)};
+        \node at (2.5, 5.2) {\Huge \textcolor{mygray}{$\Theta$}};
+        \fill[myplane] (0,0) -- (6,0) -- (9,2.5) -- (3,2.5) -- cycle;
+        \foreach \i in {1,...,4} { \draw[mygrid, line width=0.2pt] ($(0,0)!\i/5!(3,2.5)$) -- ($(6,0)!\i/5!(9,2.5)$); }
+        \foreach \i in {1,...,5} { \draw[mygrid, line width=0.2pt] ($(0,0)!\i/6!(6,0)$) -- ($(3,2.5)!\i/6!(9,2.5)$); }
+        \draw[myplane!70!black, line width=0.6pt] (0,0) -- (6,0) -- (9,2.5) -- (3,2.5) -- cycle;
+        \node[font=\LARGE\rmfamily] at (0.8, 0.3) {$\mathcal{M}$};
         
-        Then post-activation covariance $\E[f(x)^\top f(x)]$ is full rank
-    \end{block}
-    
-    \begin{alertblock}{Practical Strategies}
-        \begin{itemize}
-            \item \textbf{Promote Gaussianity}: Use BatchNorm instead of LayerNorm
-            \item \textbf{Explore stronger normalization}: Correct for higher-order statistics
-            \item \textbf{Break symmetry}: Use dropout to prevent feature cloning
-            \item \textbf{Parameter perturbation}: Escape manifold if Hessian has negative curvature
-        \end{itemize}
-    \end{alertblock}
+        \coordinate (T0s) at (4.5, 4.2);
+        \fill[spaceblack] (T0s) circle (3pt) node[left=3pt, font=\large] {$\theta_0$};
+        \coordinate (TAs) at (6., 1.5);
+        \coordinate (TBs) at (3.0, 1.4);
+        \coordinate (TCs) at (4.0, 0.8);
+        
+        \draw[->, frozen!80!black] (T0s) to[out=-120, in=60,looseness=1.5] (TAs);
+        \node[above left, font=\large] at (TAs) {$\theta_A$ (Task 1)};
+        \draw[->, myyellow!90!black] (TAs) to[out=-160, in=10, looseness=1.2] (TBs);
+        \node[above left, font=\large] at (TBs) {$\theta_B$ (Task 2)};
+        \draw[->, escape!80!black] (TBs) to[out=210, in=190, looseness=1.8] (TCs);
+        \node[right, font=\large] at (TCs) {$\theta_C$ (Task 3)};
+    \end{scope}
+\end{tikzpicture}%
+}
+\end{column}
+\end{columns}
+
 \end{frame}
 
+% =========================================================================
+% SLIDE 4: Theorem 1 & Inline Evidence
+% =========================================================================
+\begin{frame}{Theorem 1: The Exact Mechanics of Entrapment}
+\vspace{-2mm}
 
+\textbf{Degeneracy in the computation} $\Rightarrow$ \textbf{degeneracy in the parameter update.}
 
+\vspace{1mm}
+\begin{columns}[onlytextwidth,T]
+\begin{column}{0.48\textwidth}
+    \textbf{\textcolor{frozen}{1. Frozen Manifold ($\mathcal{M}_F$)}}
 
+    \smallskip
+    If $f'(z_v)=0$ persistently, incoming gradients vanish for every sample.
 
-\begin{frame}{Recovery with perturbations: depends on curvature}
-    Let $\theta_0 \in \mathcal{M}$ and consider a small perturbation in the normal direction $\epsilon v$, where $v \in N_{\theta_0}\mathcal{M}$ with $\|v\| = 1$ and $\epsilon > 0$ small. 
-    
-    Under gradient flow dynamics, the instantaneous rate of change of the squared distance to the manifold can be expressed as:
-    \begin{align}
-        \left.\frac{d}{dt}\right|_{t=0} \text{dist}^2(\theta_0 + \epsilon v, \mathcal{M}) = -2\epsilon \cdot v^T\nabla_{\theta}^2\mathcal{L}(\theta_0)v + O(\epsilon^2)
-    \end{align}
-We will have 
+    \smallskip
+    \emph{\textcolor{frozen}{A frozen unit is permanently silent to backprop.}}
+
+    \vspace{3mm}
+    \textbf{\textcolor{cloned}{2. Cloning Manifold ($\mathcal{M}_C$)}}
+
+    \smallskip
+    If block pairs satisfy equal row/col sums, $h_u\!=\!h_{u'}$ and $\delta_v\!=\!\delta_{v'}$ strictly.
+
+    \smallskip
+    \emph{\textcolor{cloned}{Cloned directions are indistinguishable. Gradients locked forever.}}
+\end{column}
+
+\begin{column}{0.48\textwidth}
+    \centering
+    \textbf{Empirical Proof: SGD \& Adam are Trapped}
+    \vspace{1mm}
+
+    \includegraphics[width=0.75\linewidth]{images/mlp_cloning_r2_plot.pdf}
+
+    \vspace{1mm}
+    {\small\textbf{Even Adam is trapped.} SGD and Adam achieve $R^2\!=\!1.0$ for 400k steps. Escape requires explicit symmetry breaking.}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% =========================================================================
+% SLIDE 5: Theorem 2 (Rank-Plasticity Tension)
+% =========================================================================
+\begin{frame}{The Cause: The Rank-Plasticity Tension (Theorem 2)}
+
+\textbf{Why do models fall in?} Training balances \textbf{compression} (for generalization) and \textbf{nonlinear creation} (for diversity). \emph{The very mechanisms that help a model generalize on a static task actively drive it into LoP manifolds.}
+
+\vspace{2mm}
+\begin{columns}[onlytextwidth, c]
+\begin{column}{0.48\textwidth}
+    \begin{block}{Rank-Gain Theorem}
+    \centering
+    Feature Creation = \\
+    \textcolor{frozen}{\textbf{Strength ($\gamma$)}} $\times$ \textcolor{cloned}{\textbf{Opportunity ($\Psi$)}}
+    \end{block}
+
+    \vspace{4mm}
+    \textbf{The Edge States of Feature Learning:}
     \begin{itemize}
-      \item $\text{Stable if } v^T\nabla_{\theta}^2\mathcal{L}(\theta_0)v > 0 \rightarrow \text{distance decreases} $
-      \item $\text{Unstable if } v^T\nabla_{\theta}^2\mathcal{L}(\theta_0)v < 0 \rightarrow \text{distance increases} $
-      \item $\text{Neutral if } v^T\nabla_{\theta}^2\mathcal{L}(\theta_0)v = 0 \rightarrow \text{higher-order terms decide} $
+        \item Maximize strength $\gamma \uparrow$ causes $\mathcal{M}_F$ (\textcolor{frozen}{\textbf{Frozen Trap}}).
+        \vspace{2mm}
+        \item Compress opportunity $\Psi \downarrow$ causes $\mathcal{M}_C$ (\textcolor{cloned}{\textbf{Cloned Trap}}).
     \end{itemize}
-    \begin{block}{}
-              \item This is related to the noisy cloning! 
-    \end{block}
+\end{column}
+
+\begin{column}{0.50\textwidth}
+    \centering
+    \textbf{Empirical Proof of the Tension}\\
+    \vspace{1mm}
+    \includegraphics[width=0.98\linewidth, trim=0 380bp 0 30bp, clip]{images/universal_lop_plot.pdf}\\
+    \vspace{1mm}
+    {\scriptsize Regimes maximizing decorrelation strength drive units toward a high probability of freezing (proven across 6 activations).}
+\end{column}
+\end{columns}
+
 \end{frame}
 
-\begin{frame}{Empirically: The curvature of loss in continual learning }
-    \includegraphics[width=\textwidth]{images/hess.png}
-    Thus, this is task-dependent. Does it transfer between tasks? 
+% =========================================================================
+% SLIDE 6: Mitigation & Recovery
+% =========================================================================
+\begin{frame}{Mitigation \& Recovery}
+\vspace{-2mm}
+
+To restore plasticity, we must actively break symmetries or bound drift.
+
+\vspace{2mm}
+\begin{columns}[onlytextwidth, T]
+\begin{column}{0.48\textwidth}
+\centering
+\textbf{1. Escaping the Cloned Trap (\textcolor{cloned}{$\mathcal{M}_C$})}\\
+\vspace{2mm}
+\includegraphics[height=3.8cm]{images/bf_switching_rankloss_plot.pdf}
+
+\vspace{2mm}
+\small \textbf{Continual Backprop (CBP)} injects targeted noise to break symmetry and successfully recover effective rank.
+\end{column}
+
+\begin{column}{0.48\textwidth}
+\centering
+\textbf{2. Preventing the Frozen Trap (\textcolor{frozen}{$\mathcal{M}_F$})}\\
+\vspace{2mm}
+\includegraphics[height=3.8cm]{images/mlp_act__saturated_frac_normalizations_barplot.pdf}
+
+\vspace{2mm}
+\small \textbf{Normalization} layers bound pre-activation drift, preventing units from falling into the saturation zones.
+\end{column}
+\end{columns}
+
 \end{frame}
 
-\section{Conclusion}
+% =========================================================================
+% CLOSING SLIDE
+% =========================================================================
 
-\begin{frame}{Discussion and open questions}
-    % \begin{block}{Summary}
-    %     \begin{itemize}
-    %         \item Formalized loss of plasticity as parameter trajectory restricted to a lower-dimensional manifold
-    %         \item Identified two key mechanisms:
-    %         \begin{itemize}
-    %             \item Frozen units (saturation-based)
-    %             \item Cloned units (duplication-based)
-    %         \end{itemize}
-    %         \item Both mechanisms create affine subspaces that trap gradient-based learning
-    %     \end{itemize}
-    % \end{block}
-    
-    \begin{alertblock}{Open Questions}
-        \begin{itemize}
-            \item How does the loss curvature look like in practice?
-            \item Can we use BN in transformers?
-            \item Can we use a stronger BN (higher order statistics)?
-            \item Are there non-linear manifolds for loss of plasticity? 
-        \end{itemize}
-    \end{alertblock}
-\end{frame}
+\begin{closingframe}
+
+{\vspace*{-80pt}
+\hfill\fontsize{20}{20}\selectfont\faApple}%
+
+%\vspace{6mm}
+\vspace{50pt}
+
+\textbf{\Large Thank you!}
+
+\vspace{8mm}
+
+\begin{columns}[onlytextwidth]
+\begin{column}{0.55\textwidth}
+\textbf{Amir Joudaki}\\
+ETH Z\"urich \& Apple\\
+\email{ajoudaki@ethz.ch}
+
+\medskip
+
+Paper: \emph{Barriers for Learning in an Evolving World:\\Mathematical Understanding of Loss of Plasticity}
+
+\smallskip
+
+Code: \url{https://github.com/ajoudaki/loss-of-plasticity}
+\end{column}
+\begin{column}{0.4\textwidth}
+\raggedleft
+\vspace{-2mm}
+%{\fontsize{30}{30}\selectfont\faApple}%
+
+\vspace{4mm}
+
+%\includegraphics[height=8mm]{elements/eth_logo_kurz_pos}
+\end{column}
+\end{columns}
+
+\end{closingframe}
 
 \end{document}

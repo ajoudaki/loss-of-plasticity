@@ -3,12 +3,14 @@
 %\usepackage{neurips_2025}
 % \usepackage{neurips_2025} % Ensure this is the desired option (preprint, final, etc.)
 \usepackage{iclr2026_conference,times}
-\iclrfinalcopy
+% \iclrfinalcopy
 
 % \usepackage{neurips_2025} 
 \usepackage{natbib}
 \bibliographystyle{plainnat} % Moved from end of doc to preamble for consistency
 % Additional packages
+\usepackage{amssymb}
+% \usetikzlibrary{arrows.meta,positioning,calc}
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
 \usepackage{hyperref}       % hyperlinks
@@ -27,7 +29,7 @@
 \usepackage{enumitem}
 \usepackage{geometry} % Consider adjusting margins if needed, or removing if default is fine
 \usepackage{tikz}
-
+\usetikzlibrary{3d, shadows.blur,intersections,arrows.meta, perspective}
 % Support for easy cross-referencing
 \usepackage[capitalize]{cleveref}
 \usepackage{pifont}
@@ -42,7 +44,7 @@
 
 \usepackage{graphicx}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
-\graphicspath{{../POC/figures/}{./images/}{./figures/}} % Added POC and figures to graphicspath
+\graphicspath{{./images/}{./figures/}} % Added POC and figures to graphicspath
 %%%% Macros
 \newcommand{\Loss}{\mathcal{L}}
 \newcommand{\R}{\mathbb{R}}
@@ -86,6 +88,8 @@
 \numberwithin{figure}{section}
 \title{Barriers for Learning in an Evolving World: \\Mathematical Understanding of Loss of Plasticity}
 
+
+
 \author{Amir Joudaki$^{1}$,
  Giulia Lanzillotta$^{1}$,
  Mohammad Samragh Razlighi$^{2}$,
@@ -118,42 +122,197 @@
 %  %\texttt{\{fartash, m\_samraghrazlighi, imirzadeh, kalizadehvahid, m\_farajtabar\}@apple.com}
 }
 
+\iclrfinalcopy 
+
 \begin{document}
 \maketitle
-%\fancyhead[L]{Preprint.}     % Indicate review status
+
+
+
+% \lhead{Published as a conference paper at ICLR 2026}
+\fancyhead[L]{Published at ICLR 2026}     % Indicate review status
+
+% \begin{abstract}
+
+% % \textbf{v1.}
+% Deep learning models excel in stationary data but struggle in non-stationary environments due to a phenomenon known as loss of plasticity (LoP), the degradation of their ability to learn in the future. This work presents a first-principles investigation of LoP in gradient-based learning. Grounded in dynamical systems theory, we formally define LoP by identifying stable manifolds in the parameter space that trap gradient trajectories. Our analysis reveals two primary mechanisms that create these traps: frozen units from activation saturation and cloned-unit manifolds from representational redundancy. Our framework uncovers a fundamental tension: properties that promote generalization in static settings, such as low-rank representations and simplicity biases, directly contribute to LoP in continual learning scenarios. We validate our theoretical analysis with numerical simulations and explore architectural choices or targeted perturbations as potential mitigation strategies.
+
+
+% \end{abstract}
 
 \begin{abstract}
-
-% \textbf{v1.}
-Deep learning models excel in stationary data but struggle in non-stationary environments due to a phenomenon known as loss of plasticity (LoP), the degradation of their ability to learn in the future. This work presents a first-principles investigation of LoP in gradient-based learning. Grounded in dynamical systems theory, we formally define LoP by identifying stable manifolds in the parameter space that trap gradient trajectories. Our analysis reveals two primary mechanisms that create these traps: frozen units from activation saturation and cloned-unit manifolds from representational redundancy. Our framework uncovers a fundamental tension: properties that promote generalization in static settings, such as low-rank representations and simplicity biases, directly contribute to LoP in continual learning scenarios. We validate our theoretical analysis with numerical simulations and explore architectural choices or targeted perturbations as potential mitigation strategies.
-
-% Option 2 (Focus on the Core "Tension")
-%This version reorders the sentences to lead with the main contribution and highlight the central conflict the paper reveals.
-
-% \textbf{v2}
-% The tendency for deep learning models to lose plasticity (LoP) is a primary barrier to effective continual learning. We conduct a first-principles analysis of this phenomenon, defining LoP through the lens of dynamical systems as the trapping of gradient trajectories in  manifolds of the parameter space. Our analysis identifies two key mechanisms responsible for these traps: frozen units caused by activation saturation and cloned-unit manifolds from representational redundancy. The central finding of our work is a fundamental trade-off: we show that properties widely considered beneficial for generalization in static learning, such as the emergence of low-rank representations and simplicity biases, are the same properties that drive plasticity loss. This theoretical framework, supported by numerical simulations, not only explains why LoP occurs but also suggests how targeted perturbations and architectural choices might mitigate it.
-
-% % Option 3 (Minimalist Edit)
-% %This version makes the fewest changes, simply tightening the original wording for clarity and conciseness.
-
-% \textbf{v3}
-% Standard deep learning models excel on stationary datasets but falter in non-stationary environments where continuous adaptation is crucial. This struggle is largely due to a loss of plasticity (LoP), the degradation of future learning capacity. This work provides a first-principles analysis of the mechanisms underlying LoP in gradient-based models. We propose a formal definition of LoP grounded in dynamical systems theory, identifying  manifolds in the parameter space that trap gradient trajectories. Our analysis details two specific mechanisms leading to such traps: frozen units from activation saturation and cloned-unit manifolds from representational redundancy. A core finding is a fundamental tension: properties beneficial for generalization in static learning, such as low-rank representations and simplicity biases, directly contribute to LoP in continual learning. Our theoretical analysis, supported by numerical simulations, also explores how architectural choices or targeted perturbations can mitigate this plasticity collapse.
+    Deep learning models excel in stationary settings but suffer from loss of plasticity (LoP) in non-stationary environments. While prior literature characterizes LoP through symptoms like rank collapse of representations, it often lacks a mechanistic explanation for why gradient descent fails to recover from these states. This work presents a first-principles investigation grounded in dynamical systems theory, formally defining LoP not merely as a statistical degradation, but as an entrapment of gradient dynamics within invariant sub-manifolds of the parameter space. We identify two primary mechanisms that create these traps: frozen units from activation saturation and cloned-unit manifolds from representational redundancy. Crucially, our framework uncovers a fundamental tension: the very mechanisms that promote generalization in static settings, such as low-rank compression, actively steer the network into these LoP manifolds. We validate our theoretical analysis with numerical simulations and demonstrate how architectural interventions can destabilize these manifolds to restore plasticity.\\
+    
 \end{abstract}
+\vspace{-0.6cm}
+\noindent\textbf{Code:} \url{https://github.com/ajoudaki/loss-of-plasticity}
+\vspace{-0.3cm}
+
+
 \section{Introduction}
-% (Content from original draft - appears generally fine, ensure it leads into the new structure)
-The extraordinary success of back-propagation in training deep neural networks often relies on two implicit assumptions. First, \emph{stationarity} is assumed. This means that the data distribution encountered during training is similar to the distribution faced during deployment. As a result, post-training adaptation is minimal or absent. Second, a \emph{single random initialization} of network parameters is the main source of diversity and exploration potential, a resource that is progressively consumed by optimization and not replenished. These assumptions falter when an artificial agent must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, commonly referred to as continual or lifelong learning, presents the stability-plasticity dilemma \citep{abraham2005memory, chaudhry2018riemannian}. This dilemma demands that the system must be stable enough to retain previously acquired knowledge, yet plastic enough to effectively integrate new information.
 
-Empirically, standard deep networks subjected to long sequences of tasks or slowly drifting data streams often exhibit a decline in their learning capability \citep{dohare2024loss, berariu2021plasticity, dohare2021continual, nikishin2022primacy, lyle2023understanding}. This phenomenon, termed loss of plasticity (LoP), is distinct from catastrophic forgetting \citep{mccloskey1989catastrophic, ratcliff1990connectionist, french1999catastrophic}, where new learning overwrites old knowledge. LoP specifically refers to the diminished ability to learn new information effectively over time. Common symptoms include exploding weight magnitudes \citep{nikishin2022primacy}, activation saturation, the emergence of ``dead'' ReLU units (whose upstream parameters cease to update) \citep{nair2010rectified, sokar2023dormant, dohare2021continual, lyle2022understanding}, a collapse in the effective rank of hidden layer representations indicating reduced feature diversity \citep{papyan2020prevalence, huh2022lowrank, kumar2020implicit, gulcehre2022empirical}, and redundancy or diminishing contributions from network components like attention heads or filters \citep{lyle2023understanding}. Many of these issues have been highlighted in recent studies focusing on LoP \citep{dohare2023maintaining, kumar2024regenerative, ash2020warmstarting}.
+% [PARAGRAPH 1: THE HOOK - KEPT MOSTLY INTACT]
+The extraordinary success of back-propagation in training deep neural networks often relies on two implicit assumptions. First, \emph{stationarity} is assumed: the data distribution encountered during training is similar to the distribution faced during deployment, implying that post-training adaptation is minimal. Second, a \emph{single random initialization} of network parameters is the main source of diversity and exploration potential—a resource that is progressively consumed by optimization and rarely replenished. These assumptions falter when an artificial agent must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, commonly referred to as continual or lifelong learning, presents the stability-plasticity dilemma \citep{abraham2005memory, chaudhry2018riemannian}, demanding a system stable enough to retain acquired knowledge yet plastic enough to integrate new information.
 
-\citet{dohare2024loss} argue that such failures are intrinsically linked to the back-propagation algorithm itself. They posit that gradient descent optimized for transient single-task learning relies heavily on the initial random state for exploration, a resource that is consumed and not replenished during prolonged training. Their work demonstrates that standard deep learning methods can lose plasticity until they perform comparably to linear networks and suggests that maintaining plasticity requires mechanisms beyond pure gradient descent such as continually injecting diversity via methods like their proposed continual backpropagation.
+% [PARAGRAPH 2: THE SYMPTOMS - KEPT MOSTLY INTACT]
+Empirically, standard deep networks subjected to long sequences of tasks or drifting data streams exhibit a sharp decline in learning capability \citep{dohare2024loss, berariu2021plasticity, nikishin2022primacy}. This phenomenon, termed \emph{Loss of Plasticity} (LoP), is distinct from catastrophic forgetting: while forgetting erases old knowledge, LoP prevents the acquisition of new knowledge. Common symptoms are well-documented: exploding weight magnitudes \citep{nikishin2022primacy}, the emergence of ``dead'' units \citep{sokar2023dormant, lyle2022understanding}, and a collapse in the effective rank of representations \citep{papyan2020prevalence, huh2022lowrank, kumar2020implicit}. While recent works have linked LoP to back-propagation mechanics \citep{dohare2024loss} or NTK rank degradation \citep{lyle2023understanding}, these observations are largely descriptive. They characterize the \emph{symptoms} of the failing network but stop short of a formal mechanistic explanation for the \emph{persistence} of the non-plastic state.
 
-\vspace{-7pt}
-\paragraph{Goal of this paper.}
-Motivated by observations about LoP, our paper revisits the dynamics of gradient descent and back-propagation through the lens of dynamical systems theory. We seek to answer the question:
-\begin{quote}
-\emph{What structural features inherent in gradient flow dynamics inevitably lead to LoP, and how might we design algorithms or architectures capable of perpetual adaptation?}
-\end{quote}
-The central theorem in this work is that the tendency of gradient-based optimization to favor low-rank or ``simple'' representations lies at the heart of plasticity loss. While properties like low effective rank and simplicity bias are often associated with improved generalization in the standard two-phase learning paradigm \citep{huh2022lowrank, papyan2020prevalence, zhang2017understanding}, we argue that these very properties become detrimental in continual learning settings. By reducing the effective dimensionality of the network's feature space, they limit its capacity to adapt to novel information, thus contributing to the LoP observed by \citep{dohare2024loss} and others. While loss of plasticity (LoP) has been previously linked to hallmarks of low-rank representations in the literature, our work introduces a novel perspective and develops a formal framework that systematically unifies several previously disparate observations. In addition, our theory is the first to establish explicit connections between LoP and the geometries induced by learning dynamics and cloning, two active research domains that we argue hold considerable potential for advancing the study of LoP.
+% [PARAGRAPH 3: THE GAP & THE PIVOT - HEAVILY REVISED]
+% [Goal: Move from "symptoms" to "topological traps"]
+A fundamental question remains: Why exactly does gradient descent fail to recover from these states? If LoP is merely a bad configuration, why do gradients not steer the model back toward useful regions? For example, while many works have identified low rank as a hallmark of LoP, why is the network unable to recover feature diversity under a new task distribution? Our work revisits the dynamics of gradient descent through the lens of dynamical systems theory to answer this. We posit that LoP is not simply a degradation of statistics, like rank or weight norm, but a topological entrapment under gradient descent. We seek to identify the specific geometric structures underlying the optimization landscape that act as ``sinks'' for gradient trajectories, restricting the model from accessing its full degrees of freedom.
+
+% [PARAGRAPH 4: THE THESIS - REVISED TO HIGHLIGHT THE "TRAP" & "TENSION"]
+The central contribution of this work is the formalization of \textbf{LoP manifolds}: invariant sub-manifolds of the parameter space that act as ``traps'' for gradient descent (\cref{fig:concept_lop_trap}). Once the optimization process steers parameters into these regions, the gradient flow becomes strictly tangent to the manifold, rendering escape impossible without external intervention. This formulation fills a critical theoretical gap: while prior literature has extensively cataloged the \emph{symptoms} of plasticity loss (e.g., weight explosion, rank collapse), our framework identifies the mathematical and geometric principles that provably make these states persistent and irreversible. Furthermore, we show the driver towards this entrapment—a fundamental \textbf{rank-plasticity tension}. We show that the very mechanisms that promote generalization in static settings, specifically, the compression of features toward low-rank structures, are the primary forces that steer the network into these LoP manifolds. Thus, the dynamics that maximize performance on the \emph{current} task inadvertently construct the barrier to adaptability for \emph{future} tasks.
+% [OPTIONAL: PLACEHOLDER FOR CONCEPTUAL FIGURE]
+% \begin{figure}[t]
+%     \centering
+%     % 
+%     \caption{Conceptualization of LoP Manifolds. While standard optimization seeks a minimum, LoP occurs when trajectories enter an invariant subspace (red) where $\nabla \Loss$ becomes tangent to the manifold, trapping the dynamics.}
+%     \label{fig:concept}
+% \end{figure}
+
+
+% --- Start of Figure 1 ---
+\begin{figure}[t]
+    \centering
+    % The TikZ code provided by the user
+    \scalebox{0.60}{%
+    \begin{tikzpicture}[
+        >={Stealth[round, length=3mm, width=2mm]},
+        line width=1.8pt,
+        >={Stealth[round, length=5mm, width=3.5mm]},
+        font=\Large\bfseries,
+    ]
+
+        % --- DEFINITIONS ---
+        \definecolor{myred}{RGB}{165, 40, 60}
+        \definecolor{myyellow}{RGB}{215, 155, 60}
+        \definecolor{mygreen}{RGB}{80, 140, 80}
+        \definecolor{myplane}{RGB}{240, 240, 240}
+        \definecolor{mygrid}{RGB}{255,255,255}
+        \definecolor{mygray}{RGB}{50, 50, 50}
+        \definecolor{bgcream}{RGB}{250, 250, 240} 
+
+        % --- LEFT PANEL: Independent Tasks ---
+        \begin{scope}[local bounding box=leftpanel,rotate around={15:(4.5, 1.25)}]
+            \node[anchor=south, font=\LARGE\rmfamily] at (4.5, 6.8) {Independent tasks};
+            
+            \node at (2.5, 5.2) {\Huge \textcolor{mygray}{$\Theta$}};
+
+            % --- Plane with Grid ---
+            \fill[myplane] (0,0) -- (6,0) -- (9,2.5) -- (3,2.5) -- cycle;
+            
+            % Grid lines
+            \foreach \i in {1,2,3,4} {
+               \draw[mygrid, line width=0.2pt] ($(0,0)!\i/5!(3,2.5)$) -- ($(6,0)!\i/5!(9,2.5)$);
+            }
+            \foreach \i in {1,2,3,4,5} {
+               \draw[mygrid, line width=0.2pt] ($(0,0)!\i/6!(6,0)$) -- ($(3,2.5)!\i/6!(9,2.5)$);
+            }
+
+            \draw[myplane!80!black, line width=1pt] 
+                (0,0) -- (6,0) -- (9,2.5) -- (3,2.5) -- cycle;
+             
+            \node[font=\LARGE\rmfamily] at (0.8, 0.3) {$\mathcal{M}$};
+
+            % Theta_0
+            \coordinate (T0) at (4.5, 4.2);
+            \fill[black] (T0) circle (3pt) node[above right=3pt] {$\theta_0$};
+
+            % 1. Green Arrow
+            \draw[->, mygreen] (T0) to[out=190, in=80, looseness=1.0] (1.9, 2.5)  node[left, black] {$\theta_C$}; 
+            % \draw[dashed,gray,line width=1pt]  (1.9, 2.5)  to (1.9,0.9) circle(2pt);
+
+            % 2. Yellow Arrow
+            \draw[->, myyellow] (T0) to[out=-60, in=-110] (7.5, 6.0) node[right, black] {$\theta_B$};
+            % \draw[dashed,gray,line width=1pt]  (7.5, 6.0) to (7.5, 2.0) circle(2pt);
+
+            % 3. Red Arrow
+            \draw[->, myred] (T0) to[out=-120, in=60,looseness=1.5] (6., 1.5) node[right, black] {$\theta_A$};
+        \end{scope}
+
+
+        % --- RIGHT PANEL: Sequential Tasks ---
+        \begin{scope}[xshift=9cm, local bounding box=rightpanel,rotate around={15:(4.5, 1.25)}]
+            \node[anchor=south, font=\LARGE\rmfamily] at (4.5, 6.8) {Sequential tasks};
+            
+            \node at (2.5, 5.2) {\Huge \textcolor{mygray}{$\Theta$}};
+
+            % --- Plane with Grid ---
+            \fill[myplane] (0,0) -- (6,0) -- (9,2.5) -- (3,2.5) -- cycle;
+
+            \foreach \i in {1,2,3,4} {
+               \draw[mygrid, line width=0.2pt] ($(0,0)!\i/5!(3,2.5)$) -- ($(6,0)!\i/5!(9,2.5)$);
+            }
+            \foreach \i in {1,2,3,4,5} {
+               \draw[mygrid, line width=0.2pt] ($(0,0)!\i/6!(6,0)$) -- ($(3,2.5)!\i/6!(9,2.5)$);
+            }
+
+            \draw[myplane!80!black, line width=1pt] 
+                (0,0) -- (6,0) -- (9,2.5) -- (3,2.5) -- cycle;
+
+            \node[font=\LARGE\rmfamily] at (0.8, 0.3) {$\mathcal{M}$};
+
+            % Theta_0
+            \coordinate (T0_seq) at (4.5, 4.2);
+            \fill[black] (T0_seq) circle (3pt) node[left=3pt] {$\theta_0$};
+
+            % Points on plane
+            \coordinate (TA_seq) at (6., 1.5);
+            \coordinate (TB_seq) at (3.0, 1.4);
+            \coordinate (TC_seq) at (4.0, 0.8);
+
+            \draw[->, myred] (T0_seq) to[out=-120, in=60,looseness=1.5] (TA_seq);
+            \node[above left] at (TA_seq) {$\theta_A$};
+
+            \draw[->, myyellow] (TA_seq) to[out=-160, in=10, looseness=1.2] (TB_seq) node[above left] at (TB_seq) {$\theta_C$};
+
+            \draw[->, mygreen] (TB_seq) to[out=210, in=190, looseness=1.8] (TC_seq);
+            \node[right] at (TC_seq) {$\theta_C$};
+
+        \end{scope}
+    \end{tikzpicture}
+    }
+    
+    \caption{\textbf{Conceptual illustration of LoP as a topological trap.} The high-dimensional parameter space $\Theta$ contains low-dimensional, invariant \emph{LoP manifolds} $\mathcal{M}\subset \Theta$ . \textbf{Left (Independent tasks):} During standard learning, trajectories starting at $\theta_0$ can explore the full space (e.g., $\theta_B, \theta_C$), though implicit biases may eventually drive them toward simpler representations on $\mathcal{M}$ ($\theta_A$). \textbf{Right (Sequential tasks):} In continual learning, early tasks drive parameters onto the manifold ($\theta_0 \to \theta_A$). Once trapped, gradients for subsequent tasks become strictly tangent to $\mathcal{M}$, constraining future dynamics to this restricted subspace ($\theta_A \to \theta_B \to \theta_C\to\dots $) and preventing the recovery of plasticity needed for new data distributions.}
+    \label{fig:concept_lop_trap}
+\end{figure}
+
+\paragraph{Summary of Contributions.}
+In this work, we formalize the mechanics of plasticity loss and validate our theory across varied architectures. Our specific contributions are:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{A Dynamical Systems Definition of LoP (\cref{sec:existence_lop_manifold}).} We move beyond symptomatic definitions to propose a formal definition of LoP as the entrapment of optimization trajectories within specific invariant sub-manifolds of the parameter space.
+    \item \textbf{Identification of Trap Mechanisms (\cref{sec:existence_lop_manifold}).} We theoretically characterize two primary classes of invariant manifolds: \textit{Frozen-Unit Manifolds} ($\mathcal{M}_F$), caused by activation saturation, and \textit{Cloned-Unit Manifolds} ($\mathcal{M}_C$), caused by representational redundancy. We prove that standard gradient-based optimization cannot escape these manifolds once entered.
+    \item \textbf{The Rank-Plasticity Tension (\cref{sec:emergence_lop}).} We derive a theoretical connection between feature rank dynamics and plasticity. We show that properties widely considered beneficial for generalization (e.g., neural collapse) act as attractive forces toward LoP manifolds.
+    \item \textbf{Empirical Validation and Mitigation (\cref{sec:mitigation_recovery}).} We validate our framework through extensive experiments on MLPs, ResNets, and ViTs. We further analyze how architectural interventions (normalization) and targeted perturbations (noise injection, dropout) affect the stability of these manifolds, providing a principled basis for recovering plasticity.
+\end{itemize}
+
+% \section{(old) Introduction}
+% % (Content from original draft - appears generally fine, ensure it leads into the new structure)
+% The extraordinary success of back-propagation in training deep neural networks often relies on two implicit assumptions. First, \emph{stationarity} is assumed. This means that the data distribution encountered during training is similar to the distribution faced during deployment. As a result, post-training adaptation is minimal or absent. Second, a \emph{single random initialization} of network parameters is the main source of diversity and exploration potential, a resource that is progressively consumed by optimization and not replenished. These assumptions falter when an artificial agent must operate and learn continuously within an environment characterized by changing dynamics or evolving task distributions. This scenario, commonly referred to as continual or lifelong learning, presents the stability-plasticity dilemma \citep{abraham2005memory, chaudhry2018riemannian}. This dilemma demands that the system must be stable enough to retain previously acquired knowledge, yet plastic enough to effectively integrate new information.
+
+% Empirically, standard deep networks subjected to long sequences of tasks or slowly drifting data streams often exhibit a decline in their learning capability \citep{dohare2024loss, berariu2021plasticity, dohare2021continual, nikishin2022primacy, lyle2023understanding}. This phenomenon, termed loss of plasticity (LoP), is distinct from catastrophic forgetting \citep{mccloskey1989catastrophic, ratcliff1990connectionist, french1999catastrophic}, where new learning overwrites old knowledge. LoP specifically refers to the diminished ability to learn new information effectively over time. Common symptoms include exploding weight magnitudes \citep{nikishin2022primacy}, activation saturation, the emergence of ``dead'' ReLU units (whose upstream parameters cease to update) \citep{nair2010rectified, sokar2023dormant, dohare2021continual, lyle2022understanding}, a collapse in the effective rank of hidden layer representations indicating reduced feature diversity \citep{papyan2020prevalence, huh2022lowrank, kumar2020implicit, gulcehre2022empirical}, and redundancy or diminishing contributions from network components like attention heads or filters \citep{lyle2023understanding}. Many of these issues have been highlighted in recent studies focusing on LoP \citep{dohare2023maintaining, kumar2024regenerative, ash2020warmstarting}.
+
+% \citet{dohare2024loss} argue that such failures are intrinsically linked to the back-propagation algorithm itself. They posit that gradient descent optimized for transient single-task learning relies heavily on the initial random state for exploration, a resource that is consumed and not replenished during prolonged training. Their work demonstrates that standard deep learning methods can lose plasticity until they perform comparably to linear networks and suggests that maintaining plasticity requires mechanisms beyond pure gradient descent such as continually injecting diversity via methods like their proposed continual backpropagation.
+
+% \vspace{-7pt}
+% \paragraph{Goal of this paper.}
+% Motivated by observations about LoP, our paper revisits the dynamics of gradient descent and back-propagation through the lens of dynamical systems theory. We seek to answer the question:
+% \begin{quote}
+% \emph{What structural features inherent in gradient flow dynamics inevitably lead to LoP, and how might we design algorithms or architectures capable of perpetual adaptation?}
+% \end{quote}
+% The central theorem in this work is that the tendency of gradient-based optimization to favor low-rank or ``simple'' representations lies at the heart of plasticity loss. 
+% While properties like low effective rank and simplicity bias are often associated with improved generalization in the standard two-phase learning paradigm \citep{huh2022lowrank, papyan2020prevalence, zhang2017understanding}, we argue that these very properties become detrimental in continual learning settings. By reducing the effective dimensionality of the network's feature space, they limit its capacity to adapt to novel information, thus contributing to the LoP observed by \citep{dohare2024loss} and others. While loss of plasticity (LoP) has been previously linked to hallmarks of low-rank representations in the literature, our work introduces a novel perspective and develops a formal framework that systematically unifies several previously disparate observations. In addition, our theory is the first to establish explicit connections between LoP and the geometries induced by learning dynamics and cloning, two active research domains that we argue hold considerable potential for advancing the study of LoP.
+
+% \paragraph{Summary of Contributions.}
+% In this work, we formalize the mechanics of plasticity loss through the lens of dynamical systems and validate our theory across varied architectures. Our specific contributions are:
+% \begin{itemize}[leftmargin=*]
+%     \item \textbf{A Dynamical Systems Definition of LoP (\cref{sec:existence_lop_manifold}).} We propose a formal definition of Loss of Plasticity as the entrapment of optimization trajectories within specific invariant sub-manifolds of the parameter space, distinct from catastrophic forgetting.
+%     \item \textbf{Identification of Trap Mechanisms (\cref{sec:existence_lop_manifold}).} We theoretically characterize two primary classes of LoP manifolds: \textit{Frozen-Unit Manifolds} ($\mathcal{M}_F$), caused by activation saturation, and \textit{Cloned-Unit Manifolds} ($\mathcal{M}_C$), caused by representational redundancy. We prove that standard gradient-based optimization cannot escape these manifolds once entered.
+%     \item \textbf{The Rank-Plasticity Tension (\cref{sec:emergence_lop}).} We derive a theoretical connection between feature rank dynamics and plasticity. We show that the very mechanisms driving generalization in static settings—such as the compression of representations toward low-rank structures—are the primary drivers of LoP in continual settings.
+%     \item \textbf{Empirical Validation and Mitigation (\cref{sec:mitigation_recovery}).} We validate our theoretical framework through extensive experiments on MLPs, ResNets, and ViTs. We further analyze how architectural interventions (normalization) and targeted perturbations (noise injection, dropout) affect the stability of these manifolds, providing a principled basis for recovering plasticity.
+% \end{itemize}
+
 %Our work aims to provide a formal mathematical understanding of these mechanisms.
 \subsection{Background and Related Work}%
 \label{sec:background}
@@ -175,14 +334,12 @@ The connection between overparameterization, reduced dimensionality, and learnin
 Recent work highlighted how the optimization algorithm itself contributes to the collapse towards simpler representations. \citet{chen2023stochastic} analyzed the implicit bias of Stochastic Gradient Descent (SGD), showing that gradient noise induces an attractive force towards these singular regions (termed ``Invariant Sets''). This ``Stochastic Collapse'' suggests that the tendency towards LoP states is exacerbated by the stochastic nature of the optimization process, even if the regions are unstable under deterministic gradient descent. Furthermore, \citet{wang2024comprehensive} empirically demonstrated that maintaining {trainability} (ability to fit new data) does not guarantee {generalizability} (performance on unseen data), emphasizing the need for methods that restore genuine plasticity.
 %it is crucial to distinguish between different aspects of LoP; 
 
-% \vspace{-7pt}
-% \paragraph{Neural collapse and information bottleneck.}  
-% In classification networks driven to near‑zero training error, within‑class features collapse to their class means and those means adopt a simplex‑ETF geometry—a phenomenon dubbed {neural collapse}~\citep{papyan2020prevalence}.  While beneficial for the {current} task, such compression discards within‑class variability that may be vital when new tasks arrive. This aligns with the {information bottleneck} view\citep{shwartz2017opening}, whereby networks first fit the data and then compress latent representations, retaining only label‑relevant information~\citep{shwartz2017opening}.  Extreme compression, however, hampers future adaptability.
+
 \section{LoP Manifolds: Traps for Gradient Descent}
 \label{sec:existence_lop_manifold}
 \label{sec:preliminaries}
 In this section, we lay the groundwork for our analysis by defining Loss of Plasticity (LoP) within a dynamical systems framework and recalling the standard definitions for feed-forward neural networks and back-propagation. The stability of LoP manifolds, a crucial concept for understanding their persistence, will be discussed later in \cref{sec:existence_lop_manifold}.
-Let $\theta\in\Theta\subseteq\R^p$ represent the parameters of a neural network. We consider training on a stream of data $\{(x_i,y_i)\}_{i=1}^N$ using gradient descent or its stochastic variants. The objective is typically to minimize a loss $\sum_{i=1}^N \Loss(\hat{y}_\theta(x_i),y_i),$ which we can succinctly refer to as $\Loss(\theta)$. This allows us to define LoP based on the the trajectory of parameters $\theta(t)$ in the parameter space $\Theta$ as driven by the negative gradient in the loss landscape.
+Let $\theta\in\Theta\subseteq\R^p$ represent the parameters of a neural network. We consider training on a stream of data $\{(x_i,y_i)\}_{i=1}^N$ using gradient descent or its stochastic variants. The objective is typically to minimize a loss $\sum_{i=1}^N \Loss(\hat{y}_\theta(x_i),y_i),$ which we can succinctly refer to as $\Loss(\theta)$. This allows us to define LoP based on the  trajectory of parameters $\theta(t)$ in the parameter space $\Theta$ as driven by the negative gradient in the loss landscape. As illustrated in the right panel of \cref{fig:concept_lop_trap}, we are interested in scenarios where this trajectory becomes confined to a lower-dimensional subspace $\mathcal{M} \subset \Theta$.
 
 % The learning dynamics can be idealized by the continuous-time gradient flow:
 % \begin{equation}
@@ -199,12 +356,29 @@ A manifold $\mathcal{M}\subset\Theta$ induces LoP if the gradient of the loss fu
 % \end{equation}
 \end{definition}
 
+
+
+\begin{remark}
+\label{rem:flow-vs-gd}
+Definition~\ref{def:lop} is stated in terms of continuous-time gradient flow
+$\dot\theta = -\nabla_\theta \Loss(\theta)$: the tangency condition
+$\nabla_\theta \Loss(\theta) \in T_\theta \mathcal{M}$ ensures that the flow
+starting in $\mathcal{M}$ remains in $\mathcal{M}$. For a general curved
+manifold this need not imply invariance under discrete updates
+$\theta_{k+1} = \theta_k - \eta_k \nabla_\theta \Loss(\theta_k)$, as discretization step can lead to an escape from the manifold. However, for \emph{affine} LoP manifolds,
+both gradient flow and (stochastic) gradient descent dynamics are invariant
+once they enter $\mathcal{M}$, as the discretization step cannot  lead to an escape.
+\end{remark}
+
+
 \begin{remark}
 If the conditions in \cref{def:lop} hold irrespective of the specific data distribution generating the loss $\Loss$, which we can think of as functional LoP, and is our primary area of interest. Such LoP arises from the network architecture and gradient descent dynamics alone and is particularly relevant as it persists even if the task or data distribution evolves.
 \end{remark}
+
+
+
 Given these definitions, we can formalize existence of these LoP manifolds, restricting subsequent learning. We present a central theorem that jointly addresses LoP arising from frozen and duplicate units.
 The intuition is that once units become unresponsive (frozen) or perfectly redundant (cloned), they tend to remain so under standard gradient-based optimization. 
-% This persistence is key to understanding LoP as a stable or semi-stable state.
 \begin{theorem}
 \label{prop:frozen_duplicate_lop}
 Let $G=(V,E)$ be the network’s computational DAG and let $\theta=\{\theta_{uv}:(u\to v)\in E\}\in\Theta$ denote the edge parameters.
@@ -227,9 +401,10 @@ Note that both LoP manifolds $\mathcal{M}_F$ and $\mathcal{M}_C$ are defined as 
 \begin{remark}
 It is important to note that the Duplicate Manifold $\mathcal{M}_D$ (defined formally via Incoming and Outgoing Equitable partitions in \cref{app:cloning_manifold_details}) represents a significant generalization of the cloning concepts typically discussed in literature. Prior analyses of singularities \citep{fukumizu2000local} or invariant sets \citep{chen2023stochastic} generally define cloned units by requiring their associated weights to be strictly identical (the block-wise constant condition in our terminology). Our framework proves that invariance under gradient descent holds even under the relaxed condition of equitability, where individual weights may differ as long as specific incoming and outgoing sums are maintained. This significantly broadens the class of structures identified as LoP manifolds.
 \end{remark}
-\begin{remark}
-The cloning LoP manifold naturally lends itself to gradient descent and stochastic gradient descent, regardless of the order which we process the samples, will remain strictly within the manifold. This extends to virtually all variations of gradient descent based optimizations, namely Stochastic Gradient Descent (SGD), SGD with momentum, and Adam, as long as the optimizer is initialized at the onset of cloning. The only exception to this is weigh decay which could break some symmetries. This fact can be empirically observed across our cloning experiments, showing that across a wide range of optimization schemes the model remains trapped onto to the LoP manifold.
+\begin{remark}\label{rem:optimizers}
+The cloning LoP manifold naturally lends itself to gradient descent and stochastic gradient descent, regardless of the order which we process the samples, will remain strictly within the manifold. This extends to virtually all variations of gradient descent based optimizations, namely Stochastic Gradient Descent (SGD), SGD with momentum, and Adam, as long as the optimizer is initialized at the onset of cloning. The only exception to this is weight decay which could break some symmetries. This fact can be empirically observed across our cloning experiments, showing that across a wide range of optimization schemes the model remains trapped onto to the LoP manifold.
 \end{remark}
+
 Remarkably, the theorem admits a \emph{modular} version, which  allows us to create practical cloning certificate for modern  architectures (see \cref{app:modular_cloning} for more details). 
 \begin{theorem}[Modular Cloning (informal)]
 \label{cor:modular_cloning}
@@ -239,7 +414,8 @@ This cloning property can be decomposed modularly. If a network is composed of i
 \end{theorem}
 
 To empirically test the validity of the cloning manifold and their potential escape mechanisms we conduct \emph{cloning experiments}. First, a base model (e.g., an MLP) is trained on a specific task. Subsequently, a larger model is constructed by expanding the base model. This expansion involves increasing the width of the model for MLPs, the number of channels for CNNs and ResNets, and the feature dimension for ViTs. The weights of the cloned model are initialized in such a way that its activations are identical to those of the base model. This effectively creates blocks of units that have identical activations. Next, we train both the base and cloned models on the same task and monitor their training progress through the loss curve, the effective rank of representations, and the cloning $R^2$ score. \Cref{fig:cloning_perfect_appendix} presents the results of such experiments on MLPs, shedding light on the dynamics within and escapes from these LoP manifolds.
-The empirical validation of these claims, such as demonstrating perfect cloning under specific initializations or the persistence of dead units, can be found in \cref{fig:cloning_perfect_appendix} and \cref{app:empirical_evidence_appendix}. Notably, despite Adam violating the symmetry conditions required for \cref{prop:frozen_duplicate_lop}, the empirical evidence suggests that it frequently fails to escape the manifold. This observation implies the existence of a stronger theory capable of explaining this phenomenon.
+The empirical validation of these claims, such as demonstrating perfect cloning under specific initializations or the persistence of dead units, can be found in \cref{fig:cloning_perfect_appendix} and \cref{app:empirical_evidence_appendix}. Notably, \Cref{rem:optimizers} predicts that Adam, despite fundamental differences with SGD, also fails to escape the manifold, which is validated by our experiments. 
+% This observation implies the existence of a stronger theory capable of explaining this phenomenon.
 
 
 
@@ -269,35 +445,63 @@ Both noisy SGD and dropout act as symmetry-breaking operations. In the case of d
 \label{sec:emergence_lop}
 \label{sec:emergence_rank_dynamics}
 
-Having established the existence of LoP manifolds, we now discuss the mechanisms within standard training that drive their formation. The optimization process can be seen as a trajectory, beginning with an expansion of representational diversity as features propagate through nonlinear layers and become increasingly decorrelated \citep{poole2016exponential}. However, this initial growth is followed by a compression phase, where the network simplifies its representation to retain only the most relevant features for the task. This low-dimensional structure is a key characteristic of neural collapse, where last-layer features for each class converge to their means in a highly organized geometric configuration \citep{papyan2020prevalence}. This is also consistent with the information bottleneck principle, which describes training as a process of first fitting the data and then compressing the representation to discard irrelevant information \citep{shwartz2017opening}. Here, we argue that these two principles derive the model towards the LoP manifolds we identified earlier. Thus, this provides a direct link between these fundamental compression dynamics inherent to deep network optimization, and emergence of LoP.
+Having established the existence of LoP manifolds, we now discuss the mechanisms within standard training that drive their formation. The optimization process naturally follows a trajectory beginning with an expansion of representational diversity, as features propagate through nonlinear layers and become increasingly decorrelated \citep{poole2016exponential}. However, this expansion is counterbalanced by a drive toward geometric simplicity in the final phase of training, as captured by neural collapse \citep{papyan2020prevalence}, where within-class variability vanishes and features converge to a low-rank subspace spanned by class means. We argue that this geometric collapse—while beneficial for generalization in static settings—inherently steers the model toward the low-rank LoP manifolds we identified. Thus, the very dynamics that maximize separability on the current task provide the direct mechanism for the emergence of LoP.
+
+% Having established the existence of LoP manifolds, we now discuss the mechanisms within standard training that drive their formation. The optimization process can be seen as a trajectory, beginning with an expansion of representational diversity as features propagate through nonlinear layers and become increasingly decorrelated \citep{poole2016exponential}. However, this initial growth is followed by a compression phase, where the network simplifies its representation to retain only the most relevant features for the task. This low-dimensional structure is a key characteristic of neural collapse, where last-layer features for each class converge to their means in a highly organized geometric configuration \citep{papyan2020prevalence}. This is also consistent with the information bottleneck principle, which describes training as a process of first fitting the data and then compressing the representation to discard irrelevant information \citep{shwartz2017opening}. Here, we argue that these two principles derive the model towards the LoP manifolds we identified earlier. Thus, this provides a direct link between these fundamental compression dynamics inherent to deep network optimization, and emergence of LoP.
 
 
 
 % We have established that LoP manifolds exist and now explain why standard training tends toward them. A high level view is through rank dynamics where nonlinear layers expand representational diversity while linear layers cannot increase hard rank and even compress features under common objectives. Correlation propagation through depth provides a concrete mechanism for early diversity growth \citep{poole2016exponential}. The terminal low-dimensional geometry repeatedly observed in classifiers matches neural collapse \citep{papyan2020prevalence} and the compression phase seen in information-bottleneck studies \citep{shwartz2017opening}. The overall arc of adding complexity when needed and then compressing is consistent with spectral-bias observations \citep{rahaman2019spectral} and helps interpret LoP in continual settings \citep{dohare2024loss}.
 
-To diagnose whether features are diversifying or compressing during training, we track a smooth surrogate of the rank of the feature correlation matrix. Exact rank is numerically unstable, because it is not a continuous nor a differentiable map from the matrix space. Therefore, we use differentiable proxies to rank such as Rényi-2 rank, $\mathrm{er}_2(M)=(\mathrm{tr}\,M)^2/\|M\|_F^2$, or the Shannon effective rank, $\mathrm{er}(M)=\exp(H(\lambda(M)/\mathrm{tr}\,M))$. Both increase when the eigenmass is evenly distributed or dominated by a few values. Note that both of these surrogates are maximized when matrix $M$ has equal eivenvalues and minimized when it a rank-$1$ matrix. The following theorem offers an insight into how nonlinear layers contribute to the formation of features. 
+To diagnose whether features are diversifying or compressing during training, we track a smooth surrogate of the rank of the feature correlation matrix. Exact rank is numerically unstable, because it is not a continuous nor a differentiable map from the matrix space. Therefore, we use differentiable proxies to rank such as Rényi-2 rank, $\mathrm{er}_2(M)=(\mathrm{tr}\,M)^2/\|M\|_F^2$, or the Shannon effective rank, $\mathrm{er}(M)=\exp(H(\lambda(M)/\mathrm{tr}\,M))$. Both increase when the eigenmass is evenly distributed and decrease when dominated by a few values. Note that both of these surrogates are maximized when matrix $M$ has equal eivenvalues and minimized when it a rank-$1$ matrix. The following theorem offers an insight into how nonlinear layers contribute to the formation of features. 
 
-\begin{theorem}[rank gain across one linear–nonlinear step]
-Assume $\phi$ is nonlinear with a Hermite expansion. Let $C$ be the pre-activation correlation matrix with unit diagonal. For an activation $\phi$, define the correlation kernel $K_\phi(r)=\mathrm{Corr}(\phi(x),\phi(y))$ where $(x,y)$ are jointly Gaussian with correlation $r$. The nonlinearity acts entrywise on correlations, producing $K_\phi(C)$. Its correlation kernel satisfies $K_\phi(0)=0$, $K_\phi(1)=1$, and $|K_\phi(r)|<|r|$ for all $|r|<1$. For any correlation matrix $C$ with unit diagonal the Rényi-2 effective rank obeys
+
+\begin{theorem}[Rank gain and decorrelation potential]
+\label{thm:rank_gain}
+Assume $\phi \in L^2(\mathcal{N}(0,1))$ is nonlinear and normalized such that $\mathbb{E}[\phi(Z)]=0$ and $\mathrm{Var}(\phi(Z))=1$. Let $C$ be a pre-activation correlation matrix. For an activation $\phi$, define the correlation kernel $K_\phi(r)=\mathrm{Corr}(\phi(x),\phi(y))$ where $(x,y)$ are jointly Gaussian with correlation $r$. The nonlinearity acts entrywise on correlations, producing $K_\phi(C)$. We define the \emph{decorrelation strength} $\gamma_\phi = \frac{1-K_\phi'(0)}{1+K_\phi'(0)}$ and the \emph{decorrelation potential} $\Psi(C) = \sum_{i \ne j} C_{ij}^2 (1-C_{ij}^2)$. The Rényi-2 effective rank is non-decreasing according to the bound below:
 \[
 \frac{\mathrm{er}_2(K_\phi(C))}{\mathrm{er}_2(C)}
-=\frac{d+\sum_{i\ne j}C_{ij}^2}{d+\sum_{i\ne j}K_\phi(C_{ij})^2}\ge 1,
+\;\ge\; 1 + \gamma_\phi \frac{\Psi(C)}{\|C\|_F^2}.
 \]
-and the ratio equals $1$ only when every off-diagonal magnitude $C_{ij}$ is $0$ or $1$.
+The ratio is strictly larger than $1$  when the potential $\Psi(C)$ is vanishing (all off-diagonal $C_{ij} \in \{0, \pm 1\}$) and the the activation is linear ($\gamma_\phi$ is zero).
 \end{theorem}
 
-Note that the theorem implies that any correlations $|C_{ij}|\in(0,1)$ strictly increase Rényi-2 rank after the nonlinearity because $K_\phi$ is below the identity map everywhere other than those fixed points. Note that this gap also depends on the activation itself, and how nonlinear it is. We can summarize this gap via a scalar that summarizes how strongly the kernel pulls intermediate correlations toward the fixed points $\{0,1\},$ which we term the decorrelation strength $\kappa_\phi=\max_{r\in[0,1]}(r^2-K_\phi(r)^2)$. Larger $\kappa_\phi$ implies a larger rank gain for the same spectrum of $C$. For a formal statement and proof of this statement see \cref{app:rank_gain_proof}.
+Note that the theorem implies that any correlations within range $|C_{ij}|\in(0,1)$ provide a potential $\Psi(C) > 0$ that the nonlinearity consumes to increase rank. The rate of this increase is governed by the scalar $\gamma_\phi \in [0, 1]$, depends on the activation and quantifies the nonlinearity's  ability to de-correlate inputs and thereby increase rank. Larger $\gamma_\phi$ guarantees a larger rank gain for the same input spectrum. For a rigorous derivation, see \cref{app:rank_gain_proof}.
 
 \vspace{-7pt}
-\paragraph{Implication for emergence of frozen units}
-So far we implicitly treated pre-activations as standardized. In practice, their first and second moments drift during training. Allowing nonzero means and nonunit variances changes the operating regime of the activation and thus modifies the kernel $K_\phi$ and the decorrelation strength $\kappa_\phi$. For ReLU, making the effective bias more negative increases nonlinearity and raises $\kappa_\phi$. For $\tanh$, increasing effective gain does the same. These are precisely the regimes where the derivative is near zero on most inputs, which explains why training that enhances decorrelation also creates units that are nearly always inactive or saturated. One insight from this connection is that we can unify two empirically observed phenomena: ``dead ReLU'' and ``frozen units'' as both symptoms are caused by the same underlying force. 
+\paragraph{Implication for emergence of frozen units.}
+In practice, the first and second moments of pre-activations drift during training, modulating the effective activation function. This modulation directly impacts the decorrelation strength $\gamma_\phi$. We find that $\gamma_\phi$ is \emph{monotonic} with respect to the saturation parameters: for ReLU, making the effective bias more negative increases $\gamma_\phi$; for $\tanh$, increasing the effective gain does the same. Consequently, optimizing for feature diversity (high decorrelation strength) creates a pressure to push units into regimes where the derivative vanishes on most inputs. This explains why training that effectively restores rank also creates ``frozen'' or ``dead'' units.
 
 \vspace{-7pt}
-\paragraph{Implication for creation of duplicate or cloned units}
-Neural collapse is a widely observed endpoint in which the penultimate features are low-rank, and the class means form a simplex or Equiangular Tight Frame (ETF) structure~\citep{papyan2020prevalence}. Under this geometry, the theorem makes a precise prediction. To preserve low rank through the nonlinearity, correlations must lie at kernel fixed points that do not increase effective rank, which means they should be close to 0 or 1. Maintaining rank $C$ therefore requires roughly $C$ orthogonal directions for class structure and $d-C$ directions that are near duplicates within classes. Linear layers and the loss encourage this compression and duplication, while the nonlinearity would otherwise expand diversity unless within-class correlations are driven close to 1 and others close to 0. 
+\paragraph{Implication for creation of duplicate or cloned units.}
+Neural collapse is a widely observed endpoint in which the penultimate features are low-rank, and the class means form a simplex or Equiangular Tight Frame (ETF) structure~\citep{papyan2020prevalence}. The theorem makes a precise prediction regarding this state: for the rank to stabilize (ratio $\approx 1$) while retaining nonlinearity ($\gamma_\phi > 0$), the decorrelation potential $\Psi(C)$ must vanish. This forces correlations to converge to the fixed points $0$ (orthogonal features) or $\pm 1$ (aligned or anti-aligned features). Thus, the dynamics of rank expansion naturally drive the network toward a mixture of orthogonal subspaces and cloned units, matching the geometry of LoP manifolds.
+
+
+
+% \begin{theorem}[rank gain across one linear–nonlinear step]
+% Assume $\phi$ is nonlinear with a Hermite expansion. Let $C$ be the pre-activation correlation matrix with unit diagonal. For an activation $\phi$, define the correlation kernel $K_\phi(r)=\mathrm{Corr}(\phi(x),\phi(y))$ where $(x,y)$ are jointly Gaussian with correlation $r$. The nonlinearity acts entrywise on correlations, producing $K_\phi(C)$. Its correlation kernel satisfies $K_\phi(0)=0$, $K_\phi(1)=1$, and $|K_\phi(r)|<|r|$ for all $|r|<1$. For any correlation matrix $C$ with unit diagonal the Rényi-2 effective rank obeys
+% \[
+% \frac{\mathrm{er}_2(K_\phi(C))}{\mathrm{er}_2(C)}
+% =\frac{d+\sum_{i\ne j}C_{ij}^2}{d+\sum_{i\ne j}K_\phi(C_{ij})^2}\ge 1,
+% \]
+% and the ratio equals $1$ only when every off-diagonal magnitude $C_{ij}$ is $0$ or $1$.
+% \end{theorem}
+
+% Note that the theorem implies that any correlations $|C_{ij}|\in(0,1)$ strictly increase Rényi-2 rank after the nonlinearity because $K_\phi$ is below the identity map everywhere other than those fixed points. Note that this gap also depends on the activation itself, and how nonlinear it is. We can summarize this gap via a scalar that quantifies  how strongly the kernel pulls intermediate correlations toward the fixed points $\{0,1\},$ which we term the decorrelation strength $\kappa_\phi=\max_{r\in[0,1]}(r^2-K_\phi(r)^2)$. Larger $\kappa_\phi$ implies a larger rank gain for the same spectrum of $C$. For a formal statement and proof of this statement see \cref{app:rank_gain_proof}.
+
+% \vspace{-7pt}
+% \paragraph{Implication for emergence of frozen units}
+% In practice, their first and second moments of pre-activations drift during training. Allowing non-zero means and non-unit variances changes the operating regime of the activation and thus modifies the kernel $K_\phi$ and the decorrelation strength $\kappa_\phi$. For ReLU, making the effective bias more negative increases nonlinearity and raises $\kappa_\phi$. For $\tanh$, increasing effective gain does the same. These are precisely the regimes where the derivative is near zero on most inputs, which explains why training that enhances decorrelation also creates units that are nearly always inactive or saturated. One insight from this connection is that we can unify two empirically observed phenomena: ``dead ReLU'' and ``frozen units'' as both symptoms are caused by the same underlying force. 
+
+% \vspace{-7pt}
+% \paragraph{Implication for creation of duplicate or cloned units}
+% Neural collapse is a widely observed endpoint in which the penultimate features are low-rank, and the class means form a simplex or Equiangular Tight Frame (ETF) structure~\citep{papyan2020prevalence}. Under this geometry, the theorem makes a precise prediction. To preserve low rank through the nonlinearity, correlations must lie at kernel fixed points that do not increase effective rank, which means they should be close to 0 or 1. Maintaining rank $C$ therefore requires roughly $C$ orthogonal directions for class structure and $d-C$ directions that are near duplicates within classes. Linear layers and the loss encourage this compression and duplication, while the nonlinearity would otherwise expand diversity unless within-class correlations are driven close to 1 and others close to 0. 
 
 The two implications above provide a theoretical perspective on why duplicate features and frozen units frequently emerge at or near convergence, and why the resulting representation lies close to LoP manifolds, as proven in \cref{prop:frozen_duplicate_lop}.
 
+\begin{remark}
+Our analysis explicitly links LoP to the ``Rich'' or feature learning regime. In the ``Lazy'' learning regime (associated with the Neural Tangent Kernel), weights remain close to initialization, maintaining high-rank connectivity and avoiding feature compression. Conversely, the ``Rich'' regime is characterized by significant weight evolution and the emergence of low-rank structures \citep{chizat2019lazy, woodworth2020kernel}. The frozen units and cloned manifolds we identify are essentially symptoms of this feature learning process carried to an extreme. Thus, LoP can be viewed as a pathology specific to the Rich regime: the same mechanism that enables deep networks to learn efficient representations (data compression) eventually traps them in low-rank manifolds that hinder future adaptability.
+\end{remark}
 
 
 % \section{Rank Expansion under Entrywise Correlation Maps}
@@ -445,164 +649,214 @@ Ultimately, understanding and overcoming LoP is crucial for building AI systems 
 
 \newpage 
 \appendix
+
+\appendix
+
 \section{Theoretical Appendix}
 \label{app:theory_appendix}
 This section contains detailed proofs of theorems and lemmas, further theoretical derivations, and discussions extending the concepts presented in the main paper. 
 
 
-\subsection{Formal proof of the rank–gain theorem under non-linear activations}
+\subsection{Formal proof of the Rank Gain and Decorrelation Theorem}
 \label{app:rank_gain_proof}
-\label{app:max_rank_frozen}
 
-This section states and proves in full detail the theorem used in \cref{sec:emergence_rank_dynamics}. We work with standard Gaussian inputs and use Hermite expansions to characterize the correlation kernel of a nonlinearity.
+This section provides the rigorous derivation of Theorem~\ref{thm:rank_gain}, establishing a quantitative lower bound on the increase in Rényi-2 effective rank across a nonlinear layer.
 
-\paragraph{Hermite basis and notation}
-Let $(h_k)_{k\ge 0}$ be the orthonormal probabilists' Hermite polynomials in $L^2(\gamma)$ where $\gamma=\mathcal{N}(0,1)$, with $h_0(z)=1$, $h_1(z)=z$, and $\mathbb{E}[h_k(Z)h_\ell(Z)]=\delta_{k\ell}$ for $Z\sim\gamma$. Any $\phi\in L^2(\gamma)$ admits a Hermite expansion
+\paragraph{Preliminaries: Hermite Expansion and Kernel Structure}
+
+We consider an activation function $\phi \in L^2(\gamma)$, where $\gamma=\mathcal{N}(0,1)$. Let $\{h_k\}_{k\ge 0}$ be the orthonormal Hermite basis. The activation admits the expansion:
 \[
 \phi(z)=\sum_{k=0}^\infty a_k h_k(z), \qquad a_k=\mathbb{E}\big[\phi(Z)h_k(Z)\big].
 \]
-Write $\sigma_\phi^2=\mathrm{Var}(\phi(Z))=\sum_{k\ge 1} a_k^2$. We call $\phi$ nonlinear when at least one coefficient with $k\ge 2$ is nonzero.
+We follow the assumptions of Theorem~\ref{thm:rank_gain}, where $\phi$ is standardized such that $\mathbb{E}[\phi(Z)]=0$ (implying $a_0=0$) and $\mathrm{Var}(\phi(Z))=1$ (implying $\sum_{k \ge 1} a_k^2 = 1$).
 
-\paragraph{Correlation kernel}
-For jointly Gaussian $(X,Y)$ with $\mathbb{E}X=\mathbb{E}Y=0$, $\mathrm{Var}(X)=\mathrm{Var}(Y)=1$, and $\mathrm{corr}(X,Y)=r\in[-1,1]$, define
+The correlation kernel $K_\phi(r)$ is defined for jointly Gaussian $(X,Y)$ with correlation $r$:
 \[
-K_\phi(r) \;=\; \mathrm{Corr}\big(\phi(X),\phi(Y)\big) \;=\; 
-\frac{\mathbb{E}[\phi(X)\phi(Y)]-\mathbb{E}[\phi(X)]\mathbb{E}[\phi(Y)]}{\sqrt{\mathrm{Var}(\phi(X))\,\mathrm{Var}(\phi(Y))}} \, .
+K_\phi(r) = \mathrm{Corr}\big(\phi(X),\phi(Y)\big).
 \]
-Using the Hermite expansion and Mehler's identity $\mathbb{E}[h_k(X)h_\ell(Y)]=\delta_{k\ell}\, r^k$ gives
+Using Mehler's identity, the kernel is given by:
 \begin{equation}
-\label{eq:Kphi_series}
-K_\phi(r)
-=\frac{\sum_{k\ge 1} a_k^2 r^k}{\sum_{k\ge 1} a_k^2}
-=\sum_{k\ge 1} w_k r^k,
-\qquad
-w_k:=\frac{a_k^2}{\sum_{\ell\ge 1} a_\ell^2}\ \ge 0,\ \ \sum_{k\ge 1} w_k=1 .
+\label{eq:Kphi_series_appendix}
+K_\phi(r) = \sum_{k=1}^\infty a_k^2 r^k = \sum_{k=1}^\infty w_k r^k,
 \end{equation}
-Hence $K_\phi$ is a convex combination of the monomials $r^k$ for $k\ge 1$.
+where $w_k = a_k^2$. Key properties derived from this structure are:
+\begin{enumerate}
+    \item $w_k \ge 0$ for all $k$.
+    \item $\sum_{k=1}^\infty w_k = 1$, thus $K_\phi(1)=1$ and $K_\phi(0)=0$.
+    \item The linearity coefficient is $\alpha_\phi = K_\phi'(0) = w_1$. If $\phi$ is nonlinear, $\alpha_\phi < 1$.
+    \item $|K_\phi(r)| \le |r|$ for $r \in [-1, 1]$.
+\end{enumerate}
 
-\begin{lemma}[basic properties of $K_\phi$]
-\label{lem:K_basic}
-If $\phi$ is nonlinear with $\phi\in L^2(\gamma)$, then the correlation kernel $K_\phi$ defined in \eqref{eq:Kphi_series} satisfies
-\[
-K_\phi(0)=0, \qquad K_\phi(1)=1, \qquad |K_\phi(r)|<|r| \text{ for all } |r|<1 .
-\]
+\paragraph{The Universal Quartic Gap Bound}
+
+The key to the quantitative rank gain theorem is establishing a rigorous lower bound on the decorrelation gap $G(r) = r^2 - K_\phi(r)^2$.
+
+\begin{lemma}[Universal Quartic Gap Bound]
+\label{lem:quartic_bound}
+Let $\alpha = K_\phi'(0)$. The decorrelation strength is defined as $\gamma_\phi = \frac{1-\alpha}{1+\alpha}$. For any correlation $r \in [-1, 1]$:
+\begin{equation}
+    r^2 - K_\phi(r)^2 \;\ge\; \gamma_\phi \cdot r^2(1-r^2).
+\end{equation}
 \end{lemma}
 
 \begin{proof}
-The first two identities follow by evaluating \eqref{eq:Kphi_series} at $r=0$ and $r=1$. For the strict inequality, write $K_\phi(r)=\sum_{k\ge 1} w_k r^k$ with weights $w_k\ge 0$, $\sum_k w_k=1$. If $|r|<1$ and there exists $k\ge 2$ with $w_k>0$ (nonlinearity), then
+We aim to find the kernel that maximizes $|K_\phi(r)|$ for a fixed $\alpha$, subject to the constraints $w_k \ge 0$ and $\sum w_k = 1$.
+
+Let $x = |r| \in [0, 1]$. Due to the non-negativity of $w_k$:
 \[
-|K_\phi(r)| \le \sum_{k\ge 1} w_k |r|^k = |r|\Big(w_1 + \sum_{k\ge 2} w_k |r|^{k-1}\Big)
-< |r|\Big(w_1 + \sum_{k\ge 2} w_k\Big) = |r| .
+|K_\phi(r)| = |\sum_{k=1}^\infty w_k r^k| \le \sum_{k=1}^\infty w_k |r|^k = K_\phi(x).
 \]
+We now seek an upper bound for $K_\phi(x)$. Since $x \in [0, 1]$, we have $x^k \le x^2$ for all $k \ge 2$.
+\begin{align*}
+K_\phi(x) &= w_1 x + \sum_{k=2}^\infty w_k x^k \\
+&\le \alpha x + x^2 \sum_{k=2}^\infty w_k \\
+&= \alpha x + x^2 (1-\alpha).
+\end{align*}
+Let $Q(x) = \alpha x + (1-\alpha)x^2$. This quadratic function is the extremal kernel that maximizes the magnitude for a given $\alpha$ under these constraints.
+
+Now we bound the gap $G(r)$:
+\[
+G(r) = r^2 - K_\phi(r)^2 \ge x^2 - Q(x)^2.
+\]
+We must verify that $x^2 - Q(x)^2 \ge \gamma_\phi x^2(1-x^2)$.
+\[
+x^2 - [\alpha x + (1-\alpha)x^2]^2 \ge \frac{1-\alpha}{1+\alpha} x^2 (1-x^2).
+\]
+For $x \in (0,1)$, we divide both sides by the positive term $x^2 (1-x)$:
+\[
+\frac{1 - [\alpha + (1-\alpha)x]^2}{1-x} \ge \frac{1-\alpha}{1+\alpha}(1+x).
+\]
+We factor the LHS numerator as a difference of squares $1-Y^2 = (1-Y)(1+Y)$, where $Y = \alpha + (1-\alpha)x$.
+Note that $1-Y = 1-\alpha - (1-\alpha)x = (1-\alpha)(1-x)$.
+The LHS simplifies to:
+\[
+\text{LHS} = \frac{(1-\alpha)(1-x) [1 + \alpha + (1-\alpha)x]}{1-x} = (1-\alpha)[1+\alpha + x(1-\alpha)].
+\]
+The inequality becomes:
+\[
+(1-\alpha)[1+\alpha + x(1-\alpha)] \ge \frac{1-\alpha}{1+\alpha}(1+x).
+\]
+Assuming $\phi$ is nonlinear ($\alpha < 1$), we can divide by $(1-\alpha)$. We then multiply by $(1+\alpha)$:
+\[
+(1+\alpha)[1+\alpha + x(1-\alpha)] \ge 1+x.
+\]
+\[
+(1+\alpha)^2 + x(1-\alpha)(1+\alpha) \ge 1+x.
+\]
+\[
+1 + 2\alpha + \alpha^2 + x(1-\alpha^2) \ge 1+x.
+\]
+\[
+1 + 2\alpha + \alpha^2 + x - \alpha^2 x \ge 1+x.
+\]
+\[
+2\alpha + \alpha^2(1-x) \ge 0.
+\]
+Since $\alpha \ge 0$ (as $w_1=a_1^2$) and $x \in [0, 1]$, the inequality holds true. The boundary cases $r=0, r=\pm 1, \alpha=1$ hold trivially.
 \end{proof}
 
-\begin{lemma}[entrywise action on Gaussian correlation matrices]
-\label{lem:entrywise}
-Let $Z=(Z_1,\dots,Z_d)^\top\sim \mathcal{N}(0,C)$ with $C$ a correlation matrix. For $\phi\in L^2(\gamma)$,
-\[
-\mathrm{Corr}\big(\phi(Z_i),\phi(Z_j)\big) \;=\; K_\phi(C_{ij}) \qquad \text{for all } i,j .
-\]
-Equivalently, the post-activation correlation matrix equals $K_\phi(C)$ entrywise. Moreover,
-\[
-K_\phi(C)=\sum_{k\ge 1} w_k\, C^{\odot k},
-\]
-where $C^{\odot k}$ is the $k$-th Hadamard power and $(w_k)_{k\ge 1}$ are as in \eqref{eq:Kphi_series}. Hence $K_\phi(C)$ is a correlation matrix: it is positive semidefinite and has unit diagonal.
-\end{lemma}
+\paragraph{Proof that rank increases under non-linearity}
 
-\begin{proof}
-Fix $i,j$. By the same Hermite calculation used for \eqref{eq:Kphi_series}, with $r=C_{ij}$ we have
-\[
-\mathrm{Corr}\big(\phi(Z_i),\phi(Z_j)\big)=\frac{\sum_{k\ge 1} a_k^2 r^k}{\sum_{k\ge 1} a_k^2}=K_\phi(r).
-\]
-Stacking these equalities over all pairs $(i,j)$ yields the entrywise identity and the series $K_\phi(C)=\sum_{k\ge 1} w_k C^{\odot k}$. Each Hadamard power $C^{\odot k}$ is positive semidefinite by the Schur product theorem, and the diagonal entries are $(C_{ii})^k=1$, so the nonnegative convex combination is positive semidefinite with unit diagonal.
+We now connect the gap bound (Lemma~\ref{lem:quartic_bound}) to the increase in Rényi-2 rank.
+
+\begin{proof}[Proof of Theorem~\ref{thm:rank_gain} (Rank Gain and Decorrelation Potential)]
+Let $C$ be a $d\times d$ correlation matrix. The Rényi-2 effective rank is $\mathrm{er}_2(C) = (\text{tr}\,C)^2 / \|C\|_F^2$. Since $C$ and $K_\phi(C)$ are correlation matrices, $\text{tr}(C)=\text{tr}(K_\phi(C))=d$.
+
+1.  Rank Ratio:
+    The ratio of the effective ranks is:
+    \[
+    R(C) = \frac{\mathrm{er}_2(K_\phi(C))}{\mathrm{er}_2(C)} = \frac{d^2/\|K_\phi(C)\|_F^2}{d^2/\|C\|_F^2} = \frac{\|C\|_F^2}{\|K_\phi(C)\|_F^2}.
+    \]
+
+2.  Total Decorrelation Gap $\Delta(C)$:
+    We define the total reduction in the squared Frobenius norm:
+    \[
+    \Delta(C) = \|C\|_F^2 - \|K_\phi(C)\|_F^2.
+    \]
+    Since $\|M\|_F^2 = d + \sum_{i\ne j} M_{ij}^2$ for a correlation matrix $M$:
+    \[
+    \Delta(C) = \sum_{i \ne j} (C_{ij}^2 - K_\phi(C_{ij})^2).
+    \]
+
+3.  Applying the Bound:
+    We apply the Universal Quartic Gap Bound (Lemma~\ref{lem:quartic_bound}) to each term:
+    \[
+    \Delta(C) \ge \sum_{i \ne j} \gamma_\phi C_{ij}^2(1-C_{ij}^2) = \gamma_\phi \Psi(C).
+    \]
+
+4.  Bounding the Rank Ratio:
+    We express the rank ratio using the gap $\Delta(C)$:
+    \[
+    R(C) = \frac{\|C\|_F^2}{\|C\|_F^2 - \Delta(C)}.
+    \]
+    Substituting the lower bound for $\Delta(C)$:
+    \[
+    R(C) \ge \frac{\|C\|_F^2}{\|C\|_F^2 - \gamma_\phi \Psi(C)} = \frac{1}{1 - \gamma_\phi \frac{\Psi(C)}{\|C\|_F^2}}.
+    \]
+    We use the inequality $(1-u)^{-1} \ge 1+u$, valid for $u \in [0,1)$.
+    Let $u = \gamma_\phi \frac{\Psi(C)}{\|C\|_F^2}$. We know $u \ge 0$. We verify $u < 1$. Since $\Delta(C) \ge \gamma_\phi \Psi(C)$, we have $u \le \frac{\Delta(C)}{\|C\|_F^2}$. As $\|K_\phi(C)\|_F^2 \ge d > 0$, we have $\Delta(C) < \|C\|_F^2$. Thus $u < 1$.
+
+    Applying the inequality:
+    \[
+    R(C) \ge 1 + \gamma_\phi \frac{\Psi(C)}{\|C\|_F^2}.
+    \]
+
+5.  Equality Conditions:
+    The rank ratio equals 1 if and only if $\Delta(C)=0$. This implies $\gamma_\phi \Psi(C)=0$. This occurs if $\gamma_\phi=0$ (the activation is linear, $\alpha=1$) or if $\Psi(C)=0$ (all correlations $C_{ij} \in \{0, \pm 1\}$).
 \end{proof}
 
-\begin{lemma}[Frobenius contraction]
-\label{lem:fro_contract}
-For any correlation matrix $C$ and nonlinear $\phi$ with kernel $K_\phi$ as above,
-\[
-\sum_{i\ne j} K_\phi(C_{ij})^2 \;\le\; \sum_{i\ne j} C_{ij}^2 ,
-\]
-with strict inequality if there exists $i\ne j$ such that $|C_{ij}|<1$.
-\end{lemma}
 
-\begin{proof}
-By \cref{lem:K_basic}, $|K_\phi(r)|<|r|$ for every $|r|<1$, and trivially $|K_\phi(r)|\le |r|$ for $|r|\le 1$. Apply this pointwise to each off-diagonal entry $C_{ij}$ and sum the squares. If some $|C_{ij}|<1$, the corresponding term is strictly reduced, and no term increases, so the sum is strictly reduced.
-\end{proof}
+\paragraph{Validation of the Quartic Gap Bound.}Figure~\ref{fig:validation} (Top Row) validates the Universal Quartic Gap Bound (\cref{lem:quartic_bound}). For representative activations, we plot the actual decorrelation gap $\Delta(c) = c^2 - K_\phi(c)^2$ against the theoretical lower bound $\gamma_\phi c^2(1-c^2)$ over the correlation domain $c \in [-1, 1]$.In all cases, the actual gap strictly dominates the lower bound. The gap vanishes only at the fixed points $c \in \{0, \pm 1\}$ or for linear functions ($\gamma_\phi=0$), confirming that nonlinear activations strictly reduce correlation magnitude (and thus increase rank) for any non-trivial input correlation structure.\paragraph{Validation of Rank Gain.}Figure~\ref{fig:validation} (Bottom Row) tests the Rank Gain Theorem (\cref{thm:rank_gain}). We generate a continuum of correlation matrices $C(\lambda)$ ranging from the identity matrix to a dense random matrix. We compute the actual Rényi-2 rank expansion ratio $R(C) = \mathrm{er}_2(K_\phi(C)) / \mathrm{er}_2(C)$ and compare it to the derived lower bound $1 + \gamma_\phi \Psi(C)/\|C\|_F^2$.The results show that the actual rank gain consistently exceeds the theoretical guarantee. The gain is positive whenever the decorrelation potential $\Psi(C)$ is non-zero, demonstrating that the nonlinearity actively consumes correlation structure to generate effective rank, with an efficiency bounded by $\gamma_\phi$.
 
-We can now state and prove the theorem used in the main text.
-
-\begin{theorem}[rank gain across one linear–nonlinear step]
-\label{prop:rank_gain_formal}
-Let $C$ be a $d\times d$ correlation matrix and let $\phi\in L^2(\gamma)$ be nonlinear. Define $K_\phi$ by \eqref{eq:Kphi_series}. Then $K_\phi(C)$ is a correlation matrix and
-\[
-\frac{\mathrm{er}_2\big(K_\phi(C)\big)}{\mathrm{er}_2(C)}
-\;=\; \frac{d+\sum_{i\ne j} C_{ij}^2}{d+\sum_{i\ne j} K_\phi(C_{ij})^2} \;\ge\; 1 .
-\]
-Moreover, the ratio is strictly greater than $1$ whenever there exists $i\ne j$ with $|C_{ij}|<1$. If the ratio equals $1$, then every off-diagonal magnitude satisfies $|C_{ij}|\in\{0,1\}$.
-\end{theorem}
-
-\begin{proof}
-By \cref{lem:entrywise}, $K_\phi(C)$ is a correlation matrix and $\mathrm{tr}\,K_\phi(C)=d=\mathrm{tr}\,C$. For any correlation matrix $M$,
-\[
-\|M\|_F^2 \;=\; \sum_{i,j} M_{ij}^2 \;=\; d + \sum_{i\ne j} M_{ij}^2 ,
-\]
-hence
-\[
-\mathrm{er}_2(M)=\frac{(\mathrm{tr}\,M)^2}{\|M\|_F^2}=\frac{d^2}{d+\sum_{i\ne j} M_{ij}^2}.
-\]
-Applying this to $M=C$ and $M=K_\phi(C)$ yields the displayed ratio. \cref{lem:fro_contract} gives $\sum_{i\ne j} K_\phi(C_{ij})^2 \le \sum_{i\ne j} C_{ij}^2$, which makes the ratio at least $1$, and strictly larger than $1$ if some $|C_{ij}|<1$.
-
-For the equality case, suppose the ratio equals $1$. Then the two Frobenius norms coincide, so
-\[
-\sum_{i\ne j} \Big( C_{ij}^2 - K_\phi(C_{ij})^2 \Big) = 0 .
-\]
-Each term in the sum is nonnegative by \cref{lem:K_basic}. Therefore every term must vanish, that is, for all $i\ne j$,
-\[
-K_\phi(C_{ij})^2 = C_{ij}^2 .
-\]
-If $|C_{ij}|<1$ and $\phi$ is nonlinear, \cref{lem:K_basic} gives $|K_\phi(C_{ij})|<|C_{ij}|$, a contradiction. Hence for all $i\ne j$ we must have $|C_{ij}|\in\{0,1\}$, which proves the final claim.
-\end{proof}
-
-\begin{remark}[dependence on operating regime]
-\label{rem:operating_regime}
-If the pre-activation is reparameterized as $\phi_{a,b}(z)=\phi(az+b)$, the Hermite coefficients and thus the weights $(w_k)$ in \eqref{eq:Kphi_series} change. The contraction at intermediate correlations can be summarized by the decorrelation strength
-\[
-\kappa_\phi \;=\; \max_{r\in[0,1]} \big(r^2 - K_\phi(r)^2\big),
-\]
-which quantifies the maximal per-entry reduction of squared correlation. For instance, more negative effective bias for ReLU and larger effective gain for $\tanh$ increase $\kappa_\phi$, while also reducing typical derivatives, connecting rank gains to the emergence of frozen units.
-\end{remark}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\textwidth]{rank_gain_validation}
+    \caption{\textbf{Decorrelation and rank-gain under non-linearity.} Empirical analysis activations theoretical predictions about quadratic lower bound for decorrelatioin, and for rank gain potential. }
+    \label{fig:validation}
+\end{figure}
 
 
 
-\subsubsection{Activation modulation increases decorrelation and also induces frozen units}
+\subsection{Rank-plasticity tension: an empirical validation}
 \label{app:numerical_validations_activations}
-Training changes pre–activation statistics, which modifies the operating regime of \(\phi\). Parameterize \(\phi_{a,b}(z)=\phi(az+b)\). Both the kernel \(K_\phi\) and the decorrelation strength \(\kappa_\phi\) vary with \((a,b)\). \Cref{app:max_rank_frozen} shows that regimes that raise decorrelation also reduce typical derivatives, yielding frozen units:
-\begin{itemize}[leftmargin=1.5em]
-\item For \(\tanh\), increasing gain \(a\) raises the local decorrelation rate \(\alpha_\phi=\mathbb{E}[\phi'(Z)^2]/\mathbb{E}[\phi(Z)^2]-1\) while \(\phi'(az)\to 0\) for almost all \(z\) as \(a\to\infty\).
-\item For ReLU, making the effective bias \(b\) negative with \(|b|/a\) large increases \(\alpha_\phi\) while \(\mathbb{P}(az+b<0)\to 1\), so \(\phi'(az+b)=0\) on most inputs.
-\end{itemize}.
-% The empirical relation between higher decorrelation and freezing is shown in \cref{fig:validation_frozen_states} and \cref{fig:validation_modulation_2d_comprehensive}.
-
-% \begin{figure}[ht!]
-%     \centering
-%     \includegraphics[width=0.9\linewidth]{validation_frozen_states.pdf}
-%     \caption{Validation that extreme modulation leads to frozen states. \textbf{Top row:} Analysis of Tanh(ax) with increasing scale $a$. Left: Rank recovery strength $\alpha_f$ increases with $a$. Middle: Fraction of frozen units (with $|f'| < 10^{-4}$) approaches 1 as $a$ increases. Right: Activation shapes showing saturation for large $a$. \textbf{Bottom row:} Analysis of ReLU(x+b) with negative shift $b$. Left: $\alpha_f$ varies with shift. Middle: Fraction of dead units increases as $b$ becomes more negative. Right: Activation shapes showing increasing dead zones. These results substantiate that maximizing rank recovery strength drives activations into regimes with zero gradients almost everywhere.}
-%     \label{fig:validation_frozen_states}
-% \end{figure}
 
 
-% \begin{figure}[ht!]
-%     \centering
-%     \includegraphics[width=\linewidth]{validation_modulation_2d_comprehensive.pdf}
-%     \caption{Comprehensive 2D analysis of modulation effects on activation functions. Each row shows a different activation function (ReLU, SELU, Tanh, Sigmoid) with their modulation scheme. \textbf{Column 1:} Heatmaps of frozen fraction as a function of scale $a$ and shift $b$. Red regions indicate parameter combinations leading to frozen/dead units. \textbf{Column 2:} Heatmaps of rank recovery strength $\alpha_f$ (capped at 10 for visualization). \textbf{Column 3:} Activation function shapes showing both $f(x)$ (blue) and $f'(x)$ (red dashed). \textbf{Column 4:} Trade-off analysis showing the correlation between $\alpha_f$ and frozen fraction, with colors indicating $\log_{10}(a)$. The analysis reveals that half-vanishing activations (ReLU, SELU) and plateauing activations (Tanh, Sigmoid) exhibit different pathways to frozen states, but all show the fundamental tension between rank recovery and maintaining gradient flow discussed in \cref{sec:emergence_lop}.}
-%     \label{fig:validation_modulation_2d_comprehensive}
-% \end{figure}
+This section shows that maximizing the de-correlation strength $\gamma_\phi$, necessitates driving the activation function into regimes where the gradient vanishes (freezing).
+
+
+In particular, we consider modulating activations  by scale $a$ and bias $b$: $\psi(z) = \phi(az+b)$, and analyze the de-correlation strength $\gamma(a,b) = \frac{(\mathbb{E}[\psi'(Z)])^2}{\text{Var}(\psi(Z))}$ as a function of shape parameters $\{a, b\}$.
+
+Note that 
+$\gamma(a,b) = \bigl(\mathbb{E}[\psi'(Z)]\bigr)^2 / \operatorname{Var}(\psi(Z))$ 
+coincides with the derivative of the corresponding correlation kernel at $0$, 
+i.e.\ $\gamma(a,b) = K'_{\psi}(0)$ after normalization. Thus, $\gamma(a,b)$ and 
+the $\gamma_{\phi}$ used in Theorem~\ref{thm:rank_gain} are related by a simple 
+monotone reparameterization.
+
+
+Here we empirically validate that the bias $b$ for ReLU and scale $a$ for Tanh under standard Gaussian input to measure the trade-off between decorrelation and gradient availability. As shown in Figure \ref{fig:frozen}, the decorrelation coefficient $\gamma_\phi$ is strictly monotonic with respect to the modulation parameters for both activations. Crucially, the analysis reveals a severe rank-plasticity tension: approaching maximum decorrelation ($\gamma_\phi \to 1$) necessitates driving the activation into a ``frozen'' regime (dead zone for ReLU or saturation for Tanh) with probability approaching $1.0$, thereby effectively eliminating the gradient flow required for training. 
+
+To extend this beyond ReLU and Tanh, Figure~\ref{fig:tension} visualizes the fundamental trade-off described in \cref{sec:emergence_rank_dynamics}. For all activations we plot the decorrelation strength $\gamma_\phi$ against the probability that the unit is frozen ($P(|f'|<\epsilon)$ where $\epsilon=0.01$). The results confirm that to achieve high rank expansion capabilities (large $\gamma_\phi$), in most cases the parameters must push the activation into a regime where the gradient vanishes for the vast majority of inputs, demonstrating the tension between feature learning and trainability.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\textwidth]{frozen}
+    \caption{\textbf{The rank-plasticity tradeoff for ReLU and Tanh.} Empirical analysis of ReLU and Tanh activations confirms that increasing the decorrelation coefficient $\gamma_\phi$ (to improve rank) strictly requires increasing the probability that the unit is frozen (dead or saturated), approaching $1.0$ as $\gamma_\phi \to 1$.}
+    \label{fig:frozen}
+\end{figure}
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{universal_lop_plot.pdf}
+    \caption{\textbf{The rank-plasticity tradeoff for general activations.} Empirical analysis of all activations $\gamma_\phi$ vs the probability that the unit is frozen, when we vary the pre-activations mean and bias. }
+    \label{fig:tension}
+\end{figure}
 
 \subsection{LoP manifolds: Formal Statement and Proof}
 \label{app:cloning_manifold_details}
 This section provides the formal definitions, statement, and proof for the LoP manifold theorem. Since the frozen manifold argument is self explanatory, we will only prove the cloning manifold result that is more non-trivial. 
-First, let us introduce our neural network network formalization. 
+First, let us introduce our neural network  formalization. 
 A feed-forward neural network is defined by a directed acyclic graph $G=(V,E, w)$, where $V$ is the set of nodes (neurons), $E$ is the set of directed edges (connections), $E$ representations the structure of the computational graph of the network, and  $w:\E \to \R,$ is the weight parameters of the network, which will be denoted $w(u,v)$ for each edge $(u,v)\in E$. Furthermore, $V_{\text{in}} \subset V$ are the input nodes, and $V_{\text{out}} \subset V$ are the output nodes. The post-activation $h(v)$ of a node $v \in V$ is computed as:
 \[
 h(v)=
@@ -640,7 +894,8 @@ Given a network partitioning $S_1,\dots , S_k$, and the corresponding base graph
 \begin{itemize}
     \item  The Row-wise Equitable (RE) manifold consists of all cloned weight matrices $w$ such that for every connection $(i,j) \in \BaseE$ in the base network, each block $w[S_i, S_j]$ all row-sums are equal:
     $$
-\ManifoldRE = \left\{ w\in \R^{|E|} \;\middle|\; \forall (i,j) \in \BaseE, \text{ and } \forall r,r' \in S_i, \text{ it holds } \sum_{u \in S_j}  w_{r u} = \sum_{u \in S_j}  w_{r' r} \right\}
+\ManifoldRE = \left\{ w\in \R^{|E|} \;\middle|\; \forall (i,j) \in \BaseE, \text{ and } \forall r,r' \in S_i, \text{ it holds } \sum_{u \in S_j} w_{r u} = \sum_{u \in S_j} w_{r' u}
+\right\}
 $$
 The Column-wise Equitable (CE) manifold, consists of all cloned weight matrices $w$ such that for partitioned block $w[S_i, S_j]$ , all column sums are equal:
 $$
@@ -667,10 +922,10 @@ Furthermore, the following remark clarifies why we define these networks as clon
 Let us re-state the theorem on cloning to make this section more self-contained. 
 \begin{theorem}[Cloned-Unit Manifold (Re-stated)]
 \label{prop:cloned_manifold_restated}
-Let $G=(V,E,W),$ denote a network that is partitioned with $S_1,\dots, S_k. $ 
+Let $G=(V,E,W),$ denote a network that is partitioned with $S_1,\dots, S_k. $ Furthermore, units within a single block share the same activation function $\forall u,v\in S_k: f_v = f_u,$ and there are no edges within a block. 
 For any input and label $(x,y)$:
     \begin{enumerate}
-        \item If $W \in \ManifoldRE$, then all units in the same cluster $u,v \in S_k$  have identical forward activations $h(u) = h(v).$
+        \item If $W \in \ManifoldCE$, then all units in the same cluster $u,v \in S_k$  have identical forward activations $h(u) = h(v).$
         \item If $W \in \ManifoldRE \cap \ManifoldCE$, then all units in the same cluster $u,v \in S_k$  have identical backward activations $\delta(u) = \delta(v).$ Furthermore, the gradients $\partial \Loss/\partial W$ will have a block-wise constant structure, such that gradients between any two units in two blocks will be equal, i.e., for any $u,u'\in S_i$ and $v,v'\in S_j,$ we have $\partial \Loss/\partial W_{uv} = \partial \Loss/\partial W_{u'v'}.$  
         \item If the model weights at initialization or any point in training touch, if they lie on a manifold from the family  $W\in \ManifoldD$ where $\ManifoldD \in \mathbb{M}_D,$ given any arbitrary batches of input label pairs used to obtain subsequent model parameters $W(t), $, any subsequent training parameter trajectory constrained to the same manifold:
     \begin{align*}
@@ -681,9 +936,9 @@ For any input and label $(x,y)$:
 \begin{proof}[Proof of \cref{prop:cloned_manifold_restated} (Cloned-Unit Manifold)]
 The proof will be done as a series of inductions. 
 First, let us assume that we have sorted the units in a topological order $v_1,\dots, v_n$ which exists because the network is a directed acyclic graph. Let us further assume that input nodes appear first in this list, and that outputs as the last edges in the list. Finally, because we assume no edges inside each block between the units, let us assume that the units in the same block are adjacent in our topological sort. Thus, for any two distinct blocks $S_i\neq S_j,$ we either have all nodes in $S_i$ before $S_j$ or vice versa, but cannot have a mix. 
-\paragraph{Forward cloning.} Row-equitability assumption implies identical forward for units in the same block. The induction hypothesis is that for all $k,$ any preceding unit $p \le k,$ that belongs same partition  $ u_p, u_k \in S_i ,$  will have identical forward $h(u_p) = h(u_k). $ Because cloning does not apply to input units, meaning that every unit is a separate block, the hypothesis trivially holds for all input units $k=1,\dots, d$ where $d$ is input dimension. Now, let us prove the induction step, assuming step $k.$ Let $p\le k$ correspond to a unit in the same block $u_p,u_k  \in S_i. $ Now, consider all the units that have incoming edges to these two units, which necessarily must appear before $p$. Let's consider all such units within the same block $S_j.$ Because these units appear before $k,$ the induction hypothesis tells us that they have identical forward. Thus, the total contribution from these units to pre-activations $z(u_p)$ and $z(u_k)$ will be proportional to sum of edge weights from units in $S_j$. Because of our construction of the ordering, all the units in $S_j$ that feed into $S_i$ must occur before them. 
-Now, the row-equal assumption implies that the sum of weights from all these units to $u_p $ and $u_k$ must be equal weight sum. Thus, we have proven that pre-activation contribution from units in  $S_j$ will be identical for $u_p$ and $u_k$. Because we chose $S_j$ arbitrarily and it could have been any block, we have proven that pre-activation these units must be identical $z(u_p)=z(u_k)$. Since they also have identical activation function, they will have identical outputs $h(u_p)=h(u_k)$. This completes the induction hypothesis for forward pass cloning. 
-\paragraph{‌Backward cloning.} We want to prove that column and row-equitability assumption implies identical backward for units in the same block. The  proof strategy will be highly similar to the forward cloning case, with the key difference that our induction will be backward in our ordering, starting from latest output units and then moving in backward in the list. The induction hypothesis for step $k$ is that, for al $q > k$, if they are in the same block $u_k,u_q\in S_i$, they will have identical backwards $\delta(u_k)=\delta(u_q).$ Because output units are not themselves cloned, the induction step holds trivially for the last output nodes. Now let us prove the induction hypothesis for $k$ assuming that it holds for all higher steps. Now, for some arbitrary block $S_j$ that units in $S_i$ feed into, consider all outgoing connections from $u_k,u_q$ to the units in this block. Because of our construction of the ordering, all the units in $S_j$ that $S_i$ feeds into must occur after $S_j.$ Thus, by induction hypothesis, all these units must have identical backwards. Furthermore, from our column-equitability assumption we know that total edge weights from $u_k,u_q$ to these units must be identical. Thus, the summation formulas in the backward of $u_k$ and $u_q$ are similar. Finally, since $S_j$ was chosen arbitrarily, this summation is identical for all subsequent blocks, which implies the overal sum is also identical. To conclude the proof, note that because of row-equitability condition we already inherit the proof from the forward case, implying  $f'(z(u_k)) = f'(z(u_q)). $ Thus, both parts to the backward formula for $u_k,u_q$ will be identical, which proves they have identical backwards. This finishes the induction step. 
+\paragraph{Forward cloning.} Column-equitability assumption implies identical forward for units in the same block. The induction hypothesis is that for all $k,$ any preceding unit $p \le k,$ that belongs same partition  $ u_p, u_k \in S_i ,$  will have identical forward $h(u_p) = h(u_k). $ Because cloning does not apply to input units, meaning that every unit is a separate block, the hypothesis trivially holds for all input units $k=1,\dots, d$ where $d$ is input dimension. Now, let us prove the induction step, assuming step $k.$ Let $p\le k$ correspond to a unit in the same block $u_p,u_k  \in S_i. $ Now, consider all the units that have incoming edges to these two units, which necessarily must appear before $p$. Let's consider all such units within the same block $S_j.$ Because these units appear before $k,$ the induction hypothesis tells us that they have identical forward. Thus, the total contribution from these units to pre-activations $z(u_p)$ and $z(u_k)$ will be proportional to sum of edge weights from units in $S_j$. Because of our construction of the ordering, all the units in $S_j$ that feed into $S_i$ must occur before them. 
+Now, the column-equal assumption implies that the sum of weights from all these units to $u_p $ and $u_k$ must be equal weight sum. Thus, we have proven that pre-activation contribution from units in  $S_j$ will be identical for $u_p$ and $u_k$. Because we chose $S_j$ arbitrarily and it could have been any block, we have proven that pre-activation these units must be identical $z(u_p)=z(u_k)$. Since they also have identical activation function, they will have identical outputs $h(u_p)=h(u_k)$. This completes the induction hypothesis for forward pass cloning. 
+\paragraph{‌Backward cloning.} We want to prove that column and row-equitability assumption implies identical backward for units in the same block. The  proof strategy will be highly similar to the forward cloning case, with the key difference that our induction will be backward in our ordering, starting from latest output units and then moving in backward in the list. The induction hypothesis for step $k$ is that, for al $q > k$, if they are in the same block $u_k,u_q\in S_i$, they will have identical backwards $\delta(u_k)=\delta(u_q).$ Because output units are not themselves cloned, the induction step holds trivially for the last output nodes. Now let us prove the induction hypothesis for $k$ assuming that it holds for all higher steps. Now, for some arbitrary block $S_j$ that units in $S_i$ feed into, consider all outgoing connections from $u_k,u_q$ to the units in this block. Because of our construction of the ordering, all the units in $S_j$ that $S_i$ feeds into must occur after $S_j.$ Thus, by induction hypothesis, all these units must have identical backwards. Furthermore, from our row-equitability assumption we know that total edge weights from $u_k,u_q$ to these units must be identical. Thus, the summation formulas in the backward of $u_k$ and $u_q$ are similar. Finally, since $S_j$ was chosen arbitrarily, this summation is identical for all subsequent blocks, which implies the overal sum is also identical. To conclude the proof, note that because of row-equitability condition we already inherit the proof from the forward case, implying  $f'(z(u_k)) = f'(z(u_q)). $ Thus, both parts to the backward formula for $u_k,u_q$ will be identical, which proves they have identical backwards. This finishes the induction step. 
 \paragraph{Gradient cloning.} This step is a straightforward consequence of the forward and backward cloning steps, and the formula that gradient of an edge from $u$ to $v$ is simply $h(u)\delta(v).$ Thus, the cloning structures in forward and backward, manifest themselves as a block structure in the gradients. 
 \paragraph{Constrained training trajectory.} Here, the key induction step is over the gradient steps. For step $t,$ the induction hypothesis is that $W(t) \in \ManifoldCE\cap\ManifoldRE,$ and that $W(t)-W(0) \in \ManifoldBC. $ This trivially holds for initial step $t=0.$ Let us prove the induction step $t+1$ assuming that it holds for $t.$ Suppose gradient at this step $\Delta W(t)$ is defined over the loss arbitrary number of samples $\{(x_i,y_i)\}.$ Because of the induction hypothesis $W(t) \in \ManifoldCE\cap\ManifoldRE,$ our earlier results imply that the gradients for each sample $\partial \Loss_i / \partial W(t),$ will have a block-wise constant structure $\partial \Loss_i / \partial W(t) \in \ManifoldBC. $ Thus, the sum of these gradients will also have a block-wise constant structure $\Delta W(t) := \partial \Loss_ / \partial W(t) \in \ManifoldBC. $ Because block-wise matrices are also row- and column-equitable, this implies that the new weights will inherit those $W(t+1) = W(t) + \Delta W(t) \in \ManifoldCE\cap\ManifoldRE. $  Finally, our parameter shift can be written as $W(t+1)-W(0) = \Delta W(t) + W(t)-W(0), $  where $W(t)-W(0)  $ is a block-wise constant matrix and thus $W(t+1)-W(0)$ becomes sum two block-wise constant matrices, which is itself block-wise constant $W(t+1)-W(0)\in \ManifoldBC. $ This finishes our induction step. 
 \end{proof}
@@ -848,7 +1103,9 @@ These experiments simulate a slowly-changing regression problem to evaluate netw
 
 \begin{figure}[!ht]
     \centering
-    \includegraphics[width=0.55\linewidth]{images/bf_switching_rankloss_plot.pdf}
+    \includegraphics[width=0.3\linewidth]{paper/images/bf_switching_rankloss_plot_0.25.pdf}
+    \includegraphics[width=0.3\linewidth]{images/bf_switching_rankloss_plot.pdf}
+    \includegraphics[width=0.3\linewidth]{paper/images/bf_switching_rankloss_plot_0.75.pdf}
     
         \vspace{-.3cm}
     \caption{Bit Flipping experiment on 5M samples, switching from SGD to CBP at 2.5M samples. Low rank structures emerge during training with standard Backpropagation (SGD), but after the switch Continual Backpropagation (CBP) is able to recover representational diversity, suggesting that CBP-like training could be effective for cloning too.

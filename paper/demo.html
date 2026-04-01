@@ -1,0 +1,2151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Neural Network Visualization - Loss of Plasticity Demo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack-all.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 1900px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    #gmmControls {
+      padding: 8px 12px;
+      background: #f0f8ff;
+      border-radius: 4px;
+      border: 1px solid #b8d4f1;
+    }
+    button {
+      padding: 8px 16px;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #train { background: #4CAF50; color: white; }
+    #pause { background: #f44336; color: white; }
+    #reset { background: #2196F3; color: white; }
+    select, input[type="number"] {
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 80px;
+      font-size: 13px;
+    }
+    input[type="checkbox"] {
+      margin-right: 5px;
+    }
+    label {
+      font-size: 13px;
+    }
+    .link {
+      fill: none;
+      stroke-opacity: 0.6;
+      transition: all 0.3s;
+    }
+    .link:hover {
+      stroke-opacity: 1;
+      stroke-width: 3px !important;
+    }
+    .act-label {
+      font-size: 10px;
+      fill: #666;
+      text-anchor: middle;
+    }
+    .data-point {
+      stroke: white;
+      stroke-width: 1;
+    }
+    .node-clickable {
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .node-clickable:hover {
+      opacity: 0.7;
+    }
+    .grid-stack {
+      background: transparent;
+      margin-top: 20px;
+    }
+    .grid-stack-item-content {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .plot-header {
+      padding: 10px 12px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #ddd;
+      font-weight: bold;
+      cursor: move;
+      font-size: 14px;
+      color: #333;
+      user-select: none;
+    }
+    .plot-content {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .detail-viz {
+      margin-top: 20px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      background: white;
+      display: none;
+    }
+    .detail-title {
+      text-align: center;
+      padding: 10px;
+      background: #f9f9f9;
+      font-weight: bold;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-size: 16px;
+      color: #333;
+    }
+    .detail-content {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      justify-content: center;
+    }
+    .color-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .color-gradient {
+      width: 30px;
+      height: 300px;
+      border: 1px solid #333;
+    }
+    .color-bar-label {
+      font-size: 11px;
+      color: #666;
+      margin: 3px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="controls">
+      <div class="control-group">
+        <button id="train">Train</button>
+        <button id="pause" disabled>Pause</button>
+        <button id="reset">Reset</button>
+      </div>
+      
+      <div class="control-group">
+        <label>Distribution:</label>
+        <select id="distribution">
+          <option value="circle">Circle</option>
+          <option value="xor">XOR</option>
+          <option value="spiral">Spiral</option>
+          <option value="gaussian">Gaussian</option>
+          <option value="gmm" selected>GMM</option>
+        </select>
+      </div>
+
+      <div class="control-group" id="gmmControls" style="display: flex;">
+        <label>GMM Mixtures:</label>
+        <input type="number" id="gmmMixtures" min="1" max="10" value="5">
+        
+        <label style="margin-left: 15px;">GMM Variance:</label>
+        <input type="number" id="gmmVariance" min="0" max="1" step="0.05" value="0.3">
+      </div>
+      
+      <div class="control-group">
+        <label>Learning Rate:</label>
+        <select id="learningRate">
+          <option value="0.001">0.001</option>
+          <option value="0.003">0.003</option>
+          <option value="0.01" selected>0.01</option>
+          <option value="0.03">0.03</option>
+          <option value="0.1">0.1</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Batch Size:</label>
+        <input type="number" id="batchSize" min="1" max="256" value="64">
+      </div>
+
+      <div class="control-group">
+        <label>Weight Decay:</label>
+        <input type="number" id="weightDecay" min="0" max="0.1" step="0.001" value="0.00">
+      </div>
+
+      <div class="control-group">
+        <label>Momentum:</label>
+        <input type="number" id="momentum" min="0" max="0.99" step="0.05" value="0.9">
+      </div>
+
+      <div class="control-group">
+        <label>Normalization:</label>
+        <select id="normalization">
+          <option value="none" selected>None</option>
+          <option value="layer">Layer Norm</option>
+          <option value="batch">Batch Norm</option>
+          <option value="weight">Weight Norm</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Dropout:</label>
+        <select id="dropout">
+          <option value="0" selected>0.0</option>
+          <option value="0.05">0.05</option>
+          <option value="0.1">0.1</option>
+          <option value="0.2">0.2</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>
+          <input type="checkbox" id="useBias" checked>
+          Use Bias
+        </label>
+      </div>
+      
+      <div class="control-group">
+        <label>Activation:</label>
+        <select id="activation">
+          <option value="tanh">Tanh</option>
+          <option value="relu" selected>ReLU</option>
+          <option value="sigmoid">Sigmoid</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Width:</label>
+        <input type="number" id="width" min="2" max="12" value="5">
+      </div>
+
+      <div class="control-group">
+        <label>Depth:</label>
+        <input type="number" id="depth" min="1" max="8" value="2">
+      </div>
+
+      <div class="control-group">
+        <label>Training Size:</label>
+        <input type="number" id="trainSize" min="50" max="1000" step="50" value="1000">
+      </div>
+
+      <div class="control-group">
+        <label>
+          <input type="checkbox" id="showPreAct" checked>
+          Show Pre-Activation
+        </label>
+      </div>
+      
+      <div class="control-group" style="font-weight: 500;">
+        <span>Step: <span id="step">0</span></span>
+      </div>
+      
+      <div class="control-group" style="font-weight: 500;">
+        <span>Training Loss: <span id="trainLoss">-</span></span>
+      </div>
+      
+      <div class="control-group" id="legend-controls" style="display: flex; gap: 15px; align-items: center;">
+        <span style="font-weight: 500;">Layers:</span>
+        <div id="legend-container-inline" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+      </div>
+    </div>
+
+    <div class="grid-stack"></div>
+
+    <div class="detail-viz" id="detailView">
+      <div class="detail-title" id="detailTitle">
+        Click on a node to see detailed activation map
+        <button onclick="document.getElementById('detailView').style.display='none'" style="float: right; padding: 5px 15px; cursor: pointer; border: none; background: #e74c3c; color: white; border-radius: 3px;">Close</button>
+      </div>
+      <div class="detail-content">
+        <div id="detailCanvas"></div>
+        <div class="color-bar">
+          <div class="color-bar-label" id="colorBarMax">1.0</div>
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+            <svg class="color-gradient" id="colorGradient"></svg>
+            <div class="color-bar-label" id="colorBarMid" style="position: absolute; background: rgba(255,255,255,0.8); padding: 2px 4px; border-radius: 2px;">0.0</div>
+          </div>
+          <div class="color-bar-label" id="colorBarMin">-1.0</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+
+    // =========================================================================
+    // Data generation
+    // =========================================================================
+    function generateData(n, type) {
+      const data = [], labels = [];
+      for (let i = 0; i < n; i++) {
+        let x, y, label;
+        switch(type) {
+          case 'circle':
+            x = (Math.random() * 12) - 6;
+            y = (Math.random() * 12) - 6;
+            const dist = Math.sqrt(x*x + y*y);
+            label = (dist >= 2.5 && dist <= 4.5) ? 1 : 0;
+            break;
+          case 'xor':
+            x = (Math.random() * 10) - 5;
+            y = (Math.random() * 10) - 5;
+            label = ((x > 0) ^ (y > 0)) ? 1 : 0;
+            break;
+          case 'spiral':
+            const t = i / n * 4 * Math.PI;
+            const r = 0.5 * t;
+            const offset = (i % 2) * Math.PI;
+            x = r * Math.cos(t + offset);
+            y = r * Math.sin(t + offset);
+            label = i % 2;
+            break;
+          case 'gaussian':
+            x = (Math.random() - 0.5) * 2 + (Math.random() > 0.5 ? 2 : -2);
+            y = (Math.random() - 0.5) * 2 + (Math.random() > 0.5 ? 2 : -2);
+            label = (x > 0) ? 1 : 0;
+            break;
+          case 'gmm':
+            const numMixtures = parseInt(document.getElementById('gmmMixtures').value);
+            const variance = parseFloat(document.getElementById('gmmVariance').value);
+            
+            // FIX #6: Generate mixture centers if not already cached or if count changed
+            if (!window.gmmCenters || window.gmmCenters.length !== numMixtures) {
+              window.gmmCenters = [];
+              const numPositive = Math.floor(numMixtures / 2);
+              
+              for (let m = 0; m < numMixtures; m++) {
+                const mlabel = m < (numMixtures - numPositive) ? 0 : 1;
+                window.gmmCenters.push({
+                  x: (Math.random() * 10) - 5,
+                  y: (Math.random() * 10) - 5,
+                  label: mlabel
+                });
+              }
+            }
+            
+            // Sample from a random mixture component
+            const mixtureIdx = Math.floor(Math.random() * numMixtures);
+            const center = window.gmmCenters[mixtureIdx];
+            
+            const stdDev = Math.sqrt(variance);
+            const u1 = Math.random();
+            const u2 = Math.random();
+            const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            const z1 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2);
+            
+            x = center.x + z0 * stdDev;
+            y = center.y + z1 * stdDev;
+            label = center.label;
+            break;
+        }
+        data.push([x, y]);
+        labels.push(label);
+      }
+      return { data, labels };
+    }
+
+    // =========================================================================
+    // FIX #1: Proper eigenvalue computation using Jacobi iteration
+    // for real symmetric matrices (covariance matrices are always symmetric)
+    // =========================================================================
+    function computeEigenvaluesJacobi(matrix, maxIter = 100) {
+      const n = matrix.length;
+      if (n === 0) return [];
+      if (n === 1) return [Math.abs(matrix[0][0])];
+      
+      // Deep copy the matrix — Jacobi modifies it in-place
+      const A = matrix.map(row => [...row]);
+      
+      for (let iter = 0; iter < maxIter; iter++) {
+        // Find largest off-diagonal element
+        let maxVal = 0, p = 0, q = 1;
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            if (Math.abs(A[i][j]) > maxVal) {
+              maxVal = Math.abs(A[i][j]);
+              p = i;
+              q = j;
+            }
+          }
+        }
+        
+        // Converged if off-diagonal elements are tiny
+        if (maxVal < 1e-10) break;
+        
+        // Compute rotation angle
+        const app = A[p][p], aqq = A[q][q], apq = A[p][q];
+        let theta;
+        if (Math.abs(app - aqq) < 1e-15) {
+          theta = Math.PI / 4;
+        } else {
+          theta = 0.5 * Math.atan2(2 * apq, app - aqq);
+        }
+        
+        const c = Math.cos(theta);
+        const s = Math.sin(theta);
+        
+        // Apply Givens rotation: A' = G^T A G
+        // Update rows/cols p and q
+        const newAp = new Array(n);
+        const newAq = new Array(n);
+        for (let i = 0; i < n; i++) {
+          newAp[i] = c * A[p][i] + s * A[q][i];
+          newAq[i] = -s * A[p][i] + c * A[q][i];
+        }
+        for (let i = 0; i < n; i++) {
+          A[p][i] = newAp[i];
+          A[q][i] = newAq[i];
+        }
+        // Update columns p and q
+        for (let i = 0; i < n; i++) {
+          const tip = A[i][p], tiq = A[i][q];
+          A[i][p] = c * tip + s * tiq;
+          A[i][q] = -s * tip + c * tiq;
+        }
+      }
+      
+      // Diagonal entries are the eigenvalues
+      const eigenvalues = [];
+      for (let i = 0; i < n; i++) {
+        eigenvalues.push(Math.abs(A[i][i]));  // abs for numerical safety
+      }
+      return eigenvalues;
+    }
+
+    // =========================================================================
+    // FIX #5: Renamed to computeCovarianceMatrix (was misleadingly called
+    // "correlation"). To get true correlation we'd divide by std devs.
+    // =========================================================================
+    function computeCovarianceMatrix(activations) {
+      if (!activations || activations.length === 0 || activations[0].length === 0) {
+        return [];
+      }
+      
+      const nSamples = activations.length;
+      const nNeurons = activations[0].length;
+      
+      // Compute means
+      const means = new Array(nNeurons).fill(0);
+      for (let i = 0; i < nSamples; i++) {
+        for (let j = 0; j < nNeurons; j++) {
+          means[j] += activations[i][j];
+        }
+      }
+      for (let j = 0; j < nNeurons; j++) {
+        means[j] /= nSamples;
+      }
+      
+      // Compute covariance matrix
+      const cov = Array(nNeurons).fill(0).map(() => Array(nNeurons).fill(0));
+      for (let i = 0; i < nNeurons; i++) {
+        for (let j = 0; j < nNeurons; j++) {
+          let sum = 0;
+          for (let k = 0; k < nSamples; k++) {
+            sum += (activations[k][i] - means[i]) * (activations[k][j] - means[j]);
+          }
+          cov[i][j] = sum / nSamples;
+        }
+      }
+      
+      return cov;
+    }
+
+    // Compute effective rank from covariance matrix
+    function computeEffectiveRank(covarianceMatrix) {
+      if (!covarianceMatrix || covarianceMatrix.length === 0) return 0;
+      
+      // FIX #1: Use proper Jacobi eigenvalue solver instead of row norms
+      const eigenvalues = computeEigenvaluesJacobi(covarianceMatrix);
+      if (eigenvalues.length === 0) return 0;
+      
+      // Normalize eigenvalues to form a probability distribution
+      const sum = eigenvalues.reduce((a, b) => a + Math.abs(b), 0);
+      if (sum < 1e-10) return 1;
+      
+      const normalized = eigenvalues.map(v => Math.abs(v) / sum);
+      
+      // Compute Shannon entropy
+      let entropy = 0;
+      for (let i = 0; i < normalized.length; i++) {
+        if (normalized[i] > 1e-10) {
+          entropy -= normalized[i] * Math.log(normalized[i]);
+        }
+      }
+      
+      // Effective rank = exp(entropy)
+      return Math.exp(entropy);
+    }
+
+    // =========================================================================
+    // Neural network
+    // =========================================================================
+    class Network {
+      constructor(width = 5, depth = 2) {
+        this.lr = 0.01;
+        this.weightDecay = 0.00;
+        this.momentum = 0.9;
+        this.batchSize = 64;
+        this.useBias = true;
+        this.activation = 'relu';
+        this.normalization = 'none';
+        this.dropoutP = 0;
+        this.training = true;
+        this.layers = [2, ...Array(depth).fill(width), 1];
+        this.weights = [];
+        this.biases = [];
+        this.velocityWeights = [];
+        this.velocityBiases = [];
+        this.step = 0;
+        
+        // Normalization parameters
+        this.normParams = [];
+        this.runningMean = [];
+        this.runningVar = [];
+        this.normMomentum = 0.9;
+        this.normEps = 1e-5;
+        
+        // Weight normalization parameters
+        this.weightNormG = [];
+        this.weightNormV = [];
+        
+        this.effRankHistory = {
+          steps: [],
+          activations: {},
+          preActivations: {}
+        };
+        this.lossHistory = {
+          steps: [],
+          trainLoss: [],
+          testLoss: []
+        };
+        this.gradientHistory = {
+          steps: [],
+          layerNorms: {}
+        };
+        this.initWeights();
+      }
+
+      initWeights() {
+        this.weights = [];
+        this.biases = [];
+        this.velocityWeights = [];
+        this.velocityBiases = [];
+        this.normParams = [];
+        this.runningMean = [];
+        this.runningVar = [];
+        this.weightNormG = [];
+        this.weightNormV = [];
+        
+        for (let i = 0; i < this.layers.length - 1; i++) {
+          const w = [];
+          const vw = [];
+          for (let j = 0; j < this.layers[i]; j++) {
+            const row = [];
+            const vRow = [];
+            for (let k = 0; k < this.layers[i+1]; k++) {
+              row.push((Math.random() - 0.5) * 2 * Math.sqrt(2 / this.layers[i]));
+              vRow.push(0);
+            }
+            w.push(row);
+            vw.push(vRow);
+          }
+          this.weights.push(w);
+          this.velocityWeights.push(vw);
+          
+          if (this.useBias) {
+            this.biases.push(Array(this.layers[i+1]).fill(0).map(() => (Math.random() - 0.5) * 0.1));
+            this.velocityBiases.push(Array(this.layers[i+1]).fill(0));
+          } else {
+            this.biases.push(Array(this.layers[i+1]).fill(0));
+            this.velocityBiases.push(Array(this.layers[i+1]).fill(0));
+          }
+          
+          if (i < this.layers.length - 2) {
+            this.normParams.push({
+              gamma: Array(this.layers[i+1]).fill(1),
+              beta: Array(this.layers[i+1]).fill(0)
+            });
+            this.runningMean.push(Array(this.layers[i+1]).fill(0));
+            this.runningVar.push(Array(this.layers[i+1]).fill(1));
+          }
+          
+          if (this.normalization === 'weight') {
+            const g = [];
+            const v = [];
+            for (let j = 0; j < this.layers[i]; j++) {
+              const vRow = [];
+              const gRow = [];
+              for (let k = 0; k < this.layers[i+1]; k++) {
+                vRow.push(w[j][k]);
+                gRow.push(1.0);
+              }
+              v.push(vRow);
+              g.push(gRow);
+            }
+            this.weightNormV.push(v);
+            this.weightNormG.push(g);
+          }
+        }
+        
+        this.effRankHistory = {
+          steps: [],
+          activations: {},
+          preActivations: {}
+        };
+        for (let i = 1; i < this.layers.length; i++) {
+          this.effRankHistory.activations[i] = [];
+          if (i > 0) {
+            this.effRankHistory.preActivations[i] = [];
+          }
+        }
+        
+        this.lossHistory = { steps: [], trainLoss: [], testLoss: [] };
+        
+        this.gradientHistory = { steps: [], layerNorms: {} };
+        for (let i = 0; i < this.layers.length - 1; i++) {
+          this.gradientHistory.layerNorms[i] = [];
+        }
+      }
+
+      activate(x, type = this.activation) {
+        switch(type) {
+          case 'relu': return Math.max(0, x);
+          case 'sigmoid': return 1 / (1 + Math.exp(-x));
+          case 'tanh': 
+          default: return Math.tanh(x);
+        }
+      }
+
+      activateDeriv(x, type = this.activation) {
+        switch(type) {
+          case 'relu': return x > 0 ? 1 : 0;
+          case 'sigmoid': 
+            const s = 1 / (1 + Math.exp(-x));
+            return s * (1 - s);
+          case 'tanh':
+          default:
+            const t = Math.tanh(x);
+            return 1 - t * t;
+        }
+      }
+
+      normalize(z, layerIdx) {
+        if (this.normalization === 'none' || layerIdx >= this.layers.length - 2) {
+          return z;
+        }
+        
+        const normalized = [...z];
+        
+        if (this.normalization === 'layer') {
+          const mean = z.reduce((a, b) => a + b, 0) / z.length;
+          const variance = z.reduce((a, b) => a + (b - mean) ** 2, 0) / z.length;
+          const std = Math.sqrt(variance + this.normEps);
+          
+          for (let i = 0; i < z.length; i++) {
+            normalized[i] = this.normParams[layerIdx].gamma[i] * 
+                           ((z[i] - mean) / std) + 
+                           this.normParams[layerIdx].beta[i];
+          }
+        } else if (this.normalization === 'batch') {
+          for (let i = 0; i < z.length; i++) {
+            const mean = this.runningMean[layerIdx][i];
+            const variance = this.runningVar[layerIdx][i];
+            const std = Math.sqrt(variance + this.normEps);
+            normalized[i] = this.normParams[layerIdx].gamma[i] * 
+                           ((z[i] - mean) / std) + 
+                           this.normParams[layerIdx].beta[i];
+          }
+        }
+        
+        return normalized;
+      }
+
+      batchNormalize(zBatch, layerIdx) {
+        if (this.normalization !== 'batch' || layerIdx >= this.layers.length - 2) {
+          return zBatch;
+        }
+        
+        const batchSize = zBatch.length;
+        const numFeatures = zBatch[0].length;
+        const normalized = zBatch.map(z => [...z]);
+        
+        const batchMean = Array(numFeatures).fill(0);
+        const batchVar = Array(numFeatures).fill(0);
+        
+        for (let i = 0; i < numFeatures; i++) {
+          for (let b = 0; b < batchSize; b++) {
+            batchMean[i] += zBatch[b][i];
+          }
+          batchMean[i] /= batchSize;
+          
+          for (let b = 0; b < batchSize; b++) {
+            batchVar[i] += (zBatch[b][i] - batchMean[i]) ** 2;
+          }
+          batchVar[i] /= batchSize;
+          
+          if (this.training) {
+            this.runningMean[layerIdx][i] = this.normMomentum * this.runningMean[layerIdx][i] + 
+                                            (1 - this.normMomentum) * batchMean[i];
+            this.runningVar[layerIdx][i] = this.normMomentum * this.runningVar[layerIdx][i] + 
+                                           (1 - this.normMomentum) * batchVar[i];
+          }
+        }
+        
+        for (let b = 0; b < batchSize; b++) {
+          for (let i = 0; i < numFeatures; i++) {
+            const std = Math.sqrt(batchVar[i] + this.normEps);
+            normalized[b][i] = this.normParams[layerIdx].gamma[i] * 
+                              ((zBatch[b][i] - batchMean[i]) / std) + 
+                              this.normParams[layerIdx].beta[i];
+          }
+        }
+        
+        return normalized;
+      }
+
+      applyDropout(activations) {
+        if (!this.training || this.dropoutP === 0) {
+          return activations;
+        }
+        
+        const dropped = [...activations];
+        const scale = 1 / (1 - this.dropoutP);
+        
+        for (let i = 0; i < dropped.length; i++) {
+          if (Math.random() < this.dropoutP) {
+            dropped[i] = 0;
+          } else {
+            dropped[i] *= scale;
+          }
+        }
+        
+        return dropped;
+      }
+
+      getEffectiveWeights(layerIdx) {
+        if (this.normalization !== 'weight') {
+          return this.weights[layerIdx];
+        }
+        
+        const w = [];
+        for (let j = 0; j < this.layers[layerIdx]; j++) {
+          const row = [];
+          for (let k = 0; k < this.layers[layerIdx + 1]; k++) {
+            let norm = 0;
+            for (let jj = 0; jj < this.layers[layerIdx]; jj++) {
+              norm += this.weightNormV[layerIdx][jj][k] ** 2;
+            }
+            norm = Math.sqrt(norm + 1e-8);
+            row.push(this.weightNormG[layerIdx][j][k] * this.weightNormV[layerIdx][j][k] / norm);
+          }
+          w.push(row);
+        }
+        return w;
+      }
+
+      forward(input) {
+        const activations = [input];
+        const zs = [];
+        const zNormalized = [];  // FIX #4: track normalized pre-activations
+        
+        for (let i = 0; i < this.weights.length; i++) {
+          const w = this.getEffectiveWeights(i);
+          const z = [];
+          
+          for (let j = 0; j < w[0].length; j++) {
+            let sum = this.biases[i][j];
+            for (let k = 0; k < activations[i].length; k++) {
+              sum += activations[i][k] * w[k][j];
+            }
+            z.push(sum);
+          }
+          zs.push(z);
+          
+          const isOutput = (i === this.weights.length - 1);
+          const zNorm = isOutput ? z : this.normalize(z, i);
+          zNormalized.push(zNorm);
+          
+          const a = [];
+          for (let j = 0; j < zNorm.length; j++) {
+            a.push(isOutput ? 1/(1+Math.exp(-zNorm[j])) : this.activate(zNorm[j]));
+          }
+          
+          const aDropped = isOutput ? a : this.applyDropout(a);
+          activations.push(aDropped);
+        }
+        
+        // FIX #4: Return zNormalized so backward can use it
+        return { activations, zs, zNormalized };
+      }
+
+      // FIX #4: backward now receives zNormalized and uses it for activation derivatives
+      backward(input, target, activations, zs, zNormalized) {
+        const output = activations[activations.length - 1][0];
+        let delta = [(output - target) * output * (1 - output)];
+        
+        const layerGradNorms = [];
+        
+        for (let i = this.weights.length - 1; i >= 0; i--) {
+          const w = this.getEffectiveWeights(i);
+          
+          let sumSquaredGrads = 0;
+          let numParams = 0;
+          
+          for (let j = 0; j < w.length; j++) {
+            for (let k = 0; k < w[j].length; k++) {
+              let gradient = delta[k] * activations[i][j];
+              
+              if (this.normalization === 'weight') {
+                this.velocityWeights[i][j][k] = this.momentum * this.velocityWeights[i][j][k] - this.lr * gradient;
+                this.weightNormV[i][j][k] += this.velocityWeights[i][j][k];
+                this.weightNormG[i][j][k] += this.momentum * this.velocityWeights[i][j][k] * 0.1 - this.lr * gradient * 0.1;
+              } else {
+                gradient += this.weightDecay * this.weights[i][j][k];
+                this.velocityWeights[i][j][k] = this.momentum * this.velocityWeights[i][j][k] - this.lr * gradient;
+                this.weights[i][j][k] += this.velocityWeights[i][j][k];
+              }
+              
+              sumSquaredGrads += gradient * gradient;
+              numParams++;
+            }
+          }
+          
+          for (let k = 0; k < this.biases[i].length; k++) {
+            if (this.useBias) {
+              this.velocityBiases[i][k] = this.momentum * this.velocityBiases[i][k] - this.lr * delta[k];
+              this.biases[i][k] += this.velocityBiases[i][k];
+              sumSquaredGrads += delta[k] * delta[k];
+              numParams++;
+            }
+          }
+          
+          const rmsGrad = Math.sqrt(sumSquaredGrads / numParams);
+          layerGradNorms[i] = rmsGrad;
+          
+          if (i > 0) {
+            const newDelta = [];
+            for (let j = 0; j < activations[i].length; j++) {
+              let sum = 0;
+              for (let k = 0; k < delta.length; k++) {
+                sum += delta[k] * w[j][k];
+              }
+              // FIX #4: Use the NORMALIZED pre-activation for activation derivative,
+              // because activation was applied to the normalized value, not the raw z.
+              const zVal = zNormalized[i-1][j];
+              newDelta.push(sum * this.activateDeriv(zVal));
+            }
+            delta = newDelta;
+          }
+        }
+        
+        return layerGradNorms;
+      }
+
+      forwardBatch(inputs) {
+        const wasTraining = this.training;
+        this.training = false;
+        
+        const batchSize = inputs.length;
+        let activations = inputs.map(inp => [...inp]);
+        const allActivations = [activations];
+        const allPreActivations = [];
+        
+        for (let layer = 0; layer < this.weights.length; layer++) {
+          const w = this.getEffectiveWeights(layer);
+          const preAct = [];
+          const postAct = [];
+          const isOutput = (layer === this.weights.length - 1);
+          
+          for (let batch = 0; batch < batchSize; batch++) {
+            const z = [];
+            for (let j = 0; j < w[0].length; j++) {
+              let sum = this.biases[layer][j];
+              for (let k = 0; k < activations[batch].length; k++) {
+                sum += activations[batch][k] * w[k][j];
+              }
+              z.push(sum);
+            }
+            preAct.push(z);
+          }
+          
+          let normalizedPreAct;
+          if (!isOutput && this.normalization === 'batch') {
+            normalizedPreAct = this.batchNormalize(preAct, layer);
+          } else {
+            normalizedPreAct = preAct.map((z) => isOutput ? z : this.normalize(z, layer));
+          }
+          
+          for (let batch = 0; batch < batchSize; batch++) {
+            const a = [];
+            for (let j = 0; j < normalizedPreAct[batch].length; j++) {
+              a.push(isOutput ? 1/(1+Math.exp(-normalizedPreAct[batch][j])) : this.activate(normalizedPreAct[batch][j]));
+            }
+            postAct.push(a);
+          }
+          
+          allPreActivations.push(preAct);
+          activations = postAct;
+          allActivations.push(activations);
+        }
+        
+        this.training = wasTraining;
+        return { activations: allActivations, preActivations: allPreActivations };
+      }
+
+      trainBatch(data, labels) {
+        this.training = true;
+        const n = data.length;
+        const indices = Array.from({length: n}, (_, i) => i);
+        
+        for (let i = n - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+        
+        for (let start = 0; start < n; start += this.batchSize) {
+          const end = Math.min(start + this.batchSize, n);
+          
+          const batchGradNorms = Array(this.weights.length).fill(0);
+          const batchSize = end - start;
+          
+          for (let i = start; i < end; i++) {
+            const idx = indices[i];
+            // FIX #4: pass zNormalized to backward
+            const { activations, zs, zNormalized } = this.forward(data[idx]);
+            const gradNorms = this.backward(data[idx], labels[idx], activations, zs, zNormalized);
+            
+            for (let layerIdx = 0; layerIdx < gradNorms.length; layerIdx++) {
+              batchGradNorms[layerIdx] += gradNorms[layerIdx];
+            }
+          }
+          
+          for (let layerIdx = 0; layerIdx < batchGradNorms.length; layerIdx++) {
+            batchGradNorms[layerIdx] /= batchSize;
+          }
+          
+          this.currentGradNorms = batchGradNorms;
+          this.step++;
+        }
+      }
+
+      updateEffectiveRanks(data) {
+        const sampleSize = Math.min(100, data.length);
+        const sampleIndices = Array.from({length: sampleSize}, () => 
+          Math.floor(Math.random() * data.length)
+        );
+        const samples = sampleIndices.map(i => data[i]);
+        
+        const { activations, preActivations } = this.forwardBatch(samples);
+        
+        this.effRankHistory.steps.push(this.step);
+        
+        for (let layerIdx = 1; layerIdx < activations.length; layerIdx++) {
+          // FIX #1 + #5: now using computeCovarianceMatrix + proper Jacobi eigenvalues
+          const actMatrix = computeCovarianceMatrix(activations[layerIdx]);
+          const actEffRank = computeEffectiveRank(actMatrix);
+          this.effRankHistory.activations[layerIdx].push(actEffRank);
+          
+          if (layerIdx > 0 && layerIdx < this.layers.length - 1) {
+            const preActMatrix = computeCovarianceMatrix(preActivations[layerIdx - 1]);
+            const preActEffRank = computeEffectiveRank(preActMatrix);
+            this.effRankHistory.preActivations[layerIdx].push(preActEffRank);
+          }
+        }
+      }
+
+      computeLoss(data, labels) {
+        const wasTraining = this.training;
+        this.training = false;  // Disable dropout for loss evaluation
+        let loss = 0;
+        for (let i = 0; i < data.length; i++) {
+          const { activations } = this.forward(data[i]);
+          const pred = activations[activations.length - 1][0];
+          const y = labels[i];
+          loss += -(y * Math.log(pred + 1e-7) + (1-y) * Math.log(1-pred + 1e-7));
+        }
+        this.training = wasTraining;
+        return loss / data.length;
+      }
+
+      computeGridPredictions(gridSize = 40) {
+        const batch = [];
+        const coords = [];
+        for (let i = 0; i < gridSize; i++) {
+          for (let j = 0; j < gridSize; j++) {
+            const x = -6 + (i / (gridSize - 1)) * 12;
+            const y = -6 + (j / (gridSize - 1)) * 12;
+            batch.push([x, y]);
+            coords.push({ x, y });
+          }
+        }
+        
+        const { activations } = this.forwardBatch(batch);
+        const outputs = activations[activations.length - 1];
+        
+        return outputs.map((out, idx) => ({
+          ...coords[idx],
+          value: out[0]
+        }));
+      }
+
+      computeUnitActivations(gridSize = 18) {
+        const batch = [];
+        const gridCoords = [];
+        for (let i = 0; i < gridSize; i++) {
+          for (let j = 0; j < gridSize; j++) {
+            const x = -6 + (i / (gridSize - 1)) * 12;
+            const y = -6 + (j / (gridSize - 1)) * 12;
+            batch.push([x, y]);
+            gridCoords.push({ gridX: i, gridY: j, inputX: x, inputY: y });
+          }
+        }
+        
+        const { activations, preActivations } = this.forwardBatch(batch);
+        
+        const unitData = batch.map((_, idx) => ({
+          ...gridCoords[idx],
+          activations: activations.map(layerActs => layerActs[idx]),
+          preActivations: preActivations.map(layerPre => layerPre[idx])
+        }));
+        
+        return { gridSize, data: unitData };
+      }
+    }
+
+    // =========================================================================
+    // Chart helpers
+    // =========================================================================
+    function createEffectiveRankChart(containerId, title, layerColors) {
+      const container = d3.select(`#${containerId}`);
+      container.selectAll('*').remove();
+      
+      const containerNode = container.node();
+      const width = containerNode.clientWidth - 20;
+      const height = containerNode.clientHeight - 20;
+      const margin = { top: 30, right: 20, bottom: 50, left: 60 };
+      
+      const svg = container.append('svg')
+        .attr('width', width)
+        .attr('height', height);
+      
+      const chartGroup = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+      
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      
+      svg.append('text').attr('x', width / 2).attr('y', 15)
+        .attr('text-anchor', 'middle').attr('font-weight', 'bold').attr('font-size', '14px').text(title);
+      svg.append('text').attr('x', width / 2).attr('y', height - 10)
+        .attr('text-anchor', 'middle').attr('font-size', '12px').text('Training Step');
+      svg.append('text').attr('transform', `translate(15, ${height / 2}) rotate(-90)`)
+        .attr('text-anchor', 'middle').attr('font-size', '12px').text('Effective Rank');
+      
+      chartGroup.append('g').attr('class', 'x-axis').attr('transform', `translate(0,${chartHeight})`);
+      chartGroup.append('g').attr('class', 'y-axis');
+      chartGroup.append('g').attr('class', 'lines');
+      
+      return { svg, chartGroup, chartWidth, chartHeight, layerColors };
+    }
+
+    function updateEffectiveRankChart(chartData, network, isPreActivation = false) {
+      const { chartGroup, chartWidth, chartHeight, layerColors } = chartData;
+      
+      const steps = network.effRankHistory.steps;
+      if (steps.length === 0) return;
+      
+      const data = isPreActivation ? 
+        network.effRankHistory.preActivations : 
+        network.effRankHistory.activations;
+      
+      const maxStep = Math.max(...steps);
+      let maxRank = 0;
+      Object.keys(data).forEach(layerIdx => {
+        if (data[layerIdx].length > 0) {
+          maxRank = Math.max(maxRank, ...data[layerIdx]);
+        }
+      });
+      
+      const xScale = d3.scaleLinear().domain([0, Math.max(maxStep, 1)]).range([0, chartWidth]);
+      const yScale = d3.scaleLinear().domain([0, Math.max(maxRank, 1)]).range([chartHeight, 0]);
+      
+      chartGroup.select('.x-axis').call(d3.axisBottom(xScale).ticks(5));
+      chartGroup.select('.y-axis').call(d3.axisLeft(yScale).ticks(5));
+      
+      const line = d3.line().x((d, i) => xScale(steps[i])).y(d => yScale(d));
+      const linesGroup = chartGroup.select('.lines');
+      linesGroup.selectAll('*').remove();
+      
+      Object.keys(data).forEach(layerIdx => {
+        if (data[layerIdx].length > 0) {
+          linesGroup.append('path')
+            .datum(data[layerIdx])
+            .attr('fill', 'none')
+            .attr('stroke', layerColors[layerIdx])
+            .attr('stroke-width', 2)
+            .attr('d', line);
+        }
+      });
+    }
+
+    function createLossChart(containerId) {
+      const container = d3.select(`#${containerId}`);
+      container.selectAll('*').remove();
+      
+      const containerNode = container.node();
+      const width = containerNode.clientWidth - 20;
+      const height = containerNode.clientHeight - 20;
+      const margin = { top: 20, right: 20, bottom: 50, left: 60 };
+      
+      const svg = container.append('svg').attr('width', width).attr('height', height);
+      const chartGroup = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      
+      svg.append('text').attr('x', width / 2).attr('y', 15)
+        .attr('text-anchor', 'middle').attr('font-weight', 'bold').attr('font-size', '14px').text('Train and Test Loss');
+      svg.append('text').attr('x', width / 2).attr('y', height - 10)
+        .attr('text-anchor', 'middle').attr('font-size', '12px').text('Training Step');
+      svg.append('text').attr('transform', `translate(15, ${height / 2}) rotate(-90)`)
+        .attr('text-anchor', 'middle').attr('font-size', '12px').text('Loss');
+      
+      chartGroup.append('g').attr('class', 'x-axis').attr('transform', `translate(0,${chartHeight})`);
+      chartGroup.append('g').attr('class', 'y-axis');
+      chartGroup.append('g').attr('class', 'lines');
+      
+      const legend = svg.append('g').attr('class', 'legend').attr('transform', `translate(${width - 100}, 30)`);
+      legend.append('line').attr('x1', 0).attr('x2', 30).attr('y1', 0).attr('y2', 0).attr('stroke', '#2ecc71').attr('stroke-width', 2);
+      legend.append('text').attr('x', 35).attr('y', 5).attr('font-size', '11px').text('Train');
+      legend.append('line').attr('x1', 0).attr('x2', 30).attr('y1', 20).attr('y2', 20).attr('stroke', '#e74c3c').attr('stroke-width', 2);
+      legend.append('text').attr('x', 35).attr('y', 25).attr('font-size', '11px').text('Test');
+      
+      return { svg, chartGroup, chartWidth, chartHeight };
+    }
+
+    function updateLossChart(chartData, network) {
+      const { chartGroup, chartWidth, chartHeight } = chartData;
+      const steps = network.lossHistory.steps;
+      if (steps.length === 0) return;
+      
+      const trainLoss = network.lossHistory.trainLoss;
+      const testLoss = network.lossHistory.testLoss;
+      const maxStep = Math.max(...steps);
+      const maxLoss = Math.max(...trainLoss, ...testLoss);
+      
+      const xScale = d3.scaleLinear().domain([0, Math.max(maxStep, 1)]).range([0, chartWidth]);
+      const yScale = d3.scaleLinear().domain([0, Math.max(maxLoss, 1)]).range([chartHeight, 0]);
+      
+      chartGroup.select('.x-axis').call(d3.axisBottom(xScale).ticks(5));
+      chartGroup.select('.y-axis').call(d3.axisLeft(yScale).ticks(5));
+      
+      const line = d3.line().x((d, i) => xScale(steps[i])).y(d => yScale(d));
+      const linesGroup = chartGroup.select('.lines');
+      linesGroup.selectAll('*').remove();
+      
+      linesGroup.append('path').datum(trainLoss).attr('fill', 'none').attr('stroke', '#2ecc71').attr('stroke-width', 2).attr('d', line);
+      linesGroup.append('path').datum(testLoss).attr('fill', 'none').attr('stroke', '#e74c3c').attr('stroke-width', 2).attr('d', line);
+    }
+
+    function createGradientNormChart(containerId, layerColors) {
+      const container = d3.select(`#${containerId}`);
+      container.selectAll('*').remove();
+      
+      const containerNode = container.node();
+      const width = containerNode.clientWidth - 20;
+      const height = containerNode.clientHeight - 20;
+      const margin = { top: 30, right: 20, bottom: 50, left: 60 };
+      
+      const svg = container.append('svg').attr('width', width).attr('height', height);
+      const chartGroup = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+      
+      svg.append('text').attr('x', width / 2).attr('y', 15)
+        .attr('text-anchor', 'middle').attr('font-weight', 'bold').attr('font-size', '14px').text('Gradient Norms per Layer');
+      svg.append('text').attr('x', width / 2).attr('y', height - 10)
+        .attr('text-anchor', 'middle').attr('font-size', '12px').text('Training Step');
+      svg.append('text').attr('transform', `translate(15, ${height / 2}) rotate(-90)`)
+        .attr('text-anchor', 'middle').attr('font-size', '12px').text('Gradient Norm (RMS)');
+      
+      chartGroup.append('g').attr('class', 'x-axis').attr('transform', `translate(0,${chartHeight})`);
+      chartGroup.append('g').attr('class', 'y-axis');
+      chartGroup.append('g').attr('class', 'lines');
+      
+      return { svg, chartGroup, chartWidth, chartHeight, layerColors };
+    }
+
+    function updateGradientNormChart(chartData, network) {
+      const { chartGroup, chartWidth, chartHeight, layerColors } = chartData;
+      const steps = network.gradientHistory.steps;
+      if (steps.length === 0) return;
+      
+      const data = network.gradientHistory.layerNorms;
+      const maxStep = Math.max(...steps);
+      let maxNorm = 0;
+      Object.keys(data).forEach(layerIdx => {
+        if (data[layerIdx].length > 0) {
+          maxNorm = Math.max(maxNorm, ...data[layerIdx]);
+        }
+      });
+      
+      const xScale = d3.scaleLinear().domain([0, Math.max(maxStep, 1)]).range([0, chartWidth]);
+      const yScale = d3.scaleLinear().domain([0, Math.max(maxNorm, 0.01)]).range([chartHeight, 0]);
+      
+      chartGroup.select('.x-axis').call(d3.axisBottom(xScale).ticks(5));
+      chartGroup.select('.y-axis').call(d3.axisLeft(yScale).ticks(5));
+      
+      const line = d3.line().x((d, i) => xScale(steps[i])).y(d => yScale(d));
+      const linesGroup = chartGroup.select('.lines');
+      linesGroup.selectAll('*').remove();
+      
+      Object.keys(data).forEach(layerIdx => {
+        if (data[layerIdx].length > 0) {
+          const colorIdx = parseInt(layerIdx) % Object.keys(layerColors).length + 1;
+          const color = layerColors[colorIdx] || layerColors[1];
+          
+          linesGroup.append('path')
+            .datum(data[layerIdx])
+            .attr('fill', 'none')
+            .attr('stroke', color)
+            .attr('stroke-width', 2)
+            .attr('d', line);
+        }
+      });
+    }
+
+    // =========================================================================
+    // Network structure visualization
+    // =========================================================================
+    function createNetworkViz(containerElement) {
+      const containerSel = d3.select(containerElement);
+      
+      // SVG fills its container; viewBox (set in updateNetworkViz) handles
+      // scaling and centering automatically via preserveAspectRatio.
+      const svg = containerSel.append('svg')
+        .style('width', '100%')
+        .style('height', '100%')
+        .style('display', 'block')
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+      
+      svg.append('g').attr('class', 'links');
+      svg.append('g').attr('class', 'unit-groups');
+      svg.append('g').attr('class', 'data-overlay');
+      
+      return svg;
+    }
+
+    function drawActivationCurve(group, activation, size = 20) {
+      const points = [];
+      for (let i = 0; i <= 20; i++) {
+        const x = -3 + (i / 20) * 6;
+        let y;
+        switch(activation) {
+          case 'relu': y = Math.max(0, x); break;
+          case 'sigmoid': y = 1 / (1 + Math.exp(-x)); break;
+          case 'tanh': y = Math.tanh(x); break;
+        }
+        points.push([i * size / 20, size - (y + 1) * size / 2]);
+      }
+      
+      const line = d3.line();
+      group.append('path')
+        .attr('d', line(points))
+        .attr('stroke', '#666')
+        .attr('stroke-width', 1.5)
+        .attr('fill', 'none');
+    }
+
+    function updateNetworkViz(svg, network, trainData) {
+      window.currentTrainData = trainData;
+      
+      const layers = network.layers;
+      const heatmapSize = 40;
+      const actCurveSize = 24;
+      const spacing = 10;
+      const showPreAct = document.getElementById('showPreAct').checked;
+      const gap = 60;
+      const padding = 30;         // padding around the entire layout
+      const labelMargin = 14;     // space above nodes for "pre"/"act" labels
+      
+      // --- Compute logical width from layer layout ---
+      let xPos = padding;
+      const layerPositions = [];
+      for (let l = 0; l < layers.length; l++) {
+        layerPositions.push(xPos);
+        const isSimpleLayer = (l === 0) || (l === layers.length - 1);
+        const layerWidth = isSimpleLayer 
+          ? heatmapSize 
+          : (showPreAct ? (heatmapSize + actCurveSize + spacing * 2 + heatmapSize) : heatmapSize);
+        xPos += layerWidth + gap;
+      }
+      const totalWidth = xPos - gap + padding;   // last gap replaced by right padding
+      
+      // --- Compute logical height from tallest layer ---
+      const maxNodes = Math.max(...layers);
+      const nodeGap = 20;                        // vertical space between heatmaps
+      const logicalHeight = padding + labelMargin +
+        maxNodes * heatmapSize + (maxNodes - 1) * nodeGap +
+        padding;
+      
+      // --- Apply viewBox: the browser auto-scales & centers in the container ---
+      svg.attr('viewBox', `0 0 ${totalWidth} ${logicalHeight}`);
+      
+      // --- Position nodes in logical coordinates ---
+      const units = [];
+      for (let l = 0; l < layers.length; l++) {
+        const nodeSpacing = logicalHeight / (layers[l] + 1);
+        for (let n = 0; n < layers[l]; n++) {
+          units.push({
+            x: layerPositions[l],
+            y: (n + 1) * nodeSpacing,
+            layer: l,
+            index: n
+          });
+        }
+      }
+      
+      // =====================================================================
+      // FIX #2 & #3: Link endpoints now use heatmapSize/2 for Y-centering
+      // (was unitWidth/2 = 62, should be heatmapSize/2 = 20)
+      // =====================================================================
+      const links = [];
+      let nodeIdx = 0;
+      for (let l = 0; l < layers.length - 1; l++) {
+        const layerStart = nodeIdx;
+        nodeIdx += layers[l];
+        const nextLayerStart = nodeIdx;
+        
+        const isCurrentSimple = (l === 0);
+        const currentLayerWidth = isCurrentSimple 
+          ? heatmapSize 
+          : (showPreAct ? (heatmapSize + actCurveSize + spacing * 2 + heatmapSize) : heatmapSize);
+        
+        for (let i = 0; i < layers[l]; i++) {
+          for (let j = 0; j < layers[l+1]; j++) {
+            const weight = network.weights[l][i][j];
+            const sourceUnit = units[layerStart + i];
+            const targetUnit = units[nextLayerStart + j];
+            
+            // FIX #3: Use heatmapSize/2 instead of unitWidth/2
+            const sourceX = sourceUnit.x + currentLayerWidth;
+            const sourceY = sourceUnit.y;  // Node is centered at its y position now
+            
+            const targetX = targetUnit.x;
+            const targetY = targetUnit.y;
+            
+            links.push({
+              source: { x: sourceX, y: sourceY },
+              target: { x: targetX, y: targetY },
+              weight: weight
+            });
+          }
+        }
+      }
+      
+      const linkSelection = svg.select('.links')
+        .selectAll('path')
+        .data(links);
+      
+      linkSelection.exit().remove();
+      
+      linkSelection.enter()
+        .append('path')
+        .merge(linkSelection)
+        .attr('class', 'link')
+        .attr('d', d => {
+          const x1 = d.source.x;
+          const y1 = d.source.y;
+          const x2 = d.target.x;
+          const y2 = d.target.y;
+          const dx = x2 - x1;
+          const cp1x = x1 + dx * 0.35;
+          const cp2x = x2 - dx * 0.35;
+          return `M${x1},${y1} C${cp1x},${y1} ${cp2x},${y2} ${x2},${y2}`;
+        })
+        .attr('fill', 'none')
+        .attr('stroke', d => d.weight > 0 ? '#3498db' : '#e74c3c')
+        .attr('stroke-width', d => Math.min(Math.abs(d.weight) * 1.5, 3));
+      
+      const unitActivations = network.computeUnitActivations();
+      const gridSize = unitActivations.gridSize;
+      const cellSize = heatmapSize / gridSize;
+      
+      const unitMaxAbs = {};
+      const unitPreMaxAbs = {};
+      
+      for (let layerIdx = 0; layerIdx < network.layers.length; layerIdx++) {
+        unitMaxAbs[layerIdx] = {};
+        if (layerIdx > 0) unitPreMaxAbs[layerIdx] = {};
+        
+        for (let unitIdx = 0; unitIdx < network.layers[layerIdx]; unitIdx++) {
+          let maxAbs = 0;
+          let preMaxAbs = 0;
+          
+          unitActivations.data.forEach(d => {
+            const val = layerIdx === 0 
+              ? (unitIdx === 0 ? d.inputX / 6 : d.inputY / 6)
+              : d.activations[layerIdx][unitIdx];
+            maxAbs = Math.max(maxAbs, Math.abs(val));
+          });
+          
+          if (layerIdx > 0) {
+            unitActivations.data.forEach(d => {
+              const val = d.preActivations[layerIdx - 1][unitIdx];
+              preMaxAbs = Math.max(preMaxAbs, Math.abs(val));
+            });
+            unitPreMaxAbs[layerIdx][unitIdx] = preMaxAbs || 0.001;
+          }
+          
+          unitMaxAbs[layerIdx][unitIdx] = maxAbs || 0.001;
+        }
+      }
+      
+      const createUnitColorScale = (maxAbs) => {
+        return d3.scaleLinear()
+          .domain([-maxAbs, 0, maxAbs])
+          .range(['#2166ac', '#f7f7f7', '#b2182b'])
+          .interpolate(d3.interpolateRgb);
+      };
+
+      const unitGroups = svg.select('.unit-groups')
+        .selectAll('.unit-group')
+        .data(units);
+      
+      unitGroups.exit().remove();
+      
+      const unitEnter = unitGroups.enter()
+        .append('g')
+        .attr('class', 'unit-group');
+      
+      // FIX #2: Center nodes vertically using heatmapSize/2 instead of unitWidth/2
+      const unitMerge = unitEnter.merge(unitGroups)
+        .attr('transform', d => `translate(${d.x}, ${d.y - heatmapSize / 2})`)
+        .attr('class', d => 'unit-group');
+      
+      unitMerge.each(function(unitData) {
+        const group = d3.select(this);
+        const layerIdx = unitData.layer;
+        const unitIdx = unitData.index;
+        const isInputLayer = layerIdx === 0;
+        const isOutputLayer = layerIdx === network.layers.length - 1;
+        const isSimpleLayer = isInputLayer || isOutputLayer;
+        
+        group.selectAll('*').remove();
+        
+        if (isSimpleLayer) {
+          const unitGroup = group.append('g');
+          unitGroup.append('rect')
+            .attr('width', heatmapSize)
+            .attr('height', heatmapSize)
+            .attr('rx', 3)
+            .attr('fill', 'none')
+            .attr('stroke', '#000')
+            .attr('stroke-width', 2);
+          
+          group.append('text')
+            .attr('class', 'act-label')
+            .attr('x', heatmapSize/2)
+            .attr('y', -3)
+            .text(isInputLayer ? 'input' : 'output');
+          
+          let values;
+          if (isInputLayer) {
+            values = unitActivations.data.map(d => ({
+              gridX: d.gridX, gridY: d.gridY,
+              value: unitIdx === 0 ? d.inputX / 6 : d.inputY / 6
+            }));
+          } else {
+            values = unitActivations.data.map(d => ({
+              gridX: d.gridX, gridY: d.gridY,
+              value: d.activations[layerIdx][unitIdx]
+            }));
+          }
+          
+          const activeColorScale = createUnitColorScale(unitMaxAbs[layerIdx][unitIdx]);
+          unitGroup.selectAll('rect.cell')
+            .data(values)
+            .enter()
+            .append('rect')
+            .attr('class', 'cell')
+            .attr('x', d => d.gridX * cellSize)
+            .attr('y', d => d.gridY * cellSize)
+            .attr('width', cellSize)
+            .attr('height', cellSize)
+            .attr('fill', d => activeColorScale(d.value))
+            .attr('opacity', 0.9);
+          
+          unitGroup
+            .attr('class', 'node-clickable')
+            .style('cursor', 'pointer')
+            .on('click', function(event) {
+              event.stopPropagation();
+              const layerName = isInputLayer ? 'Input' : 'Output';
+              const nodeName = `${layerName} - Node ${unitIdx}`;
+              showDetailedNodeView(network, layerIdx, unitIdx, nodeName, window.currentTrainData, 'activation');
+            });
+            
+        } else {
+          const showPreAct = document.getElementById('showPreAct').checked;
+          let xOffset = 0;
+          
+          if (showPreAct) {
+            const preGroup = group.append('g');
+            preGroup.append('rect')
+              .attr('width', heatmapSize)
+              .attr('height', heatmapSize)
+              .attr('rx', 3)
+              .attr('fill', 'none')
+              .attr('stroke', '#000')
+              .attr('stroke-width', 2);
+            
+            group.append('text')
+              .attr('class', 'act-label')
+              .attr('x', heatmapSize/2)
+              .attr('y', -3)
+              .text('pre');
+            
+            const preValues = unitActivations.data.map(d => ({
+              gridX: d.gridX, gridY: d.gridY,
+              value: d.preActivations[layerIdx - 1][unitIdx]
+            }));
+            
+            const preColorScale = createUnitColorScale(unitPreMaxAbs[layerIdx][unitIdx]);
+            preGroup.selectAll('rect.cell')
+              .data(preValues)
+              .enter()
+              .append('rect')
+              .attr('class', 'cell')
+              .attr('x', d => d.gridX * cellSize)
+              .attr('y', d => d.gridY * cellSize)
+              .attr('width', cellSize)
+              .attr('height', cellSize)
+              .attr('fill', d => preColorScale(d.value))
+              .attr('opacity', 0.9);
+            
+            preGroup
+              .attr('class', 'node-clickable')
+              .style('cursor', 'pointer')
+              .on('click', function(event) {
+                event.stopPropagation();
+                const nodeName = `Hidden Layer ${layerIdx} - Node ${unitIdx} (Pre-Activation)`;
+                showDetailedNodeView(network, layerIdx, unitIdx, nodeName, window.currentTrainData, 'pre-activation');
+              });
+            
+            xOffset = heatmapSize + spacing;
+            
+            const actGroup = group.append('g')
+              .attr('transform', `translate(${xOffset}, ${(heatmapSize - actCurveSize)/2})`);
+            drawActivationCurve(actGroup, network.activation, actCurveSize);
+            
+            xOffset += actCurveSize + spacing;
+          }
+          
+          const postGroup = group.append('g')
+            .attr('transform', `translate(${xOffset}, 0)`);
+          postGroup.append('rect')
+            .attr('width', heatmapSize)
+            .attr('height', heatmapSize)
+            .attr('rx', 3)
+            .attr('fill', 'none')
+            .attr('stroke', '#000')
+            .attr('stroke-width', 2);
+          
+          group.append('text')
+            .attr('class', 'act-label')
+            .attr('x', xOffset + heatmapSize/2)
+            .attr('y', -3)
+            .text('act');
+          
+          const postValues = unitActivations.data.map(d => ({
+            gridX: d.gridX, gridY: d.gridY,
+            value: d.activations[layerIdx][unitIdx]
+          }));
+          
+          const postColorScale = createUnitColorScale(unitMaxAbs[layerIdx][unitIdx]);
+          postGroup.selectAll('rect.cell')
+            .data(postValues)
+            .enter()
+            .append('rect')
+            .attr('class', 'cell')
+            .attr('x', d => d.gridX * cellSize)
+            .attr('y', d => d.gridY * cellSize)
+            .attr('width', cellSize)
+            .attr('height', cellSize)
+            .attr('fill', d => postColorScale(d.value))
+            .attr('opacity', 0.9);
+          
+          postGroup
+            .attr('class', 'node-clickable')
+            .style('cursor', 'pointer')
+            .on('click', function(event) {
+              event.stopPropagation();
+              const nodeName = `Hidden Layer ${layerIdx} - Node ${unitIdx} (Activation)`;
+              showDetailedNodeView(network, layerIdx, unitIdx, nodeName, window.currentTrainData, 'activation');
+            });
+        }
+      });
+    }
+
+    function createOutputViz(containerElement) {
+      const outputContainer = d3.select(containerElement);
+      
+      // Use viewBox for a fixed logical coordinate space;
+      // the browser scales & centers it in whatever container size exists.
+      const logicalSize = 400;
+      
+      const svg = outputContainer.append('svg')
+        .style('width', '100%')
+        .style('height', '100%')
+        .style('display', 'block')
+        .attr('viewBox', `0 0 ${logicalSize} ${logicalSize}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+      
+      svg.append('g').attr('class', 'heatmap');
+      svg.append('g').attr('class', 'data-points');
+      
+      return svg;
+    }
+
+    function updateOutputViz(svg, network, trainData) {
+      // Work in the same logical coordinate space as the viewBox (400×400).
+      // The browser handles all scaling via preserveAspectRatio.
+      const size = 400;
+      const margin = 20;
+      const vizSize = size - 2 * margin;
+      
+      const predictions = network.computeGridPredictions();
+      
+      const toPixelX = (x) => margin + ((x + 6) / 12) * vizSize;
+      const toPixelY = (y) => margin + ((y + 6) / 12) * vizSize;
+      
+      const colorScale = d3.scaleLinear()
+        .domain([0, 0.5, 1])
+        .range(['#e74c3c', '#ffffff', '#3498db']);
+      
+      const heatmap = svg.select('.heatmap')
+        .selectAll('rect')
+        .data(predictions);
+      
+      heatmap.exit().remove();
+      
+      const gridSize = Math.sqrt(predictions.length);
+      const cellWidth = vizSize / gridSize;
+      const cellHeight = vizSize / gridSize;
+      
+      heatmap.enter()
+        .append('rect')
+        .merge(heatmap)
+        .attr('x', d => toPixelX(d.x))
+        .attr('y', d => toPixelY(d.y))
+        .attr('width', cellWidth)
+        .attr('height', cellHeight)
+        .attr('fill', d => colorScale(d.value))
+        .attr('opacity', 0.6);
+      
+      const points = svg.select('.data-points')
+        .selectAll('circle')
+        .data(trainData.data);
+      
+      points.exit().remove();
+      
+      points.enter()
+        .append('circle')
+        .merge(points)
+        .attr('cx', d => toPixelX(d[0]))
+        .attr('cy', d => toPixelY(d[1]))
+        .attr('r', 3)
+        .attr('fill', (d, i) => trainData.labels[i] === 1 ? '#3498db' : '#e74c3c')
+        .attr('opacity', 0.75)
+        .attr('stroke', 'white')
+        .attr('stroke-width', 1);
+    }
+
+    function createDetailedColorScale(minVal, maxVal) {
+      const maxAbs = Math.max(Math.abs(minVal), Math.abs(maxVal));
+      return d3.scaleLinear()
+        .domain([-maxAbs, 0, maxAbs])
+        .range(['#2166ac', '#f7f7f7', '#b2182b'])
+        .interpolate(d3.interpolateRgb);
+    }
+
+    function renderColorBar(svg, colorScale, minVal, maxVal) {
+      const width = 30;
+      const height = 300;
+      const numSteps = 100;
+      
+      svg.selectAll('*').remove();
+      
+      for (let i = 0; i < numSteps; i++) {
+        const y = i * height / numSteps;
+        const val = maxVal - (i / numSteps) * (maxVal - minVal);
+        svg.append('rect')
+          .attr('x', 0)
+          .attr('y', y)
+          .attr('width', width)
+          .attr('height', height / numSteps + 1)
+          .attr('fill', colorScale(val));
+      }
+    }
+
+    function showDetailedNodeView(network, layerIdx, nodeIdx, nodeName, trainData, activationType = 'activation') {
+      const detailView = document.getElementById('detailView');
+      const detailTitle = document.getElementById('detailTitle');
+      const detailCanvas = d3.select('#detailCanvas');
+      
+      detailView.style.display = 'block';
+      detailTitle.textContent = `Detailed Activation Map: ${nodeName}`;
+      
+      const gridSize = 50;
+      const batch = [];
+      for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+          const x = -6 + (j / (gridSize - 1)) * 12;
+          const y = -6 + (i / (gridSize - 1)) * 12;
+          batch.push([x, y]);
+        }
+      }
+      
+      const { activations, preActivations } = network.forwardBatch(batch);
+      
+      let values = [];
+      let minVal = Infinity;
+      let maxVal = -Infinity;
+      
+      for (let i = 0; i < batch.length; i++) {
+        let val;
+        if (layerIdx === 0) {
+          val = batch[i][nodeIdx] / 6;
+        } else if (activationType === 'pre-activation') {
+          val = preActivations[layerIdx - 1][i][nodeIdx];
+        } else {
+          val = activations[layerIdx][i][nodeIdx];
+        }
+        values.push(val);
+        minVal = Math.min(minVal, val);
+        maxVal = Math.max(maxVal, val);
+      }
+      
+      const colorScale = createDetailedColorScale(minVal, maxVal);
+      const maxAbs = Math.max(Math.abs(minVal), Math.abs(maxVal));
+      
+      document.getElementById('colorBarMax').textContent = maxAbs.toFixed(3);
+      document.getElementById('colorBarMid').textContent = '0.0';
+      document.getElementById('colorBarMin').textContent = (-maxAbs).toFixed(3);
+      
+      const colorBarSvg = d3.select('#colorGradient');
+      renderColorBar(colorBarSvg, colorScale, -maxAbs, maxAbs);
+      
+      const canvasSize = 400;
+      const cellSizeDetail = canvasSize / gridSize;
+      
+      detailCanvas.selectAll('*').remove();
+      const detailSvg = detailCanvas.append('svg')
+        .attr('width', canvasSize)
+        .attr('height', canvasSize);
+      
+      for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+          const idx = i * gridSize + j;
+          detailSvg.append('rect')
+            .attr('x', j * cellSizeDetail)
+            .attr('y', i * cellSizeDetail)
+            .attr('width', cellSizeDetail)
+            .attr('height', cellSizeDetail)
+            .attr('fill', colorScale(values[idx]))
+            .attr('stroke', 'none');
+        }
+      }
+      
+      const toPixelX = (x) => ((x + 6) / 12) * canvasSize;
+      const toPixelY = (y) => ((y + 6) / 12) * canvasSize;
+      
+      if (trainData) {
+        trainData.data.forEach((point, i) => {
+          detailSvg.append('circle')
+            .attr('cx', toPixelX(point[0]))
+            .attr('cy', toPixelY(point[1]))
+            .attr('r', 3)
+            .attr('fill', trainData.labels[i] === 1 ? '#3498db' : '#e74c3c')
+            .attr('stroke', 'white')
+            .attr('stroke-width', 1.5)
+            .attr('opacity', 0.8);
+        });
+      }
+      
+      detailView.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // =========================================================================
+    // Layer colors for effective rank visualization
+    // =========================================================================
+    const layerColors = {
+      1: '#e74c3c',
+      2: '#3498db',
+      3: '#2ecc71',
+      4: '#f39c12',
+      5: '#9b59b6',
+      6: '#1abc9c',
+      7: '#e91e63',
+      8: '#ff9800',
+      9: '#009688',
+      10: '#673ab7',
+    };
+
+    // =========================================================================
+    // Main application
+    // =========================================================================
+    let network = new Network(5, 2);
+    network.batchSize = parseInt(document.getElementById('batchSize').value);
+    network.weightDecay = parseFloat(document.getElementById('weightDecay').value);
+    network.momentum = parseFloat(document.getElementById('momentum').value);
+    network.normalization = document.getElementById('normalization').value;
+    network.dropoutP = parseFloat(document.getElementById('dropout').value);
+    network.useBias = document.getElementById('useBias').checked;
+    network.activation = document.getElementById('activation').value;
+    const initialTrainSize = parseInt(document.getElementById('trainSize').value);
+    let trainData = generateData(initialTrainSize, 'gmm');
+    let testData = generateData(Math.max(100, Math.floor(initialTrainSize / 3)), 'gmm');
+    let isTraining = false;
+    let animationId = null;
+    
+    const grid = GridStack.init({
+      cellHeight: 70,
+      margin: 10,
+      float: true,
+      resizable: { handles: 'se, sw, ne, nw' }
+    });
+
+    grid.addWidget({
+      x: 0, y: 0, w: 7, h: 5, minW: 4, minH: 3,
+      content: '<div class="plot-header">Neural Network Structure</div><div class="plot-content" id="network"></div>'
+    });
+    grid.addWidget({
+      x: 7, y: 0, w: 5, h: 5, minW: 3, minH: 3,
+      content: '<div class="plot-header">Decision Boundary</div><div class="plot-content" id="output"></div>'
+    });
+    grid.addWidget({
+      x: 0, y: 5, w: 6, h: 4, minW: 4, minH: 3,
+      content: '<div class="plot-header">Loss Over Time</div><div class="plot-content" id="loss-chart"></div>'
+    });
+    grid.addWidget({
+      x: 6, y: 5, w: 6, h: 4, minW: 4, minH: 3,
+      content: '<div class="plot-header">Gradient Norms</div><div class="plot-content" id="gradient-norm-chart"></div>'
+    });
+    grid.addWidget({
+      x: 0, y: 9, w: 6, h: 4, minW: 4, minH: 3,
+      content: '<div class="plot-header">Activation Effective Rank</div><div class="plot-content" id="effrank-act-chart"></div>'
+    });
+    grid.addWidget({
+      x: 6, y: 9, w: 6, h: 4, minW: 4, minH: 3,
+      content: '<div class="plot-header">Pre-Activation Effective Rank</div><div class="plot-content" id="effrank-preact-chart"></div>'
+    });
+
+    let networkSvg, outputSvg;
+    let effRankActChart, effRankPreActChart, lossChart, gradientNormChart;
+    
+    grid.on('resizestop', (event, element) => {
+      const id = element.querySelector('.plot-content').id;
+      if (id === 'network') {
+        // viewBox auto-scales; just re-render in case we want a fresh draw
+        updateNetworkViz(networkSvg, network, trainData);
+      } else if (id === 'output') {
+        // viewBox auto-scales; no need to destroy and recreate
+        updateOutputViz(outputSvg, network, trainData);
+      } else if (id === 'loss-chart') {
+        lossChart = createLossChart('loss-chart');
+        updateLossChart(lossChart, network);
+      } else if (id === 'gradient-norm-chart') {
+        gradientNormChart = createGradientNormChart('gradient-norm-chart', layerColors);
+        updateGradientNormChart(gradientNormChart, network);
+      } else if (id === 'effrank-act-chart') {
+        effRankActChart = createEffectiveRankChart('effrank-act-chart', 'Activation Effective Rank', layerColors);
+        updateEffectiveRankChart(effRankActChart, network, false);
+      } else if (id === 'effrank-preact-chart') {
+        effRankPreActChart = createEffectiveRankChart('effrank-preact-chart', 'Pre-Activation Effective Rank', layerColors);
+        updateEffectiveRankChart(effRankPreActChart, network, true);
+      }
+    });
+    
+    function initializeCharts() {
+      const networkContainer = document.getElementById('network');
+      const outputContainer = document.getElementById('output');
+      
+      // Clear and recreate network viz (viewBox makes it responsive)
+      if (networkContainer) {
+        d3.select(networkContainer).selectAll('*').remove();
+        if (networkContainer.clientHeight > 0) {
+          networkSvg = createNetworkViz(networkContainer);
+        }
+      }
+      if (outputContainer) {
+        d3.select(outputContainer).selectAll('*').remove();
+        if (outputContainer.clientHeight > 0) {
+          outputSvg = createOutputViz(outputContainer);
+          window.outputSvg = outputSvg;
+        }
+      }
+      
+      effRankActChart = createEffectiveRankChart('effrank-act-chart', 'Activation Effective Rank', layerColors);
+      effRankPreActChart = createEffectiveRankChart('effrank-preact-chart', 'Pre-Activation Effective Rank', layerColors);
+      lossChart = createLossChart('loss-chart');
+      gradientNormChart = createGradientNormChart('gradient-norm-chart', layerColors);
+    }
+    
+    function createLegend() {
+      const container = d3.select('#legend-container-inline');
+      container.selectAll('*').remove();
+      
+      for (let i = 1; i < network.layers.length - 1; i++) {
+        const item = container.append('div')
+          .style('display', 'flex')
+          .style('align-items', 'center')
+          .style('gap', '4px');
+        
+        item.append('div')
+          .style('width', '16px')
+          .style('height', '3px')
+          .style('background-color', layerColors[i]);
+        
+        item.append('span')
+          .style('font-size', '13px')
+          .text(`L${i}`);
+      }
+    }
+    
+    function update() {
+      updateNetworkViz(networkSvg, network, trainData);
+      updateOutputViz(outputSvg, network, trainData);
+      
+      const trainLoss = network.computeLoss(trainData.data, trainData.labels);
+      const testLoss = network.computeLoss(testData.data, testData.labels);
+      
+      network.lossHistory.steps.push(network.step);
+      network.lossHistory.trainLoss.push(trainLoss);
+      network.lossHistory.testLoss.push(testLoss);
+      
+      if (network.currentGradNorms) {
+        network.gradientHistory.steps.push(network.step);
+        for (let layerIdx = 0; layerIdx < network.currentGradNorms.length; layerIdx++) {
+          network.gradientHistory.layerNorms[layerIdx].push(network.currentGradNorms[layerIdx]);
+        }
+      }
+      
+      document.getElementById('step').textContent = network.step;
+      document.getElementById('trainLoss').textContent = trainLoss.toFixed(3);
+      
+      updateEffectiveRankChart(effRankActChart, network, false);
+      updateEffectiveRankChart(effRankPreActChart, network, true);
+      updateLossChart(lossChart, network);
+      updateGradientNormChart(gradientNormChart, network);
+    }
+    
+    function trainingLoop() {
+      if (!isTraining) return;
+      
+      network.trainBatch(trainData.data, trainData.labels);
+      
+      if (network.step % 10 === 0) {
+        network.updateEffectiveRanks(trainData.data);
+        update();
+      }
+      
+      animationId = requestAnimationFrame(trainingLoop);
+    }
+    
+    document.getElementById('train').addEventListener('click', () => {
+      isTraining = true;
+      document.getElementById('train').disabled = true;
+      document.getElementById('pause').disabled = false;
+      trainingLoop();
+    });
+    
+    document.getElementById('pause').addEventListener('click', () => {
+      isTraining = !isTraining;
+      if (isTraining) {
+        document.getElementById('pause').textContent = 'Pause';
+        trainingLoop();
+      } else {
+        document.getElementById('pause').textContent = 'Resume';
+        if (animationId) cancelAnimationFrame(animationId);
+      }
+    });
+    
+    document.getElementById('reset').addEventListener('click', () => {
+      isTraining = false;
+      if (animationId) cancelAnimationFrame(animationId);
+      document.getElementById('train').disabled = false;
+      document.getElementById('pause').disabled = true;
+      document.getElementById('pause').textContent = 'Pause';
+      
+      const width = parseInt(document.getElementById('width').value);
+      const depth = parseInt(document.getElementById('depth').value);
+      network = new Network(width, depth);
+      network.lr = parseFloat(document.getElementById('learningRate').value);
+      network.batchSize = parseInt(document.getElementById('batchSize').value);
+      network.weightDecay = parseFloat(document.getElementById('weightDecay').value);
+      network.momentum = parseFloat(document.getElementById('momentum').value);
+      network.normalization = document.getElementById('normalization').value;
+      network.dropoutP = parseFloat(document.getElementById('dropout').value);
+      network.useBias = document.getElementById('useBias').checked;
+      network.activation = document.getElementById('activation').value;
+      
+      network.initWeights();
+      
+      // initializeCharts handles clearing and recreating all visualizations
+      initializeCharts();
+      createLegend();
+      
+      update();
+    });
+    
+    document.getElementById('distribution').addEventListener('change', (e) => {
+      const trainSize = parseInt(document.getElementById('trainSize').value);
+      const distType = e.target.value;
+      
+      const gmmControls = document.getElementById('gmmControls');
+      if (distType === 'gmm') {
+        gmmControls.style.display = 'flex';
+        window.gmmCenters = null;
+      } else {
+        gmmControls.style.display = 'none';
+      }
+      
+      trainData = generateData(trainSize, distType);
+      testData = generateData(Math.max(100, Math.floor(trainSize / 3)), distType);
+      update();
+    });
+    
+    document.getElementById('learningRate').addEventListener('change', (e) => {
+      network.lr = parseFloat(e.target.value);
+    });
+    
+    document.getElementById('batchSize').addEventListener('change', (e) => {
+      network.batchSize = parseInt(e.target.value);
+      update();
+    });
+    
+    document.getElementById('weightDecay').addEventListener('change', (e) => {
+      network.weightDecay = parseFloat(e.target.value);
+    });
+    
+    document.getElementById('momentum').addEventListener('change', (e) => {
+      network.momentum = parseFloat(e.target.value);
+    });
+    
+    document.getElementById('normalization').addEventListener('change', () => {
+      document.getElementById('reset').click();
+    });
+    
+    document.getElementById('dropout').addEventListener('change', (e) => {
+      network.dropoutP = parseFloat(e.target.value);
+    });
+    
+    document.getElementById('useBias').addEventListener('change', () => {
+      document.getElementById('reset').click();
+    });
+    
+    document.getElementById('activation').addEventListener('change', (e) => {
+      network.activation = e.target.value;
+    });
+
+    document.getElementById('width').addEventListener('change', () => {
+      document.getElementById('reset').click();
+    });
+
+    document.getElementById('depth').addEventListener('change', () => {
+      document.getElementById('reset').click();
+    });
+
+    document.getElementById('trainSize').addEventListener('change', (e) => {
+      const trainSize = parseInt(e.target.value);
+      const distType = document.getElementById('distribution').value;
+      trainData = generateData(trainSize, distType);
+      testData = generateData(Math.max(100, Math.floor(trainSize / 3)), distType);
+      update();
+    });
+
+    document.getElementById('gmmMixtures').addEventListener('change', () => {
+      window.gmmCenters = null;
+      const trainSize = parseInt(document.getElementById('trainSize').value);
+      const distType = document.getElementById('distribution').value;
+      if (distType === 'gmm') {
+        trainData = generateData(trainSize, distType);
+        testData = generateData(Math.max(100, Math.floor(trainSize / 3)), distType);
+        update();
+      }
+    });
+
+    document.getElementById('gmmVariance').addEventListener('change', () => {
+      const trainSize = parseInt(document.getElementById('trainSize').value);
+      const distType = document.getElementById('distribution').value;
+      if (distType === 'gmm') {
+        trainData = generateData(trainSize, distType);
+        testData = generateData(Math.max(100, Math.floor(trainSize / 3)), distType);
+        update();
+      }
+    });
+
+    document.getElementById('showPreAct').addEventListener('change', () => {
+      update();
+    });
+    
+    const initialDist = document.getElementById('distribution').value;
+    if (initialDist === 'gmm') {
+      document.getElementById('gmmControls').style.display = 'flex';
+    }
+    
+    setTimeout(() => {
+      initializeCharts();
+      createLegend();
+      update();
+    }, 200);
+    
+  </script>
+</body>
+</html>
