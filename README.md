@@ -2,7 +2,17 @@
 
 This project investigates dynamic scaling properties of neural networks during training, with a particular focus on continual learning scenarios. It provides a framework for analyzing how neural networks adapt to new information and maintain previously learned knowledge.
 
+## Interactive demo
 
+**Live:** https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html — runs entirely in the browser, no install required.
+
+A small MLP trains on a continually-shifting 2D distribution while the demo visualizes, in real time:
+
+- per-unit detection of **frozen** (dead) and **cloned** (duplicate) neurons,
+- activation **effective rank** of each hidden layer,
+- and live train/test loss alongside the "% trapped" symptom curves.
+
+Use the **Preset** dropdown to compare the baseline against a weight-decay configuration and watch the mitigation effect. The **Inject Noise** button demonstrates how breaking weight symmetries restores effective rank. Source: [`demo/demo.html`](demo/demo.html) — clone and open locally if you'd rather skip the hosted version.
 
 ## Project Structure
 
