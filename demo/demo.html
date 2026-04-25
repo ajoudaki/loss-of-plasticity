@@ -36,10 +36,17 @@
       margin-bottom: 15px;
     }
     .header h1 { margin: 0; font-size: 24px; }
+    #toggleControls {
+      padding: 6px 10px; border: 1px solid #d2d2d7; background: #fff;
+      color: #1d1d1f; font-weight: 600;
+    }
+    #toggleControls:hover { background: #f5f5f7; box-shadow: none; transform: none; }
     .controls {
       display: flex; gap: 15px; margin-bottom: 15px; align-items: center; flex-wrap: wrap;
       padding: 15px; background: #fbfbfd; border-radius: 8px; border: 1px solid #d2d2d7;
     }
+    .controls.collapsed { padding-top: 10px; padding-bottom: 10px; }
+    .controls.collapsed .control-group:not(.always-visible) { display: none; }
     .control-group { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; }
     .highlight-group { padding: 8px 12px; background: #fff3e0; border-radius: 6px; border: 1px solid #ffcc80; }
     button {
@@ -86,9 +93,9 @@
     .overlay-sub { font-size: 12px; color: #aaa; font-weight: 400; }
 
     /* Legend */
-    .legend-box { display: inline-flex; align-items: center; margin-left: 15px; gap: 15px; font-size: 13px; font-weight: normal; float: right;}
-    .legend-item { display: flex; align-items: center; gap: 5px; }
-    .color-swatch { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; }
+    .legend-box { display: inline-flex; align-items: center; margin-left: 15px; gap: 18px; font-size: 16px; font-weight: 600; float: right;}
+    .legend-item { display: flex; align-items: center; gap: 7px; }
+    .color-swatch { width: 18px; height: 18px; border-radius: 3px; border: 2px solid; }
 
     /* Frozen / Cloned glow effects on network nodes */
     .frozen-glow rect { fill: rgba(231, 76, 60, 0.15) !important; stroke: var(--frozen) !important; stroke-width: 2.5px !important; }
@@ -110,7 +117,7 @@
     </div>
 
     <div class="controls">
-      <div class="control-group">
+      <div class="control-group always-visible">
         <button id="train">Train</button>
         <button id="pause" disabled>Pause</button>
         <button id="reset">Reset</button>
@@ -122,14 +129,14 @@
           <strong>Continual</strong>
         </label>
         <label>every:</label>
-        <input type="number" id="shiftInterval" min="100" step="100" value="500" style="width: 55px;">
+        <input type="number" id="shiftInterval" min="100" step="100" value="100" style="width: 55px;">
         <label>Shift:</label>
         <select id="shiftType" style="width: 110px;">
           <option value="rotate45">Rotate 45°</option>
           <option value="rotate15">Rotate 15°</option>
-          <option value="rotateRandom" selected>Rotate random</option>
+          <option value="rotateRandom">Rotate random</option>
           <option value="translate">Translate</option>
-          <option value="brownian">Brownian</option>
+          <option value="brownian" selected>Brownian</option>
           <option value="reinit">Re-initialize</option>
         </select>
         <label>Step:</label>
@@ -143,8 +150,16 @@
         </select>
       </div>
 
-      <div class="control-group">
+      <div class="control-group always-visible">
         <button id="injectNoise" title="Inject targeted noise to break symmetries and recover effective rank.">⚡ Inject Noise (CBP)</button>
+      </div>
+
+      <div class="control-group always-visible" title="Switch between built-in configurations. Applying a preset resets the network.">
+        <label>Preset:</label>
+        <select id="preset" style="width: 140px;">
+          <option value="default">Default config</option>
+          <option value="weight-decay" selected>Weight decay</option>
+        </select>
       </div>
       
       <div class="control-group">
@@ -158,7 +173,7 @@
 
       <div class="control-group" title="Number of Gaussian clusters (half per class).">
         <label>K:</label>
-        <input type="number" id="gmmClusters" min="2" max="12" value="4" style="width:45px;">
+        <input type="number" id="gmmClusters" min="2" max="12" value="6" style="width:45px;">
       </div>
 
       <div class="control-group" title="Min distance between opposite-class clusters = c × radius. Higher = more separated. 0 = no constraint.">
@@ -166,8 +181,8 @@
         <select id="gmmSeparation">
           <option value="0">0</option>
           <option value="0.25">0.25</option>
-          <option value="0.5">0.5</option>
-          <option value="1" selected>1</option>
+          <option value="0.5" selected>0.5</option>
+          <option value="1">1</option>
           <option value="2">2</option>
           <option value="3">3</option>
           <option value="4">4</option>
@@ -208,26 +223,26 @@
 
       <div class="control-group">
         <label>Width:</label>
-        <input type="number" id="width" min="2" max="16" value="8" style="width:50px;">
+        <input type="number" id="width" min="2" max="16" value="5" style="width:50px;">
       </div>
 
       <div class="control-group">
         <label>Depth:</label>
-        <input type="number" id="depth" min="1" max="8" value="5" style="width:50px;">
+        <input type="number" id="depth" min="1" max="16" value="10" style="width:50px;">
       </div>
 
       <div class="control-group" title="Frozen detection mode: f'(z) = local activation derivative, δ = full backward error.">
         <label>Frozen:</label>
         <select id="frozenMode" style="width:55px;">
-          <option value="fprime" selected>f'(z)</option>
-          <option value="backward">δ</option>
+          <option value="fprime">f'(z)</option>
+          <option value="backward" selected>δ</option>
         </select>
         <label>ε:</label>
         <select id="frozenEps">
           <option value="1e-6">1e-6</option>
           <option value="1e-5">1e-5</option>
-          <option value="1e-4" selected>1e-4</option>
-          <option value="1e-3">1e-3</option>
+          <option value="1e-4">1e-4</option>
+          <option value="1e-3" selected>1e-3</option>
           <option value="1e-2">1e-2</option>
         </select>
         <label>p:</label>
@@ -259,18 +274,18 @@
           <option value="1.0">1.0</option>
           <option value="0.5">0.5</option>
           <option value="0.3">0.3</option>
-          <option value="0.1" selected>0.1</option>
+          <option value="0.1">0.1</option>
           <option value="0.05">0.05</option>
-          <option value="0.01">0.01</option>
+          <option value="0.01" selected>0.01</option>
         </select>
       </div>
 
       <div class="control-group">
         <label>WD:</label>
         <select id="weightDecay">
-          <option value="0" selected>0</option>
+          <option value="0">0</option>
           <option value="0.0001">1e-4</option>
-          <option value="0.001">1e-3</option>
+          <option value="0.001" selected>1e-3</option>
           <option value="0.01">1e-2</option>
           <option value="0.1">0.1</option>
         </select>
@@ -287,10 +302,14 @@
         <select id="dropout"><option value="0" selected>0</option></select>
       </div>
 
-      <div class="control-group" style="margin-left: auto; font-size: 15px;">
-        <span style="color: #007aff; font-weight: bold;">Task: <span id="taskIndicator">1</span></span> | 
-        <span>Step: <span id="step">0</span></span> | 
+      <div class="control-group always-visible" style="margin-left: auto; font-size: 15px;">
+        <span style="color: #007aff; font-weight: bold;">Task: <span id="taskIndicator">1</span></span> |
+        <span>Step: <span id="step">0</span></span> |
         <span style="color: var(--frozen); font-weight: bold;">Loss: <span id="trainLoss">-</span></span>
+      </div>
+
+      <div class="control-group always-visible">
+        <button id="toggleControls" title="Show/hide control panel">Hide ▲</button>
       </div>
     </div>
 
@@ -842,7 +861,7 @@
       const container = d3.select(`#${containerId}`);
       container.selectAll('*').remove();
       const node = container.node();
-      const margin = { top: 30, right: 60, bottom: 40, left: 50 };
+      const margin = { top: 30, right: 95, bottom: 40, left: 50 };
       const width = node.clientWidth - 20, height = node.clientHeight - 20;
       
       const svg = container.append('svg').attr('width', width).attr('height', height);
@@ -899,8 +918,8 @@
         const legend = chartData.chartGroup.append('g').attr('class', 'legend')
           .attr('transform', `translate(${chartWidth + 5}, 0)`);
         linesData.forEach((line, i) => {
-          legend.append('line').attr('x1', 0).attr('x2', 12).attr('y1', i*14).attr('y2', i*14).attr('stroke', line.color).attr('stroke-width', 2.5);
-          legend.append('text').attr('x', 16).attr('y', i*14 + 4).attr('font-size', '10px').attr('fill', '#333').text(line.label);
+          legend.append('line').attr('x1', 0).attr('x2', 20).attr('y1', i*18).attr('y2', i*18).attr('stroke', line.color).attr('stroke-width', 3.5);
+          legend.append('text').attr('x', 26).attr('y', i*18 + 5).attr('font-size', '13px').attr('font-weight', 600).attr('fill', '#333').text(line.label);
         });
       }
     }
@@ -1154,8 +1173,8 @@
       ]);
       
       updateMultiLineChart(symptomsChart, network.symptomsHistory.steps, [
-        { data: network.symptomsHistory.deadFraction, color: '#e74c3c', label: 'Dead (M_F)' },
-        { data: network.symptomsHistory.clonedFraction, color: '#3498db', label: 'Cloned (M_C)' }
+        { data: network.symptomsHistory.deadFraction, color: '#e74c3c', label: 'Frozen %' },
+        { data: network.symptomsHistory.clonedFraction, color: '#3498db', label: 'Cloned %' }
       ], 1.0, true);
       
       const rankLines = [];
@@ -1238,7 +1257,6 @@
       const shiftInterval = parseInt(document.getElementById('shiftInterval').value);
       if (document.getElementById('continualLearning').checked && network.step > 0 && network.step % shiftInterval === 0) {
         shiftDataDistribution();
-        triggerTaskFlash(currentTask);
       }
 
       network.trainBatch(trainData.data, trainData.labels);
@@ -1312,6 +1330,27 @@
     });
     
     grid.on('resizestop', () => { initializeCharts(); updateDashboard(); });
+
+    document.getElementById('toggleControls').addEventListener('click', () => {
+      const controls = document.querySelector('.controls');
+      const btn = document.getElementById('toggleControls');
+      controls.classList.toggle('collapsed');
+      btn.textContent = controls.classList.contains('collapsed') ? 'Show ▼' : 'Hide ▲';
+    });
+
+    const PRESETS = {
+      'default':      { weightDecay: '0' },
+      'weight-decay': { weightDecay: '0.001' }
+    };
+    document.getElementById('preset').addEventListener('change', (e) => {
+      const cfg = PRESETS[e.target.value];
+      if (!cfg) return;
+      Object.entries(cfg).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+      });
+      document.getElementById('reset').click();
+    });
 
     setTimeout(() => { initializeCharts(); updateDashboard(); }, 200);
   </script>
