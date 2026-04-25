@@ -4,6 +4,8 @@ This project investigates dynamic scaling properties of neural networks during t
 
 ## Interactive demo
 
+[![Loss of Plasticity Trap Simulator](demo/demo.png)](https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html)
+
 **Live:** https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html — runs entirely in the browser, no install required.
 
 A small MLP trains on a continually-shifting 2D distribution while the demo visualizes, in real time:
