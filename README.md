@@ -1,316 +1,565 @@
-# Loss of plasticity 
+# Barriers for Learning in an Evolving World: Mathematical Understanding of Loss of Plasticity
 
-This project investigates dynamic scaling properties of neural networks during training, with a particular focus on continual learning scenarios. It provides a framework for analyzing how neural networks adapt to new information and maintain previously learned knowledge.
+**ICLR 2026** · Continual Learning · Loss of Plasticity · Gradient Dynamics · Invariant Manifolds
+
+[Paper / OpenReview](https://openreview.net/forum?id=g6kof5fSba) · [Interactive Demo](https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html) · [Code](https://github.com/ajoudaki/loss-of-plasticity) · [License](LICENSE.md)
+
+This repository contains the code, experiments, and interactive demo for our ICLR 2026 paper:
+
+> **Barriers for Learning in an Evolving World: Mathematical Understanding of Loss of Plasticity**
+
+Loss of Plasticity (LoP) is the failure mode where a neural network does not merely forget old tasks, but loses the ability to learn new ones. We study LoP through a dynamical-systems lens: gradient descent can become trapped in invariant submanifolds of parameter space.
+
+We identify two concrete trap mechanisms:
+
+- **Frozen units**: units saturate, gradients vanish, and incoming parameters stop adapting.
+- **Cloned units**: redundant units receive matching forward and backward signals, causing their gradients to remain identical.
+
+We further connect the emergence of these traps to a **rank-plasticity tension**: the same feature-learning dynamics that help networks form compact representations on the current task can push them toward low-dimensional structures that reduce future adaptability.
+
+---
 
 ## Interactive demo
 
 [![Loss of Plasticity Trap Simulator](demo/demo.png)](https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html)
 
-**Live:** https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html — runs entirely in the browser, no install required.
+**Live demo:** https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html
 
-A small MLP trains on a continually-shifting 2D distribution while the demo visualizes, in real time:
+The demo runs entirely in the browser. A small MLP trains on a continually shifting 2D distribution while the interface visualizes, in real time:
 
-- per-unit detection of **frozen** (dead) and **cloned** (duplicate) neurons,
-- activation **effective rank** of each hidden layer,
-- and live train/test loss alongside the "% trapped" symptom curves.
+- frozen/dead units,
+- cloned/duplicate units,
+- activation effective rank,
+- train/test loss,
+- and the fraction of units trapped in LoP-like states.
 
-Use the **Preset** dropdown to compare the baseline against a weight-decay configuration and watch the mitigation effect. The **Inject Noise** button demonstrates how breaking weight symmetries restores effective rank. Source: [`demo/demo.html`](demo/demo.html) — clone and open locally if you'd rather skip the hosted version.
+Use the **Preset** dropdown to compare different regimes. The default drifting setting often produces frozen units, while the weight-decay setting can make cloned/duplicate units visible. The **Inject Noise** button illustrates how symmetry-breaking perturbations can push the model away from an LoP manifold.
 
-## Project Structure
+Source: [`demo/demo.html`](demo/demo.html)
 
-```
-project/
-├── conf/                  # Hydra configuration files
-│   ├── config.yaml        # Main configuration
-│   ├── model/             # Model configurations
-│   │   ├── mlp.yaml
-│   │   ├── cnn.yaml
-│   │   ├── resnet.yaml
-│   │   └── vit.yaml       # Vision Transformer config
-│   ├── dataset/           # Dataset configurations
-│   │   ├── mnist.yaml
-│   │   ├── cifar10.yaml
-│   │   ├── cifar100.yaml
-│   │   └── tiny_imagenet.yaml
-│   ├── optimizer/         # Optimizer configurations
-│   ├── metrics/           # Metrics configurations
-│   └── training/          # Training configurations
-├── data/                  # Directory for datasets
-├── notebooks/             # Jupyter notebooks for analysis
-│   ├── CL.ipynb           # Continual learning experiments
-│   ├── coupling.ipynb     # Weight coupling analysis
-│   └── main.ipynb         # Main experiments notebook
-├── paper/                 # Academic paper materials
-├── scripts/               # Utility scripts
-│   ├── check_imports.py    # Check for import issues
-│   ├── download_tiny_imagenet.py # Dataset download script
-│   ├── extract_notebook.py # Extract content from Jupyter notebooks
-│   └── run_experiment.py   # Main experiment script with Hydra
-├── src/                   # Main source code
-│   ├── config_schema.py    # Dataclass schemas for Hydra configs
-│   ├── register_configs.py # Register configs with Hydra's ConfigStore
-│   ├── continual_learning.py # CL-specific functionality
-│   ├── models/             # Model definitions
-│   │   ├── __init__.py
-│   │   ├── mlp.py          # MLP model
-│   │   ├── cnn.py          # CNN model
-│   │   ├── resnet.py       # ResNet model
-│   │   └── vit.py          # Vision Transformer model
-│   ├── utils/              # Utility modules
-│   │   ├── __init__.py
-│   │   ├── layers.py       # Layer utilities
-│   │   ├── metrics.py      # Metrics functions
-│   │   ├── monitor.py      # NetworkMonitor class
-│   │   ├── data.py         # Data loading utilities
-│   │   └── visualization.py # Plotting functions
-│   └── training/           # Training code
-│       ├── __init__.py
-│       ├── eval.py         # Evaluation functions
-│       └── train_continual.py # Continual learning training loop
-└── saved_models/          # Directory for saving trained models
-```
+---
+
+## Core mathematical idea
+
+A Loss-of-Plasticity state can be an invariant manifold.
+
+A submanifold $M \subset \Theta$ is a trap if, for every training sample,
+
+$$
+\nabla_\theta \ell(\theta; x,y) \in T_\theta M
+\qquad
+\forall \theta \in M.
+$$
+
+For affine manifolds, this means GD/SGD cannot leave once it enters.
+
+### Frozen-unit trap
+
+If a unit is saturated,
+
+$$
+\phi'(z_v) = 0,
+$$
+
+then its backpropagated signal vanishes, so incoming parameters stop receiving useful gradients. This creates an affine frozen-unit manifold.
+
+### Cloned-unit trap
+
+Partition units into blocks $S_i$. If every block $W[S_i,S_j]$ has equal row sums and equal column sums, then units inside the same block have identical forward and backward signals:
+
+$$
+h_u = h_{u'},
+\qquad
+\delta_v = \delta_{v'}.
+$$
+
+Therefore edge gradients are identical:
+
+$$
+\frac{\partial \ell}{\partial W_{uv}} = h_u \delta_v = h_{u'} \delta_{v'} =
+\frac{\partial \ell}{\partial W_{u'v'}}.
+$$
+
+So the gradient is block-constant, tangent to the cloned affine subspace, and training preserves the clone structure.
+
+### Why do these traps form?
+
+For a nonlinear activation acting on a preactivation correlation matrix $C$,
+
+$$
+\frac{\mathrm{er}_2(K_\phi(C))}{\mathrm{er}_2(C)}
+\ge
+1+
+\gamma_\phi
+\frac{\Psi(C)}{\|C\|_F^2},
+$$
+
+where
+
+$$
+\gamma_\phi = \frac{1-K'_\phi(0)}{1+K'_\phi(0)}, \qquad \Psi(C) =
+\sum_{i\ne j} C_{ij}^2(1-C_{ij}^2).
+$$
+
+Interpretation:
+
+$$
+\text{rank gain}
+\approx
+\text{activation decorrelation strength}
+\times
+\text{remaining correlation potential}.
+$$
+
+Thus nonlinear feature learning consumes intermediate correlations and increases effective rank. But task optimization often pushes representations toward low-rank compression. This creates two degeneracy routes:
+
+$$
+\Psi(C)\to 0
+\Rightarrow
+C_{ij}\in\{0,\pm1\}
+\Rightarrow
+\text{orthogonal or duplicate features},
+$$
+
+and
+
+$$
+\gamma_\phi\to 1
+\Rightarrow
+\phi'(z)\approx 0
+\Rightarrow
+\text{frozen/dead units}.
+$$
+
+In short:
+
+$$
+\text{feature learning creates duplicates/frozen units}
+$$
+
+$$
+\Downarrow
+$$
+
+$$
+\text{duplicates/frozen units create invariant GD traps}
+$$
+
+$$
+\Downarrow
+$$
+
+$$
+\text{the network keeps training, but with fewer degrees of freedom.}
+$$
+
+That is Loss of Plasticity.
+
+---
+
+## What this repository contains
+
+- Interactive browser demo for visualizing LoP traps.
+- Continual-learning experiments across task sequences.
+- Neural-network cloning experiments for MLPs, CNNs, ResNets, and ViTs.
+- Metrics for frozen, duplicate, saturated, and low-rank representations.
+- Hydra configs for reproducible experiment runs.
+- Utilities for monitoring effective rank, activation similarity, and plasticity-related symptoms.
+
+---
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/ajoudaki/loss-of-plasticity
-   cd loss-of-plasticity
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. (Optional) Download the Tiny ImageNet dataset:
-   ```bash
-   python scripts/download_tiny_imagenet.py
-   ```
-
-## Usage
-
-### Running an Experiment with Hydra
-
-This project uses [Hydra](https://hydra.cc/) for configuration management, allowing for flexible and composable configuration overrides. Here are some examples of how to run experiments:
+Clone the repository:
 
 ```bash
-# Run with default configuration (CNN on CIFAR-10)
-python scripts/run_experiment.py
-
-# Change the model (use MLP instead of CNN)
-python scripts/run_experiment.py model=mlp
-
-# Change both model and dataset
-python scripts/run_experiment.py model=mlp dataset=mnist
-
-# Change specific parameters
-python scripts/run_experiment.py optimizer=sgd optimizer.lr=0.01 training.batch_size=64
-
-# Run for fewer epochs (dry run mode to test setup)
-python scripts/run_experiment.py training.epochs_per_task=2 dryrun=true
-
-# Enable Weights & Biases logging
-python scripts/run_experiment.py logging.use_wandb=true
-
-# Use Vision Transformer on CIFAR-100 with custom task setting
-python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.classes_per_task=10
+git clone https://github.com/ajoudaki/loss-of-plasticity
+cd loss-of-plasticity
 ```
 
-### Available Configurations
-
-#### Models
-- `model=mlp`: Multi-Layer Perceptron
-- `model=cnn`: Convolutional Neural Network
-- `model=resnet`: ResNet model
-- `model=vit`: Vision Transformer
-
-#### Datasets
-- `dataset=mnist`: MNIST handwritten digits
-- `dataset=cifar10`: CIFAR-10 image classification
-- `dataset=cifar100`: CIFAR-100 image classification
-- `dataset=tiny_imagenet`: Tiny ImageNet
-
-#### Optimizers
-- `optimizer=adam`: Adam optimizer (default)
-- `optimizer=sgd`: Stochastic Gradient Descent
-- `optimizer=rmsprop`: RMSProp optimizer
-
-#### Training Types
-- `training=standard`: Standard training (default)
-- `training=continual`: Continual learning with multiple tasks
-- `training=cloning`: Neural network cloning experiments
-
-#### Training Settings
-- `training.epochs_per_task`: Number of epochs per task (continual learning)
-- `training.initial_epochs`: Number of epochs to train the base model (cloning)
-- `training.epochs_per_expansion`: Number of epochs to train each expanded model (cloning)
-- `training.expansion_factor`: Factor to expand model size by (cloning)
-- `training.num_expansions`: Number of expansion cycles to perform (cloning)
-- `training.batch_size`: Batch size for training
-- `training.seed`: Random seed for reproducibility
-
-#### Task Settings (Continual Learning)
-- `task.tasks`: Number of tasks in the continual learning sequence
-- `task.classes_per_task`: Number of classes per task
-
-#### Experiment Tracking
-- `logging.use_wandb=true`: Enable Weights & Biases logging
-- `logging.wandb_project="your-project"`: Set the W&B project name
-
-## Neural Network Cloning Experiments
-
-This project includes support for neural network cloning experiments, where neurons/channels in a network are duplicated to study the effects of feature duplication on network plasticity and learning dynamics.
-
-### Conceptual Overview
-
-Neural network cloning experiments investigate the hypothesis that as networks grow through parameter duplication, they may experience a loss of plasticity and struggle to learn new features effectively. This phenomenon occurs because duplicated neurons/channels create redundant features that constrain weight evolution, leading to:
-
-1. **Representation Collapse**: Duplicated features create a lower-dimensional manifold in parameter space that the network has difficulty escaping
-2. **Reduced Effective Rank**: Despite having more parameters, the effective dimensionality of network representations may remain constrained
-3. **Alignment Dynamics**: Over time, duplicated neurons may either specialize (diverge) or remain aligned (converge)
-
-### Running Cloning Experiments
-
-Cloning experiments proceed in two phases:
-1. Train a base model for a configurable number of epochs
-2. Create an expanded model by duplicating neurons/channels
-3. Continue training both models to compare learning trajectories
-
-#### Using the Helper Script
-
-The repository includes a helper script for running cloning experiments with predefined configurations:
+Install dependencies:
 
 ```bash
-# Make the script executable (if needed)
+pip install -r requirements.txt
+```
+
+Optional: download Tiny ImageNet.
+
+```bash
+python scripts/download_tiny_imagenet.py
+```
+
+The browser demo has no Python dependency. You can either use the hosted version or open [`demo/demo.html`](demo/demo.html) locally.
+
+---
+
+## Quickstart
+
+Run the default experiment:
+
+```bash
+python scripts/run_experiment.py
+```
+
+Run a continual-learning experiment:
+
+```bash
+python scripts/run_experiment.py training=continual dataset=tiny_imagenet model=mlp
+```
+
+Run a cloning experiment:
+
+```bash
+python scripts/run_experiment.py training=cloning model=mlp dataset=cifar10
+```
+
+Enable Weights & Biases logging:
+
+```bash
+python scripts/run_experiment.py logging.use_wandb=true
+```
+
+Run a small dry run to test your setup:
+
+```bash
+python scripts/run_experiment.py training.epochs_per_task=2 dryrun=true
+```
+
+---
+
+## Reproducing experiments
+
+The codebase uses [Hydra](https://hydra.cc/) for configuration management. Experiments can be modified through composable command-line overrides.
+
+### Continual learning
+
+```bash
+# MLP on Tiny ImageNet continual learning
+python scripts/run_experiment.py training=continual model=mlp dataset=tiny_imagenet
+
+# CNN on Tiny ImageNet continual learning
+python scripts/run_experiment.py training=continual model=cnn dataset=tiny_imagenet
+
+# ResNet on Tiny ImageNet continual learning
+python scripts/run_experiment.py training=continual model=resnet dataset=tiny_imagenet
+
+# ViT on Tiny ImageNet continual learning
+python scripts/run_experiment.py training=continual model=vit dataset=tiny_imagenet
+```
+
+### Cloning experiments
+
+Cloning experiments proceed in two phases:
+
+1. Train a base model.
+2. Expand the model by duplicating units/channels/features.
+3. Continue training the base and cloned models while tracking loss, effective rank, and cloning metrics.
+
+```bash
+# MLP cloning
+python scripts/run_experiment.py training=cloning model=mlp dataset=cifar10
+
+# CNN cloning
+python scripts/run_experiment.py training=cloning model=cnn dataset=cifar10
+
+# ResNet cloning
+python scripts/run_experiment.py training=cloning model=resnet dataset=cifar10
+
+# ViT cloning
+python scripts/run_experiment.py training=cloning model=vit dataset=cifar10
+```
+
+Custom cloning settings:
+
+```bash
+python scripts/run_experiment.py training=cloning model=resnet dataset=cifar10 \
+  training.initial_epochs=30 \
+  training.epochs_per_expansion=30 \
+  training.expansion_factor=2 \
+  training.num_expansions=2
+```
+
+### Helper script for cloning experiments
+
+```bash
+# Make executable if needed
 chmod +x scripts/run_cloning_experiment.sh
 
-# Basic MLP experiment on MNIST (default)
+# Basic MLP experiment
 ./scripts/run_cloning_experiment.sh mlp-mnist
 
-# CNN experiment on CIFAR-10
+# CNN experiment
 ./scripts/run_cloning_experiment.sh cnn-cifar10
 
-# ResNet experiment on CIFAR-10
+# ResNet experiment
 ./scripts/run_cloning_experiment.sh resnet-cifar10
 
 # Vision Transformer experiment
 ./scripts/run_cloning_experiment.sh vit-cifar10
 
-# Multiple expansion cycles (2x expansion three times = 8x total)
+# Multiple expansion cycles
 ./scripts/run_cloning_experiment.sh multi-expansion
 
-# View all available options
+# View all options
 ./scripts/run_cloning_experiment.sh --help
 ```
 
-You can also edit the script's `custom` option to create your own experiment configuration.
+---
 
-#### Using Direct Commands
+## Available configurations
 
-Here are example commands for running various cloning experiments directly:
+### Models
 
 ```bash
-# Basic MLP cloning experiment with MNIST
-python scripts/run_experiment.py training=cloning model=mlp dataset=mnist
-
-# CNN cloning experiment with CIFAR-10, double size
-python scripts/run_experiment.py training=cloning model=cnn dataset=cifar10 training.expansion_factor=2
-
-# Multiple expansion cycles with ResNet (2x expansion twice = 4x total)
-python scripts/run_experiment.py training=cloning model=resnet dataset=cifar10 \
-  training.initial_epochs=30 training.epochs_per_expansion=30 training.num_expansions=2
-
-# Vision Transformer (ViT) with custom expansion parameters
-python scripts/run_experiment.py training=cloning model=vit dataset=cifar100 \
-  training.initial_epochs=50 training.epochs_per_expansion=50 training.expansion_factor=3
-  
-# Track activation similarity and alignment metrics
-python scripts/run_experiment.py training=cloning model=mlp dataset=mnist \
-  metrics.metrics_frequency=1 logging.use_wandb=true
+model=mlp
+model=cnn
+model=resnet
+model=vit
 ```
 
-### Key Metrics for Cloning Experiments
+### Datasets
 
-In addition to standard training metrics (loss, accuracy), cloning experiments track specialized metrics to analyze the behavior of duplicated features:
+```bash
+dataset=mnist
+dataset=cifar10
+dataset=cifar100
+dataset=tiny_imagenet
+```
 
-- **Activation Similarity**: Cosine similarity between original and duplicated features (higher values indicate more redundancy)
-- **Feature Alignment**: Measures the consistency of duplicated features (high alignment suggests they remain functionally similar)
-- **Effective Rank**: Tracks how many independent dimensions the network effectively uses, despite having more parameters
+### Optimizers
 
-## Key Features
+```bash
+optimizer=adam
+optimizer=sgd
+optimizer=rmsprop
+```
 
-- **Modular Architecture**: Easily swap between different neural network models
-- **Dynamic Analysis**: Track metrics like weight norms, gradient magnitudes, and activation patterns
-- **Continual Learning Framework**: Evaluate how networks adapt to sequences of tasks
-- **Neural Network Cloning**: Study the effects of parameter duplication on plasticity and learning
-- **Visualization Tools**: Plot learning trajectories, forgetting curves, and network dynamics
-- **Configuration System**: Hydra-based configuration for reproducible experiments
-- **Type Safety**: Structured configs with dataclasses providing validation and type checking
+### Training modes
+
+```bash
+training=standard
+training=continual
+training=cloning
+```
+
+### Common overrides
+
+```bash
+# Change optimizer and learning rate
+python scripts/run_experiment.py optimizer=sgd optimizer.lr=0.01
+
+# Change batch size
+python scripts/run_experiment.py training.batch_size=64
+
+# Change number of continual-learning tasks
+python scripts/run_experiment.py task.tasks=20 task.classes_per_task=5
+
+# Run ViT on CIFAR-100
+python scripts/run_experiment.py model=vit dataset=cifar100 task.tasks=10 task.classes_per_task=10
+```
+
+---
 
 ## Metrics
 
-The framework tracks several metrics to analyze neural network dynamics during training. These metrics help identify various learning phenomena such as dead neurons, redundancy, and saturation.
+The repository tracks several metrics related to Loss of Plasticity.
 
-### Dead Neurons (`dead_fraction`)
-Measures the fraction of neurons that are inactive (producing zero or near-zero activations) across most input samples.
-- **Definition**: A neuron is considered "dead" if it produces activations close to zero (abs < 1e-7) for more than the specified threshold (default: 95%) of input samples.
-- **Configuration**: `metrics.dead_threshold` (default: 0.95)
-- **Interpretation**: High values indicate neurons that aren't contributing to the network's function, suggesting wasted capacity or potential training issues.
+### Dead neurons: `dead_fraction`
 
-### Duplicate Neurons (`dup_fraction`)
-Measures the fraction of neurons that are functionally similar to other neurons in the same layer.
-- **Definition**: A neuron is considered a "duplicate" if its normalized activation pattern has a correlation above the threshold (default: 0.95) with another neuron in the same layer.
-- **Configuration**: `metrics.corr_threshold` (default: 0.95)
-- **Interpretation**: High values suggest redundant representations and inefficient use of network capacity.
+Fraction of neurons that produce zero or near-zero activations across most input samples.
 
-### Effective Rank (`eff_rank`)
-Measures the effective dimensionality of neural representations as entropy of normalized singular values.
-- **Definition**: The exponent of the entropy of the normalized singular values of the activation matrix.
-- **Calculation**: `exp(-sum(p * log(p)))` where `p` are the normalized singular values.
-- **Interpretation**: Indicates how many independent dimensions the network is effectively using for representing data. Higher values suggest more distributed and potentially more robust representations.
+A neuron is considered dead if
 
-### Stable Rank (`stable_rank`)
-A numerically stable approximation of the rank of activations.
-- **Definition**: The ratio of squared Frobenius norm to squared spectral norm of the activation matrix.
-- **Calculation**: `||A||_F^2 / ||A||_2^2` where `||A||_F` is the Frobenius norm and `||A||_2` is the spectral norm.
-- **Interpretation**: Provides insight into how many significant singular values contribute to the representation. Higher values indicate more dimensions are being effectively utilized.
+```text
+abs(activation) < 1e-7
+```
 
-### Saturated Neurons (`saturated_frac`)
-Measures the fraction of neurons that are saturated, meaning they have very small gradients relative to their activations.
-- **Definition**: A neuron is considered "saturated" if the ratio of gradient magnitude to mean activation magnitude is below the saturation threshold for more than the specified percentage of samples.
-- **Configuration**: 
-  - `metrics.saturation_threshold` (default: 1e-4)
-  - `metrics.saturation_percentage` (default: 0.99)
-- **Interpretation**: High values indicate neurons whose weights are not being effectively updated during training, suggesting they may be stuck in flat regions of the loss landscape.
+for more than a specified fraction of samples.
 
-## Extending the Framework
+### Duplicate neurons: `dup_fraction`
 
-### Adding a New Model
+Fraction of neurons that are functionally similar to other neurons in the same layer.
 
-1. Create a new model class in `src/models/`
-2. Add a configuration dataclass in `src/config_schema.py`
-3. Register it in `src/register_configs.py`
-4. Create a YAML config file in `conf/model/`
+A neuron is considered duplicate if its normalized activation pattern has correlation above a threshold with another neuron.
 
-### Adding a New Dataset
+### Effective rank: `eff_rank`
 
-1. Update the data loading utilities in `src/utils/data.py`
-2. Add dataset configuration in `src/config_schema.py`
-3. Create a YAML config file in `conf/dataset/`
+Effective dimensionality of the activation matrix, computed from normalized singular values.
+
+If $p_i$ are normalized singular values,
+
+$$
+\mathrm{effrank}(A) = \exp\left(-\sum_i p_i \log p_i\right).
+$$
+
+Higher effective rank indicates more distributed representational diversity.
+
+### Stable rank: `stable_rank`
+
+A numerically stable approximation of rank:
+
+$$
+\mathrm{stable\_rank}(A) = \frac{\|A\|_F^2}{\|A\|_2^2}.
+$$
+
+### Saturated neurons: `saturated_frac`
+
+Fraction of neurons whose gradients are small relative to their activation magnitudes.
+
+High saturation suggests units are stuck in regions where gradient-based learning is ineffective.
+
+### Cloning quality
+
+Cloning experiments track activation and gradient similarity between base and cloned units. A high cloning score indicates that duplicated units remain functionally tied and do not specialize.
+
+---
+
+## Repository structure
+
+<details>
+<summary>Click to expand</summary>
+
+```text
+project/
+├── conf/                         # Hydra configuration files
+│   ├── config.yaml               # Main configuration
+│   ├── model/                    # Model configurations
+│   │   ├── mlp.yaml
+│   │   ├── cnn.yaml
+│   │   ├── resnet.yaml
+│   │   └── vit.yaml
+│   ├── dataset/                  # Dataset configurations
+│   │   ├── mnist.yaml
+│   │   ├── cifar10.yaml
+│   │   ├── cifar100.yaml
+│   │   └── tiny_imagenet.yaml
+│   ├── optimizer/                # Optimizer configurations
+│   ├── metrics/                  # Metric configurations
+│   └── training/                 # Training configurations
+├── data/                         # Dataset directory
+├── demo/                         # Browser demo
+│   ├── demo.html
+│   └── demo.png
+├── notebooks/                    # Jupyter notebooks
+│   ├── CL.ipynb
+│   ├── coupling.ipynb
+│   └── main.ipynb
+├── paper/                        # Paper-related materials
+├── scripts/                      # Experiment and utility scripts
+│   ├── check_imports.py
+│   ├── download_tiny_imagenet.py
+│   ├── extract_notebook.py
+│   ├── run_cloning_experiment.sh
+│   └── run_experiment.py
+├── src/                          # Source code
+│   ├── config_schema.py
+│   ├── register_configs.py
+│   ├── continual_learning.py
+│   ├── models/
+│   │   ├── mlp.py
+│   │   ├── cnn.py
+│   │   ├── resnet.py
+│   │   └── vit.py
+│   ├── utils/
+│   │   ├── layers.py
+│   │   ├── metrics.py
+│   │   ├── monitor.py
+│   │   ├── data.py
+│   │   └── visualization.py
+│   └── training/
+│       ├── eval.py
+│       └── train_continual.py
+└── saved_models/                 # Saved model directory
+```
+
+</details>
+
+---
+
+## Neural-network cloning
+
+This repository includes modular support for cloning hidden units, convolutional channels, and transformer features.
+
+At a high level, cloning constructs an expanded model whose units initially compute the same functions as a smaller base model. The experiments then test whether ordinary optimization can break this symmetry.
+
+The cloning experiments are designed to study:
+
+1. **Invariant cloned manifolds**  
+   When cloned units receive identical forward and backward signals, their gradients remain identical.
+
+2. **Effective-rank limitation**  
+   A cloned model can have many more parameters while still evolving inside a lower-dimensional subspace.
+
+3. **Escape through perturbation**  
+   Noise, dropout, or other symmetry-breaking interventions can sometimes push the model away from the cloned manifold.
+
+---
 
 ## Notebooks
 
-Explore the included Jupyter notebooks for analysis:
+Explore analysis notebooks with:
 
 ```bash
 jupyter notebook notebooks/
 ```
 
-## Contributing
+The notebooks include exploratory analyses for continual learning, coupling/cloning dynamics, and main experiment visualizations.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+---
+
+## Extending the framework
+
+### Adding a new model
+
+1. Add a model implementation in `src/models/`.
+2. Add or update the relevant dataclass in `src/config_schema.py`.
+3. Register the config in `src/register_configs.py`.
+4. Add a YAML config in `conf/model/`.
+
+### Adding a new dataset
+
+1. Update dataset loading utilities in `src/utils/data.py`.
+2. Add dataset configuration in `src/config_schema.py`.
+3. Add a YAML config in `conf/dataset/`.
+
+### Adding a new metric
+
+1. Implement the metric in `src/utils/metrics.py`.
+2. Add logging or monitoring support in `src/utils/monitor.py`.
+3. Add configuration options under `conf/metrics/`.
+
+---
+
+## Notes on reproducibility
+
+This is research code. We aim to make the experiments reproducible through Hydra configs and fixed random seeds, but exact curves can vary with hardware, CUDA/PyTorch versions, data preprocessing, and nondeterministic kernels.
+
+For paper-level reproduction, we recommend:
+
+- using the provided configs,
+- fixing the random seed,
+- logging full Hydra overrides,
+- running multiple seeds,
+- and comparing trends rather than relying on a single trajectory.
+
+---
+
+## Citation
+
+If you use this code or build on this work, please cite:
+
+```bibtex
+@inproceedings{joudaki2026barriers,
+  title={Barriers for Learning in an Evolving World: Mathematical Understanding of Loss of Plasticity},
+  author={Joudaki, Amir and Lanzillotta, Giulia and Samragh Razlighi, Mohammad and Mirzadeh, Iman and Alizadeh, Keivan and Hofmann, Thomas and Farajtabar, Mehrdad and Faghri, Fartash},
+  booktitle={International Conference on Learning Representations},
+  year={2026},
+  url={https://openreview.net/forum?id=g6kof5fSba}
+}
+```
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the MIT License. See [`LICENSE.md`](LICENSE.md) for details.
