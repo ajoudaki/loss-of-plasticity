@@ -2,7 +2,7 @@
 
 **ICLR 2026** · Continual Learning · Loss of Plasticity · Gradient Dynamics · Invariant Manifolds
 
-[Paper / OpenReview](https://openreview.net/forum?id=g6kof5fSba) · [Interactive Demo](https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html) · [License](LICENSE.md)
+[Paper](https://arxiv.org/pdf/2510.00304) · [Interactive Demo](https://ajoudaki.github.io/loss-of-plasticity/demo/demo.html) · [License](LICENSE.md)
 
 This repository contains the code, experiments, and interactive demo for our ICLR 2026 paper:
 
